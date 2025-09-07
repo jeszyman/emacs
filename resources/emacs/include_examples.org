@@ -1,0 +1,49 @@
+* Noweb tangle examples
+
+
+#+name: include-from-remote-wrapper
+#+begin_src org
+<#include-from-remote#>
+#+end_src
+
+
+#+name: include-from-remote
+#+begin_src bash
+echo "I AM INCLUDED FROM ANOTHER BUFFER"
+#+end_src
+
+* INCLUDE Examples
+:PROPERTIES:
+:export_file_name: ./resources/emacs/include_examples.org
+:ID:       bf390f83-dcfa-4954-9dbb-51928f5742d0
+:END:
+I am a test
+** Example of include from a CUSTOM_ID, header included
+:PROPERTIES:
+:ID:       a7adbfd9-2f03-4f19-a5fd-bb08ce5dee34
+:CUSTOM_ID:       a7adbfd9-2f03-4f19-a5fd-bb08ce5dee34
+:END:
+This is the header content from another file
+** Content included by header title
+** Another header
+
+Content to include by line range, line 16
+Content to include by line range, line 17
+Content to include by line range, line 18
+
+#+NAME: name_test
+#+begin_code R
+ls()
+#+end_code
+
+| A | Table |
+
+
+test
+#+begin_src python :tangle ./include_examples.py :eval yes
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+if __name__ == "__main__":
+    print(greet("World"))
+#+end_src
