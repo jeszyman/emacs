@@ -1,75 +1,36 @@
-;; AUCTeX
-;; - documentation
-;;   - [[https://www.gnu.org/software/auctex/manual/auctex/Folding.html][3.2 Folding Macros and Environments]]
-;; - https://stackoverflow.com/questions/7587287/how-do-i-bind-latexmk-to-one-key-in-emacs-and-have-it-show-errors-if-there-are-a
-;; - [[https://www.gnu.org/software/auctex/manual/auctex.html#Quick-Start][Quick start]]
-;; - [[https://tex.stackexchange.com/questions/145318/how-to-make-auctex-not-prompt-me-on-c-c-c-c][stack:tex: How to make auctex not prompt me on C-c C-c]]
-;; - [[https://tex.stackexchange.com/questions/20843/useful-shortcuts-or-key-bindings-or-predefined-commands-for-emacsauctex][stack:tex: Useful shortcuts or key bindings or predefined commands for emacs+AUCTeX]]
-;; - [[https://www.gnu.org/software/auctex/manual/auctex.html#Quick-Start][documentation]]
-;; - [[https://www.gnu.org/software/auctex/][website]]
-;; - [[https://www.emacswiki.org/emacs/AUCTeX][EmacsWiki: AUCTeX]]
-;; - https://piotrkazmierczak.com/2010/emacs-as-the-ultimate-latex-editor/
-
-
-(use-package tex
-  :ensure auctex
-  :config
-  (setenv "PATH" (concat "/usr/local/texlive/2021/bin/x86_64-linux:"
-			 (getenv "PATH")))
-  (add-to-list 'exec-path "/usr/local/texlive/2021/bin/x86_64-linux")
-
-  (setq TeX-auto-save t
-        TeX-parse-self t
-        TeX-save-query nil
-        TeX-view-program-selection '((output-pdf "Okular"))
-        TeX-view-program-list '(("Okular" "okular %o"))))
-
-;; Base Emacs
-
-(setq comint-scroll-to-bottom-on-output t
-      comint-move-point-for-output t)
-
 ;; Dired
-;; :PROPERTIES:
-;; :ID:       b3bd2685-ea78-4097-ae4c-e4a5e7a422ea
-;; :END:
 ;; - whenever you open a new directory in Dired, the old Dired buffer is automatically killed
 
 (setq dired-kill-when-opening-new-dired-buffer t)
 
-
 ;; - when listing files:
 
 (setq dired-listing-switches "-alh")
-
 
 ;;   -a → show all files, including dotfiles (. and ..).
 ;;   - -l → use long listing format (permissions, owner, size, modification time).
 ;;   -h → show file sizes in “human-readable” units (e.g. 1K, 2M, 3G).
 ;; - Open files using [[id:05e700d9-77cc-4aef-b310-164c267274d0][xdg-utils]]
 
-(defun my/dired-open-xdg ()
-  "Open file at point with xdg-open."
-  (interactive)
-  (let ((file (dired-get-file-for-visit)))
-    (start-process "xdg-open" nil "xdg-open" file)))
+    (defun my/dired-open-xdg ()
+      "Open file at point with xdg-open."
+      (interactive)
+      (let ((file (dired-get-file-for-visit)))
+	(start-process "xdg-open" nil "xdg-open" file)))
 
-;; Bind to a key in dired-mode
-(with-eval-after-load 'dired
-  (define-key dired-mode-map (kbd "E") #'my/dired-open-xdg))
-
+    ;; Bind to a key in dired-mode
+    (with-eval-after-load 'dired
+      (define-key dired-mode-map (kbd "E") #'my/dired-open-xdg))
 ;; Needed in --batch
 ;; Code that needs to be tangled both here and into custom inits for batch export
 ;; #+name need_in_batch
 
 (setq large-file-warning-threshold most-positive-fixnum) ; disable large file warning
 (setq-default cache-long-scans nil)
+;; Comint
 
-;; Add to load paths
-
-(setq exec-path (append exec-path '("/opt/miniconda3/bin")))
-(setenv "PATH" (concat (getenv "PATH") ":/opt/miniconda3/bin"))
-
+(setq comint-scroll-to-bottom-on-output t
+      comint-move-point-for-output t)
 ;; Appearance
 
 ; ---   General   --- ;
@@ -84,7 +45,9 @@
 ;; Remove bars:
 (menu-bar-mode -1)
 (tool-bar-mode -1)
+(scroll-bar-mode 'right) ;; Place scroll bar on the right side
 (scroll-bar-mode -1)
+
 ;
 ; Fringe- Set finge color to background
 ;https://emacs.stackexchange.com/a/31944/11502
@@ -150,7 +113,6 @@
 ;https://emacs.stackexchange.com/questions/72483/how-to-define-consult-faces-generically-for-minibuffer-highlighting-that-fits-wi
 (global-hl-line-mode 1)
 (set-face-attribute 'highlight nil :background "#294F6E")
-
 ;; Tramp
 
 (setq tramp-default-method "ssh")
@@ -170,7 +132,6 @@
 
 ; https://emacs.stackexchange.com/questions/29286/tramp-unable-to-open-some-files
 (setq tramp-copy-size-limit 10000000)
-
 ;; Key bindings
 
 ; ASCII Arrows
@@ -193,7 +154,6 @@
 		(lambda () (interactive) (next-line 10)))
 (global-set-key (kbd "C-S-p")
 		(lambda () (interactive) (next-line -10)))
-
 ;; On-save hooks and backup
 ;; - Visited files are backed up to =~/.emacs.d/backup-save-list=.
 
@@ -223,7 +183,6 @@
 
 (setq auto-save-file-name-transforms
       `((".*" ,(concat user-emacs-directory "auto-save-list/") t)))
-
 ;; Miscellaneous
 
 ; ---   Miscellaneous   --- ;
@@ -311,7 +270,6 @@
 ; ----------------- ;
 
 (setq require-final-newline nil)
-
 (defun toggle-theme ()
   "Toggle between dark and light themes."
   (interactive)
@@ -322,13 +280,8 @@
     (progn
       (disable-theme 'leuven)
       (load-theme 'manoj-dark t))))
-
 (setq create-lockfiles nil)
-
 ;; (open-texdoc-in-background)
-;; :PROPERTIES:
-;; :ID:       60651916-4ffa-458f-9084-1ade3d163ea0
-;; :END:
 
 (defun open-texdoc-in-background (docname)
   "Open a TEXDOC for DOCNAME in the background and close the terminal."
@@ -344,7 +297,6 @@
                    (string= signal "exited\n"))
            (kill-buffer (process-buffer process)))))
       (bury-buffer))))
-
 ;; Make header regions read-only via tag
 
 (defun org-mark-readonly ()
@@ -372,7 +324,6 @@
       (set-buffer-modified-p nil))))
 
 (add-hook 'org-mode-hook 'org-mark-readonly)
-
 ;; Protect text regions as read-only
 ;; https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 
@@ -387,7 +338,6 @@
   (let ((inhibit-read-only t))
     (put-text-property start end 'read-only nil)
     (remove-text-properties start end '(font-lock-face nil))))
-
 ;; Shell
 
 (defun dont-ask-to-kill-shell-buffer ()
@@ -399,11 +349,9 @@
                   kill-buffer-query-functions)))))
 
 (add-hook 'shell-mode-hook 'dont-ask-to-kill-shell-buffer)
-
 ;; cua-mode
 
 (cua-mode t)
-
 ;; remove-blank-lines
 
 (defun remove-blank-lines ()
@@ -412,21 +360,11 @@
   (save-excursion
     (goto-char (point-min))
     (flush-lines "^[[:space:]]*$")))
-
-;; Org-mode
-;; :PROPERTIES:
-;; :ID:       45e28300-51fd-4ce7-aed1-15dca15022d4
-;; :END:
-
-(setq org-display-inline-images t
-      org-startup-with-inline-images t)
-
 ;; Startup
 
 (require 'org)
 (setq org-startup-folded t)
 (setq org-startup-with-inline-images t)
-
 ;; Add persistant highlights
 
 (defun org-add-persistent-highlights ()
@@ -448,46 +386,46 @@
                 'org-hide))))))
 
 (add-hook 'org-mode-hook #'org-hide-markers-without-space)
-
 ;; Tags
 
-(setq
- org-tags-exclude-from-inheritance
- (list
-  "alert"
-  "biotool"
-  "biopipe"
-  "bimonthly"
-  "block"
-  "blk"
-  "flat"
-  "hierarchy"
-  "include"
-  "semimonthly"
-  "purpose"
-  "midGoal"
-  "nearGoal"
-  "focus"
-  "project"
-  "daily"
-  "dinner"
-  "kit"
-  "maint"
-  "manuscript"
-  "mod"
-  "monthly"
-  "poster"
-  "present"
-  "prog"
-  "report"
-  "routine"
-  "soln"
-  "weekly"
-  "write"
-  "sci_rep"
-  "stretch"
-  "study"))
 
+
+        (setq
+         org-tags-exclude-from-inheritance
+         (list
+	  "alert"
+          "biotool"
+          "biopipe"
+          "bimonthly"
+          "block"
+          "blk"
+          "flat"
+          "hierarchy"
+          "include"
+          "semimonthly"
+          "purpose"
+          "midGoal"
+          "nearGoal"
+          "focus"
+          "project"
+          "daily"
+          "dinner"
+	  "kit"
+          "maint"
+          "manuscript"
+          "mod"
+          "monthly"
+	  "poster"
+          "present"
+          "prog"
+          "report"
+          "routine"
+          "soln"
+          "weekly"
+          "write"
+          "sci_rep"
+          "stretch"
+          "study"))
 ;; .TODO
 
 (setq org-todo-keyword-faces
@@ -507,7 +445,6 @@
 (setq org-highest-priority 65)
 (setq org-lowest-priority 89)
 (setq org-default-priority 89)
-
 ;; open in same frame
 
 (setq org-link-frame-setup
@@ -516,45 +453,45 @@
         (gnus . org-gnus-no-new-news)
         (file . find-file)  ;; Open files in the same frame
         (wl . wl)))
-
 ;; Set org-file-apps to use xdg-open for all file extensions
 
 
 (setq org-file-apps
       `((directory . "/usr/bin/gnome-terminal --working-directory=\"%s\"")
         ("\\.pdf\\'" . "setsid -w xdg-open \"%s\"")
+        ("\\.pptx\\'" . "setsid -w xdg-open \"%s\"")
         ("\\.svg\\'" . "setsid -w xdg-open \"%s\"")
-        ("\\.\\(yaml\\|yml\\|txt\\|md\\|conf\\|list\\)\\'" .
+        ("\\.xlsx\\'" . "setsid -w xdg-open \"%s\"")
+        ("\\.org\\'" . emacs)
+        ("\\.sty\\'" . emacs)
+        ("\\.tex\\'" . emacs)
+        ("\\.\\(yaml\\|yml\\|txt\\|md\\|conf\\|list\\|tex\\)\\'" .
          (lambda (file path)
            (start-process "emacsclient" nil
                           "setsid"
                           "/usr/local/bin/emacsclient"
                           "--socket-name" "/home/jeszyman/.emacs.d/server/server"
                           "-c" (expand-file-name file))))
-        (auto-mode . emacsclient)
         (t . "setsid -w xdg-open \"%s\"")))
-
 ;; Lists
 
 (setq org-cycle-include-plain-lists 'integrate)
 (setq org-list-indent-offset 0)
+;; Inline images
 
+(setq org-display-inline-images t
+      org-startup-with-inline-images t)
 ;; Tables
 
 ;; https://emacs.stackexchange.com/questions/22210/auto-update-org-tables-before-each-export
-(add-hook 'before-save-hook 'org-table-recalculate-buffer-tables)
-
+;; broke tangle?
+;; (add-hook 'before-save-hook 'org-table-recalculate-buffer-tables)
 (setq org-startup-align-all-tables t)
 (setq org-startup-shrink-all-tables t)
-
 ;; org-image-actual-width
-;; :PROPERTIES:
-;; :ID:       a760d06b-c2b2-4b54-a0b6-375a13a20538
-;; :END:
 ;; When set as a list as below, 300 pixels will be the default, but another width can be specified through ATTR, e.g. #+ATTR_ORG: :width 800px
 
 (setq org-image-actual-width '(300))
-
 ;; shk-fix-inline-images, reload inline images after code eval
 ;; If you have code blocks in Org mode that produce images (such as R or Python plots), this setup refreshes the images right after code execution without requiring manual intervention.
 
@@ -565,7 +502,10 @@
 
 (with-eval-after-load 'org
   (add-hook 'org-babel-after-execute-hook 'shk-fix-inline-images))
+;; Source code and tangle
 
+; For org 9.7
+(setq org-babel-tangle-remove-file-before-write 'auto)
 ;; Default header arguments
 ;; #+name: babel_default_header_args
 
@@ -579,8 +519,8 @@
                                       (:exports . "none")
                                       (:noweb . "yes")
                                       (:tangle . "no")
+                                      (:tangle-mode . #o755)
 				      ))
-
 ;; General
 
 (setq
@@ -603,12 +543,10 @@
  ;;
  ;; Open src windows in current frames
  org-src-window-setup 'current-window)
-
 ;; disable confrmation for elisp execution of org src blocks
 (setq safe-local-variable-values '((org-confirm-elisp-link-function . nil)))
 
 (setq org-hide-block-startup t)
-
 ;; Toggle collapse blocks
 
 (defvar org-blocks-hidden nil)
@@ -619,7 +557,6 @@
       (org-show-block-all)
     (org-hide-block-all))
   (setq-local org-blocks-hidden (not org-blocks-hidden)))
-
 ;; org-babel-min-lines-for-block-output
 ;; When executing a source block in org mode with the output set to verbatim, it will sometimes wrap the results in an #begin_example block, and sometimes it uses : symbols at the beginning of the line. Prevented with org-babel-src-preserve-indentation
 
@@ -627,12 +564,10 @@
 
 
 (setq org-babel-min-lines-for-block-output 1000)
-
 ;; Change noweb wrapper symbols
 
 (setq org-babel-noweb-wrap-start "<#"
       org-babel-noweb-wrap-end "#>")
-
 ;; stripe properties drawer on tangle
 
 ;; (defun my/org-babel-tangle-no-drawers ()
@@ -653,7 +588,6 @@
 ;;         (while (re-search-forward "\n\\{2,\\}" nil t)
 ;;           (replace-match "\n"))
 ;;         (write-region (point-min) (point-max) f)))))
-
 ;; Distinguish Org Edit Special buffers
 
 ;; Distinguish Org Edit Special buffers
@@ -676,14 +610,12 @@
   (face-remap-add-relative 'default '(:background "#1b1f2d"))) ; pick your color
 
 (add-hook 'org-src-mode-hook #'my/org-src-buffer-setup)
-
 ;; Header views and cycling
 
 (setq org-show-hierarchy-above t)
 
 (setq org-fold-show-context-detail
       '((default . tree)))
-
 (setq
  org-show-context-detail
  '((agenda . ancestors)
@@ -691,7 +623,6 @@
    (isearch . ancestors)
    (default . ancestors))
 )
-
 (defun org-hide-all-src-blocks ()
   "Hide all source blocks in the current Org buffer."
   (interactive)
@@ -716,12 +647,10 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 (global-set-key (kbd "C-c d") 'my-collapse-all-drawers)
 ;; You might want to remove the hook if you don't want this function to run every time you open an org file
 (add-hook 'org-mode-hook 'my-collapse-all-drawers)
-
 ;; No blank lines!
 
 (setq org-cycle-separator-lines 0)
 (setq yas-indent-line 'fixed)
-
 
 
 ;; https://chatgpt.com/c/670d4cb7-5c08-8005-bec8-a2800e4bd0c4
@@ -734,11 +663,9 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 ;;       (delete-char -1))))
 
 ;; (add-hook 'org-babel-post-tangle-hook #'my-remove-trailing-newlines-in-tangled-blocks)
-
 ;; General
 
 (setq org-confirm-shell-link-function nil)
-
 (with-eval-after-load 'org
         (add-to-list 'org-modules 'org-habit))
 
@@ -763,18 +690,14 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 (setq org-support-shift-select t)
 (setq org-src-window-setup 'current-window)
 (setq org-export-async-debug nil)
-
 ;; ensures that any file with the .org extension will automatically open in org-mode
 (add-to-list 'auto-mode-alist '("\\.org\\'" . org-mode))
-
 ;; Make heading regex include tags
 (setq org-heading-regexp "^[[:space:]]*\\(\\*+\\)\\(?: +\\(.*?\\)\\)?[ \t]*\\(:[[:alnum:]_@#%:]+:\\)?[ \t]*$")
-
 ;; org-blank-before-new-entry
 ;; https://stackoverflow.com/questions/28351465/emacs-orgmode-do-not-insert-line-between-headers
 
 (setq org-blank-before-new-entry '((heading . nil) (plain-list-item . nil)))
-
 ;; my-org-tree-to-indirect-buffer
 
 (defun my-org-tree-to-indirect-buffer (&optional arg)
@@ -786,17 +709,15 @@ When called with two prefix arguments, ARG, run the original function without pr
     (org-tree-to-indirect-buffer t)) ; one prefix argument
   (my-collapse-all-drawers))
 (define-key org-mode-map (kbd "C-c C-x b") 'my-org-tree-to-indirect-buffer)
-
 ;; Export
-;; :PROPERTIES:
-;; :ID:       8fb9a592-2ad4-44c4-a8d6-ce33f691c010
-;; :END:
 ;; #+name: orgmode_export_general
 
 ;; the below as nil fucks of export of inline code
 (setq org-export-babel-evaluate t)
 ;; https://emacs.stackexchange.com/questions/23982/cleanup-org-mode-export-intermediary-file/24000#24000
 
+(with-eval-after-load 'org
+  (setq org-export-backends '(ascii html latex odt icalendar md org)))
 
 (setq-default cache-long-scans nil)
 (setq org-export-with-broken-links t)
@@ -808,51 +729,7 @@ When called with two prefix arguments, ARG, run the original function without pr
       org-export-with-section-numbers nil
       org-export-with-tags nil
       org-export-with-todo-keywords nil)
-
 (setq org-odt-preferred-output-format "docx")
-
-;; LaTeX
-;; #+name: orgmode_export_latex
-
-(require 'ox-latex)
-
-(customize-set-value 'org-latex-with-hyperref nil)
-
-(setq org-latex-logfiles-extensions (quote ("auto" "lof" "lot" "tex~" "aux" "idx" "log" "out" "toc" "nav" "snm" "vrb" "dvi" "fdb_latexmk" "blg" "brf" "fls" "entoc" "ps" "spl" "bbl")))
-
-(add-to-list 'org-latex-packages-alist '("" "listings"))
-(add-to-list 'org-latex-packages-alist '("" "color"))
-(setq org-latex-caption-above nil)
-
-(setq org-latex-remove-logfiles t)
-
-(add-to-list 'org-latex-packages-alist '("" "listingsutf8"))
-(setq org-latex-src-block-backend 'minted)
-
-(setq org-latex-pdf-process
-      '("pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
-    "bibtex %b"
-    "pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
-    "pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"))
-
-
-(setq org-export-preserve-breaks t)
-
-;; Empty latex class
-;; #+name: org_latex_empty_class
-
-(with-eval-after-load 'ox-latex
-  (add-to-list 'org-latex-classes '("empty"
-                                    "\\documentclass{article}
-\\newcommand\\foo{bar}
-[NO-DEFAULT-PACKAGES]
-[NO-PACKAGES]"
-                                    ("\\section{%s}" . "\\section*{%s}")
-                                    ("\\subsection{%s}" . "\\subsection*{%s}")
-                                    ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
-                                    ("\\paragraph{%s}" . "\\paragraph*{%s}")
-                                    ("\\subparagraph{%s}" . "\\subparagraph*{%s}"))))
-
 ;; Open URLs in new window with C-u C-c C-o
 
 (defun my-org-open-in-brave-new-window (link)
@@ -894,7 +771,6 @@ Open in a new Emacs frame if ARG is non-nil for ID or file links."
 
 ;; Rebind C-c C-o in org mode to our custom function
 (define-key org-mode-map (kbd "C-c C-o") 'my-org-open-at-point)
-
 ;; Checkboxes
 
 
@@ -927,7 +803,14 @@ Open in a new Emacs frame if ARG is non-nil for ID or file links."
 
 ;; ;; Bind it to a convenient key
 ;; (define-key org-mode-map (kbd "C-c x") 'org-toggle-checkbox-and-children)
+;; Capture
 
+;; Make C-o a prefix key
+(define-prefix-command 'jg-C-o-map)
+(global-set-key (kbd "C-o") #'jg-C-o-map)
+
+;; Bind C-o c to org-capture
+(define-key jg-C-o-map (kbd "c") #'org-capture)
 ;; Documentation
 
 (with-eval-after-load 'ox-latex
@@ -944,7 +827,6 @@ Open in a new Emacs frame if ARG is non-nil for ID or file links."
                  ("\\subsubsection{%s}" . "\\subsubsection{%s}")
                  ("\\paragraph{%s}" . "\\paragraph{%s}")
                  ("\\subparagraph{%s}" . "\\subparagraph{%s}"))))
-
 (with-eval-after-load 'ox-latex
   (add-to-list 'org-latex-classes
                '("documentation"
@@ -961,7 +843,6 @@ Open in a new Emacs frame if ARG is non-nil for ID or file links."
                  ("\\subsubsection{%s}" . "\\subsubsection{%s}")
                  ("\\paragraph{%s}" . "\\paragraph{%s}")
                  ("\\subparagraph{%s}" . "\\subparagraph{%s}"))))
-
 ;; iCalendar
 
 (setq org-icalendar-with-timestamps 'active)
@@ -975,11 +856,9 @@ Open in a new Emacs frame if ARG is non-nil for ID or file links."
 (setq org-icalendar-timezone "America/Chicago")
 (setq org-agenda-default-appointment-duration 30)
 (setq org-icalendar-combined-agenda-file "/tmp/org.ics")
-
 ;; Properties
 
 (setq org-use-property-inheritance t)
-
 ;; (browse-org-table-urls-by-name)
 
 
@@ -1014,7 +893,6 @@ TABLE-NAME is the name of the table identified as #+name."
                       (start-process "brave-browser" nil "brave-browser" (car url-row))
                       (sit-for 0.5)))  ;; Delay between each URL
                   (message "Opened URLs from table with name %s" table))))))))))
-
 ;; Agenda
 
 (global-set-key "\C-ca" 'org-agenda)
@@ -1058,14 +936,9 @@ TABLE-NAME is the name of the table identified as #+name."
       (if (member tag entry-tags)
           (progn (outline-next-heading) (point))
         nil)))
-
 ;; Needed for no y/n prompt at linked agenda execution
 (setq org-confirm-elisp-link-function nil)
-
 ;; :plain link type
-;; :PROPERTIES:
-;; :ID:       0f1b7abb-233b-4e81-abcb-e424e9b860e4
-;; :END:
 ;; https://claude.ai/chat/c775f0eb-fa91-45b4-82d6-e1a0df8b5526
 ;; #+name: org_plain_links
 
@@ -1103,15 +976,10 @@ TABLE-NAME is the name of the table identified as #+name."
 
 (with-eval-after-load 'org
   (require 'ol-plain))
-
 ;; org-image-actual-width
-;; :PROPERTIES:
-;; :ID:       a760d06b-c2b2-4b54-a0b6-375a13a20538
-;; :END:
 ;; When set as a list as below, 300 pixels will be the default, but another width can be specified through ATTR, e.g. #+ATTR_ORG: :width 800px
 
 (setq org-image-actual-width '(300))
-
 ;; Checkbox intermediate states!
 
 ;; https://claude.ai/chat/81ca7e51-65b4-4c0d-892b-a94861979890
@@ -1244,7 +1112,11 @@ Parent checkboxes with children cannot be directly toggled."
           ;; Update parent checkbox if it exists
           (let ((parent-line (my/find-parent-checkbox)))
             (when parent-line
-              (my/update-parent-checkbox parent-line))))))))
+              (my/update-parent-checkbox parent-line)))
+          ;; Update statistics cookies (e.g., [0%] or [/])
+          (org-update-checkbox-count-maybe)
+          (when (org-at-heading-p)
+            (org-update-parent-todo-statistics)))))))
 
 ;; Alternative function that always cycles through three states
 (defun my/org-cycle-checkbox-three-state ()
@@ -1367,12 +1239,10 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 ;; 2. C-u C-c C-c on checkbox: cycles through [ ] -> [-] -> [X] -> [ ]
 ;; 3. C-c C-x c: always cycles through all three states
 ;; 4. C-c C-c on non-checkbox: normal org-ctrl-c-ctrl-c behavior
-
 ;; Editing text
 
 ;;https://emacs.stackexchange.com/questions/12701/kill-a-line-deletes-the-line-but-leaves-a-blank-newline-character
 (setq kill-whole-line t)
-
 ;; bibtex
 
 (setq reftex-default-bibliography '("~/repos/org/bib.bib"))
@@ -1382,32 +1252,66 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 (setq bibtex-completion-bibliography "~/repos/org/bib.bib"
       bibtex-completion-library-path "~/library"
       bibtex-completion-notes-path "~/repo/org/notes")
-
 ;; get-bibtex-from-doi
-;; :PROPERTIES:
-;; :ID:       f22974c3-ff99-4da0-b253-35ced07588bf
-;; :END:
 
-;; Amazing bibtex from doi fetcher
-;; https://www.anghyflawn.net/blog/2014/emacs-give-a-doi-get-a-bibtex-entry/
-(defun get-bibtex-from-doi (doi)
- "Get a BibTeX entry from the DOI"
- (interactive "MDOI: ")
- (let ((url-mime-accept-string "text/bibliography;style=bibtex"))
-   (with-current-buffer
-     (url-retrieve-synchronously
-       (format "http://dx.doi.org/%s"
-       	(replace-regexp-in-string "http://dx.doi.org/" "" doi)))
-     (switch-to-buffer (current-buffer))
-     (goto-char (point-max))
-     (setq bibtex-entry
-     	  (buffer-substring
-          	(string-match "@" (buffer-string))
-              (point)))
-     (kill-buffer (current-buffer))))
- (insert (decode-coding-string bibtex-entry 'utf-8))
- (bibtex-fill-entry))
+(defun get-bibtex-from-doi (dois-string)
+  "Get BibTeX entry or entries from one or more DOIs and insert them at point.
+You can enter multiple DOIs separated by spaces.
 
+For each DOI, if an entry with the same DOI is already present in
+the current buffer (based on a `doi = {…}` field), that DOI is
+skipped and nothing is inserted for it."
+  (interactive "MDOI (space-separated for multiple): ")
+  ;; Split the minibuffer input on whitespace into a list of DOIs.
+  (let ((dois (split-string dois-string "[ \t\n]+" t)))
+    (dolist (doi dois)
+      ;; Normalize DOI: strip http(s)://(dx.)doi.org/ if present.
+      (let* ((normalized-doi
+              (replace-regexp-in-string
+               "\\`https?://\\(dx\\.\\)?doi\\.org/" "" doi))
+             (doi-field-regexp
+              (concat "doi[[:space:]]*=[[:space:]]*[{\"]"
+                      (regexp-quote normalized-doi)
+                      "[}\"]")))
+        ;; Check whether this DOI already exists in the current buffer.
+        (if (save-excursion
+              (goto-char (point-min))
+              (re-search-forward doi-field-regexp nil t))
+            (message "Entry with DOI %s already exists in this buffer, skipping"
+                     normalized-doi)
+          ;; Otherwise, fetch and insert it.
+          (let ((url-mime-accept-string "text/bibliography;style=bibtex")
+                bibtex-entry
+                entry)
+            ;; Retrieve BibTeX text from dx.doi.org.
+            (let ((buf (url-retrieve-synchronously
+                        (format "http://dx.doi.org/%s" normalized-doi))))
+              (unless buf
+                (error "Could not retrieve DOI %s" normalized-doi))
+              (with-current-buffer buf
+                (goto-char (point-max))
+                (setq bibtex-entry
+                      (buffer-substring
+                       (string-match "@" (buffer-string))
+                       (point))))
+              (kill-buffer buf))
+            ;; Decode and postprocess the BibTeX entry.
+            (setq entry (decode-coding-string bibtex-entry 'utf-8))
+            ;; Build key = first-author-lastname + year, e.g. tomczak2024.
+            (when (string-match "author={\\([^,{}]+\\)" entry)
+              (let* ((first-author (match-string 1 entry))
+                     (lastname (replace-regexp-in-string "[^a-zA-Z]" "" first-author)))
+                (when (string-match "year={\\([0-9]+\\)" entry)
+                  (let* ((year (match-string 1 entry))
+                         (new-key (downcase (concat lastname year))))
+                    (setq entry
+                          (replace-regexp-in-string
+                           "@\\(\\w+\\){[^,]+,"
+                           (format "@\\1{%s," new-key)
+                           entry))))))
+            ;; Insert and format this one entry at point.
+            (insert entry "\n\n")
+            (bibtex-fill-entry)))))))
 ;; python.el
 ;; https://github.com/gregsexton/ob-ipython/issues/28
 
@@ -1417,21 +1321,15 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
   (lambda () (setq indent-tabs-mode nil)))
 
 (setq python-indent-guess-indent-offset-verbose nil)
-
 ;; UTF8
 
 (set-buffer-file-coding-system 'utf-8)
 (prefer-coding-system 'utf-8)
 (set-language-environment "UTF-8")
-
 ;; Alpha key
 
 (global-set-key (kbd "C-x a") (lambda () (interactive) (insert "α")))
-
 ;; Prevent properties drawers in tangle with org comments
-;; :PROPERTIES:
-;; :ID:       aa896a50-db72-45a7-9f41-ed822ffb43e6
-;; :END:
 
 (defun remove-property-drawers-from-tangled-file ()
   "Remove property drawers from the tangled file."
@@ -1443,15 +1341,53 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
         (while (re-search-forward "^;; :PROPERTIES:\n\\(;; :.*\n\\)+;; :END:\n" nil t)
           (replace-match ""))
         (write-file file)))))
-
 (add-hook 'org-babel-post-tangle-hook 'remove-property-drawers-from-tangled-file)
+;; AUCTeX
+;; - [[https://www.gnu.org/software/auctex/manual/auctex.html#Quick-Start][documentation]]
+;;   - [[https://www.gnu.org/software/auctex/manual/auctex/Folding.html][3.2 Folding Macros and Environments]]
+;; - https://stackoverflow.com/questions/7587287/how-do-i-bind-latexmk-to-one-key-in-emacs-and-have-it-show-errors-if-there-are-a
+;; - [[https://www.gnu.org/software/auctex/manual/auctex.html#Quick-Start][Quick start]]
+;; - [[https://tex.stackexchange.com/questions/145318/how-to-make-auctex-not-prompt-me-on-c-c-c-c][stack:tex: How to make auctex not prompt me on C-c C-c]]
+;; - [[https://tex.stackexchange.com/questions/20843/useful-shortcuts-or-key-bindings-or-predefined-commands-for-emacsauctex][stack:tex: Useful shortcuts or key bindings or predefined commands for emacs+AUCTeX]]
+;; - https://piotrkazmierczak.com/2010/emacs-as-the-ultimate-latex-editor/
 
+
+(use-package tex
+  :ensure auctex
+  :config
+  (setenv "PATH" (concat "/usr/local/texlive/2021/bin/x86_64-linux:"
+			 (getenv "PATH")))
+  (add-to-list 'exec-path "/usr/local/texlive/2021/bin/x86_64-linux")
+  (setq TeX-auto-save t
+        TeX-parse-self t
+        TeX-save-query nil
+        TeX-view-program-selection '((output-pdf "Okular"))
+        TeX-view-program-list '(("Okular" "okular %o"))))
+(eval-after-load "tex"
+  '(progn
+     (add-to-list 'TeX-command-list
+       '("LatexMk"
+         "latexmk -pdf -f -pdflatex=pdflatex -shell-escape -interaction=nonstopmode %s"
+         TeX-run-TeX nil t
+         :help "Run LatexMk to build PDF"))
+     (setq TeX-command-default "LatexMk")))
+
+(eval-after-load "tex"
+  '(progn
+     (add-to-list 'TeX-command-list
+       '("LatexMk"
+         "latexmk -pdf -f -pdflatex=pdflatex -shell-escape -interaction=nonstopmode %s"
+         TeX-run-TeX nil t
+         :help "Run LatexMk to build PDF"))
+     (setq TeX-command-default "LatexMk")
+     (setq TeX-view-program-selection '((output-pdf "Okular")))
+     (setq TeX-view-program-list
+           '(("Okular" ("okular --unique %o"))))))
 ;; Use-package
 
 (use-package blacken
   :after elpy
   :hook (elpy-mode . blacken-mode))
-
 ;; citar
 
 ;; Citar configuration for org-cite integration
@@ -1462,7 +1398,7 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 
   :custom
   ;; Bibliography paths
-  (org-cite-global-bibliography '("~/repos/org/bib.bib"))
+  (org-cite-global-bibliography '("/home/jeszyman/repos/org/bib.bib"))
   (citar-bibliography org-cite-global-bibliography)
   (citar-library-paths '("~/data/library/"))   ;; PDF storage
 
@@ -1497,6 +1433,13 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
         ("pdf" . citar-file-open-external)  ;; Use system default for PDFs
         (t . find-file)))                   ;; Default to Emacs for others
 
+
+(require 'oc-biblatex)
+
+(setq org-cite-biblatex-styles
+      '((nil nil "autocite" "autocites")   ;; DEFAULT: [cite:@key] -> \autocite{}
+        ("auto" nil "autocite" "autocites")
+        ("plain" nil "cite" "cites")))     ;; [cite/plain:@key] -> \cite{}
 (use-package citar-embark
   :after citar embark
   :no-require
@@ -1504,33 +1447,54 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 
 (setq citar-at-point-function 'embark-act)
 
+;; https://blog.tecosaur.com/tmio/2021-07-31-citations.html
+;; https://kristofferbalintona.me/posts/202206141852/
+
+
+(setq org-cite-biblatex-styles
+      '(("auto" "autocite" "Autocite")
+        ("plain" "cite" "Cite")))
+
+(setq org-cite-biblatex-default-style "auto")
 ;; Conda
+;; - https://github.com/necaris/conda.el
 
 
-(setenv "WORKON_HOME" "~/miniconda3/envs")
+;; M-x conda-env-activate
 
-;;Anaconda support
-;(require 'conda)
-;(use-package conda)
 
-(custom-set-variables
- '(conda-anaconda-home "~/miniconda3/"))
+;; Remove everything and evaluate this clean version:
+(use-package conda
+  :ensure t
+  :init
+  (setq conda-anaconda-home (expand-file-name "~/miniconda3"))
+  (setq conda-env-home-directory (expand-file-name "~/miniconda3"))
+  :config
+  ;; Tell conda to be quiet
+  (setenv "CONDA_VERBOSITY" "0")
 
-(setq conda-env-home-directory (expand-file-name "~/miniconda3") ;
-      conda-env-subdirectory "envs")
+  ;; Initialize shells
+  (conda-env-initialize-interactive-shells)
+  (conda-env-initialize-eshell)
 
-(setq conda-env-home-directory "~/miniconda3")
-;;get current environment--from environment variable CONDA_DEFAULT_ENV
-;;(conda-env-activate 'getenv "CONDA_DEFAULT_ENV")
-;;(conda-env-autoactivate-mode t)
-(setq-default mode-line-format (cons mode-line-format '(:exec conda-env-current-name)))
+  ;; DO NOT enable autoactivate
+  (conda-env-autoactivate-mode -1))
 
-(setenv "WORKON_HOME" "~/miniconda3/envs")
-(pyvenv-mode 1)
+;; Silence the elisp-level messages
+(with-eval-after-load 'conda
+  (defun conda--message (&rest _args)
+    "Suppress all conda messages."
+    nil))
+(defun my/ess-use-conda-r ()
+  "Set `inferior-ess-r-program` to Conda's R if a Conda env is active."
+  (when (and (boundp 'conda-env-current-path)
+             conda-env-current-path
+             (file-exists-p (expand-file-name "bin/R" conda-env-current-path)))
+    (setq inferior-ess-r-program
+          (expand-file-name "bin/R" conda-env-current-path))))
 
-(setenv "CONDA_DEFAULT_ENV" "basecamp")
-(getenv "CONDA_DEFAULT_ENV")
-
+(with-eval-after-load 'ess-r-mode
+  (add-hook 'ess-r-mode-hook #'my/ess-use-conda-r))
 ;; Corfu
 
 ;; Corfu for completion UI
@@ -1548,7 +1512,6 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
     (define-key flyspell-mode-map (kbd "C-M-i") nil)
     (define-key flyspell-mode-map (kbd "M-TAB") nil))
   (global-set-key (kbd "M-TAB") #'completion-at-point)) ;; Bind `M-TAB` globally
-
 ;; Dabbrev
 
 ;; Dynamic abbreviation completion
@@ -1557,7 +1520,6 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
   :config
   (setq dabbrev-case-fold-search t) ;; Case-insensitive search
   (setq dabbrev-upcase-means-case-search t)) ;; Respect case for uppercase words
-
 ;; Eglot
 
 (use-package eglot
@@ -1573,11 +1535,9 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 
 (with-eval-after-load 'eglot
   (define-key eglot-mode-map (kbd "C-c <tab>") #'company-complete))
-
 ;; eglot example
 (add-to-list 'eglot-server-programs
              '((yaml-mode yaml-ts-mode) . ("yaml-language-server" "--stdio")))
-
 ;; Elpy
 
 ;; - Prereqs: conda activate base; pip install python-lsp-server[all]
@@ -1648,37 +1608,50 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
   (when (require 'flycheck nil t)
     (setq elpy-modules (delq 'elpy-module-flymake elpy-modules))
     (add-hook 'elpy-mode-hook #'flycheck-mode)))
+;; ESS
 
-;; Use-package
+;; - no python support- https://github.com/emacs-ess/ESS/issues/910
+;; - ess-remote to docker R
+;; https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute_it/
+;; - [[id:3BC3B329-C75B-461C-A4BD-E565C2046424][My ESS config]]
+;; - for ESS- https://github.com/emacs-ess/ESS/issues/144
+;; - Emacs Speaks Statistics (ess)
+;;   - https://github.com/emacs-ess/ESS
+;;   - https://ess.r-project.org/
+;;   - [[http://ess.r-project.org/Manual/ess.html][documentation]]
+;; - ess docker solutions
+;;   - https://gtown-ds.netlify.app/2017/08/16/docker-emacs/
+;; - http://ess.r-project.org/Manual/ess.html#Activating-and-Loading-ESS
+;; - cite:rossini2016
+;; - https://stat.ethz.ch/pipermail/ess-help/2010-January/005822.html
+;; - https://github.com/emacs-lsp/lsp-mode/issues/1383
+
+
 
 (use-package ess
+  :ensure t
   :init
-  (require 'ess-site)
-  :config
   (setq ess-ask-for-ess-directory nil
-	ess-help-own-frame 'one
-	ess-indent-with-fancy-comments nil
-	ess-use-auto-complete t
-	ess-use-company t
-	inferior-ess-own-frame t
-	inferior-ess-same-window nil)
-  (define-key ess-mode-map (kbd "C-c C-n") 'ess-eval-line-and-step)
-  :mode (
-         ("/R/.*\\.q\\'"       . R-mode)
-         ("\\.[rR]\\'"         . R-mode)
-         ("\\.[rR]profile\\'"  . R-mode)
-         ("NAMESPACE\\'"       . R-mode)
-         ("CITATION\\'"        . R-mode)
+        ess-help-own-frame 'one
+        ess-indent-with-fancy-comments nil
+        ess-use-auto-complete t
+        ess-use-company t
+        inferior-ess-own-frame t
+        inferior-ess-same-window nil)
+  :mode (("/R/.*\\.q\\'"       . ess-r-mode)
+         ("\\.[rR]\\'"         . ess-r-mode)
+         ("\\.[rR]profile\\'"  . ess-r-mode)
+         ("NAMESPACE\\'"       . ess-r-mode)
+         ("CITATION\\'"        . ess-r-mode)
          ("\\.[Rr]out"         . R-transcript-mode)
-         ("\\.Rd\\'"           . Rd-mode)
-         ))
-
-;; Syntax highlighting
+         ("\\.Rd\\'"           . Rd-mode))
+  :hook
+  (ess-r-mode . (lambda ()
+                 (local-set-key (kbd "C-c C-n") #'ess-eval-line-and-step))))
 
 (custom-set-variables
  '(ess-R-font-lock-keywords
-   (quote
-    ((ess-R-fl-keyword:modifiers . t)
+   '((ess-R-fl-keyword:modifiers . t)
      (ess-R-fl-keyword:fun-defs . t)
      (ess-R-fl-keyword:keywords . t)
      (ess-R-fl-keyword:assign-ops . t)
@@ -1689,46 +1662,32 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
      (ess-fl-keyword:delimiters . t)
      (ess-fl-keyword:= . t)
      (ess-R-fl-keyword:F&T . t)
-     (ess-R-fl-keyword:%op% . t)))))
+     (ess-R-fl-keyword:%op% . t))))
+;; exec-path-from-shell
+;; - Ensures parts of Emacs inherit shell PATH when Emacs is runnng as a daemon
 
-;; ESS (Emacs Speaks Statistics)
-;; :PROPERTIES:
-;; :ID:       147724ad-7598-4be6-b8a9-725a19eb39fe
-;; :END:
-;; - ESS Frames setup
-
-;;;
-(setq inferior-ess-own-frame t)
-(setq inferior-ess-same-window nil)
-;;;
-;;;;;create a new frame for each help instance
-;;;
-(setq ess-help-own-frame t)
-;;;;;If you want all help
-;;;;; buffers to go into one frame do:
-;;;
-(setq ess-help-own-frame 'one)
-
-(setq ess-ask-for-ess-directory nil)
-(setq ess-local-process-name "R")
-
-;; Use-package
-
+;; -----------------------------------------------------------------------------
+;; Shell environment integration
+;; -----------------------------------------------------------------------------
+;; GUI Emacs doesn't inherit shell environment variables since it's not
+;; launched from an interactive shell. exec-path-from-shell fixes this by
+;; spawning a shell and importing specified variables.
+;;
+;; Variables imported:
+;;   - PATH, MANPATH (defaults)
+;;   - TEXINPUTS: LaTeX package search path (for ~/repos/latex/sty)
+;; -----------------------------------------------------------------------------
 (use-package exec-path-from-shell
+  :ensure t
   :config
-  (when (daemonp)
-    (exec-path-from-shell-initialize)))
-
+  (add-to-list 'exec-path-from-shell-variables "TEXINPUTS")
+  (exec-path-from-shell-initialize))
 ;; expand-region
-;; :PROPERTIES:
-;; :ID:       aa87da56-3f24-475c-adbe-d4d99a7376cc
-;; :END:
 ;; https://github.com/magnars/expand-region.el
 
 (use-package expand-region)
 (require 'expand-region)
 (global-set-key (kbd "C-=") 'er/expand-region)
-
 ;; Use-package
 
 (use-package flycheck
@@ -1738,7 +1697,6 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
   (defun my-org-mode-flycheck-hook ()
     (when (derived-mode-p 'prog-mode) ;; Check if it's a programming mode
       (flycheck-mode 1))))
-
 ;; Helm
 ;; - [[id:96c0f509-c06b-4e48-8f28-019cd2ca1a38][Helm reference header]]
 
@@ -1749,7 +1707,6 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
   (setq
    helm-completion-style 'emacs
    helm-move-to-line-cycle-in-source nil)) ;; allow C-n through different sections
-
 ;; helm-org
 
 
@@ -1766,12 +1723,10 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
   (define-key global-map (kbd "C-$") 'org-mark-ring-goto)
   (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings)
   (setq helm-org-ignore-autosaves t)
-
 (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings)
 
 (with-eval-after-load 'org
   (define-key org-mode-map (kbd "C-c C-j") 'helm-org-agenda-files-headings))
-
 ;;;; Yiming Chen–style org-refile workflow
 
 ;; 1) Targets = all currently opened .org buffers
@@ -1806,7 +1761,6 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 
 ;; Suggested keys (optional)
 ;; C-c C-w is org’s default refile; bind jump to C-c j
-
 ;; helm-org-rifle
 
 (use-package helm-org-rifle
@@ -1815,20 +1769,14 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 	  helm-org-rifle-show-full-contents nil)
     (require 'helm)
     (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings))
-
 ;; Use-pacakge
 
 (use-package htmlize)
-
 ;; Use-package
 
 (use-package ivy
   :diminish)
-
 ;; key-chord
-;; :PROPERTIES:
-;; :ID:       dab8038b-67bd-413e-88d5-25d168f29e9b
-;; :END:
 
 ;;Exit insert mode by pressing j and then j quickly
 ;; https://stackoverflow.com/questions/10569165/how-to-map-jj-to-esc-in-emacs-evil-mode
@@ -1837,15 +1785,13 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 ;(use-package key-chord
 ;  :ensure t)
 (key-chord-mode 1)
-(setq key-chord-two-keys-delay 0.2)
+(setq key-chord-two-keys-delay 0.01)
 ;;(key-chord-define evil-insert-state-map "jj" 'evil-normal-state)
-
 
 
 ;; - [[https://github.com/emacsorphanage/key-chord][repo]]
 
 (key-chord-define-global ",." "<>\C-b")
-
 
 ;; <> <> ,.<sf>
 
@@ -1860,12 +1806,10 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 
 
 (setq key-chord-typing-detection t)
-
 ;; Magit
 ;; https://www.reddit.com/r/emacs/comments/1mq2hww/why_do_i_find_magit_so_hard_to_use/
 
 (use-package magit)
-
 ;; marginalia
 
 (use-package marginalia
@@ -1877,44 +1821,41 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
   :init
   (marginalia-mode)
   :ensure t)
-
 ;; mark-whole-word
 
-;; https://emacs.stackexchange.com/questions/35069/best-way-to-select-a-word
-(defun mark-whole-word (&optional arg allow-extend)
-  "Like `mark-word', but selects whole words and skips over whitespace.
-If you use a negative prefix arg then select words backward.
-Otherwise select them forward.
+  ;; https://emacs.stackexchange.com/questions/35069/best-way-to-select-a-word
+  (defun mark-whole-word (&optional arg allow-extend)
+    "Like `mark-word', but selects whole words and skips over whitespace.
+  If you use a negative prefix arg then select words backward.
+  Otherwise select them forward.
 
-If cursor starts in the middle of word then select that whole word.
+  If cursor starts in the middle of word then select that whole word.
 
-If there is whitespace between the initial cursor position and the
-first word (in the selection direction), it is skipped (not selected).
+  If there is whitespace between the initial cursor position and the
+  first word (in the selection direction), it is skipped (not selected).
 
-If the command is repeated or the mark is active, select the next NUM
-words, where NUM is the numeric prefix argument.  (Negative NUM
-selects backward.)"
-  (interactive "P\np")
-  (let ((num  (prefix-numeric-value arg)))
-    (unless (eq last-command this-command)
-      (if (natnump num)
-	  (skip-syntax-forward "\\s-")
-	(skip-syntax-backward "\\s-")))
-    (unless (or (eq last-command this-command)
-		(if (natnump num)
-		    (looking-at "\\b")
-		  (looking-back "\\b")))
-      (if (natnump num)
-	  (left-word)
-	(right-word)))
-    (mark-word arg allow-extend)))
+  If the command is repeated or the mark is active, select the next NUM
+  words, where NUM is the numeric prefix argument.  (Negative NUM
+  selects backward.)"
+    (interactive "P\np")
+    (let ((num  (prefix-numeric-value arg)))
+      (unless (eq last-command this-command)
+	(if (natnump num)
+	    (skip-syntax-forward "\\s-")
+	  (skip-syntax-backward "\\s-")))
+      (unless (or (eq last-command this-command)
+		  (if (natnump num)
+		      (looking-at "\\b")
+		    (looking-back "\\b")))
+	(if (natnump num)
+	    (left-word)
+	  (right-word)))
+      (mark-word arg allow-extend)))
 
-(global-set-key (kbd "C-c C-SPC") 'mark-whole-word)
-
+  (global-set-key (kbd "C-c C-SPC") 'mark-whole-word)
 ;; Use-package
 
 (use-package native-complete)
-
 ;; open-chatgtp-query-in-new-browser-window
 
 ;; - Make a ChatGPT query from emacs
@@ -1931,8 +1872,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
     (start-process "brave-browser" nil "brave-browser" "--new-window" url)))
 
 (global-set-key (kbd "C-c C-g") 'open-chatgpt-query-in-new-browser-window)
-
-;; Use-package
+;; orderless
 
 (use-package orderless
   :init
@@ -1942,27 +1882,24 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   (setq completion-styles '(orderless basic)
         completion-category-defaults nil
         completion-category-overrides '((file (styles partial-completion)))))
-
 ;; org-edna
 
 (use-package org-edna
   :ensure t
   :config
   (org-edna-mode 1))
-
 ;; Use-package
 
 (use-package org-contrib
   :ensure t)
-
 (require 'org-checklist)
 (require 'ox-extra)
 (ox-extras-activate '(ignore-headlines))
-
 ;; org-ql
+;; - org-ql to pull time logs as tabular data exports [[https://claude.ai/chat/c4df90a0-faa0-459e-99a5-cd8d8e3945a6]]
+
 
 (use-package org-ql)
-
 ;; org-ros
 ;; https://github.com/LionyxML/ros
 ;; https://chatgpt.com/c/6841f0e8-c080-8005-a3ed-fc6d67a76e19
@@ -2002,7 +1939,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
             (org-display-inline-images t t))
           (message "File created and linked..."))
       (message "You're in a not saved buffer! Save it first!"))))
-
 ;; ox-pandoc
 
 (use-package ox-pandoc
@@ -2010,19 +1946,15 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   :config
   (setq org-pandoc-options-for-docx '((standalone . nil)))
   )
-
 ;; Python
-
 
 
 ;; Use-package
 
 (use-package savehist)
-
 ;; snakemake-mode
 
 (use-package snakemake-mode)
-
 (defcustom snakemake-indent-field-offset nil
   "Offset for field indentation."
   :type 'integer)
@@ -2030,7 +1962,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 (defcustom snakemake-indent-value-offset nil
   "Offset for field values that the line below the field key."
   :type 'integer)
-
 ;; Tree-sitter
 
 ;; Install and configure tree-sitter
@@ -2054,17 +1985,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
     (tree-sitter-mode -1)))
 
 (add-hook 'tree-sitter-mode-hook #'disable-tree-sitter-for-org-mode)
-
-;; vc-use-package
-
-(unless (package-installed-p 'vc-use-package)
-  (package-vc-install "https://github.com/slotThe/vc-use-package"))
-(require 'vc-use-package)
-
-;; Use-package
-
-(use-package vertico)
-
 ;; Use `consult-completion-in-region' if Vertico is enabled.
 
 ;; Otherwise use the default `completion--in-region' function.
@@ -2074,60 +1994,37 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
                    #'consult-completion-in-region
                  #'completion--in-region)
                args)))
-
 ;; other
-
-;; A few more useful configurations...
-(use-package emacs
-  :init
-  ;; Add prompt indicator to `completing-read-multiple'.
-  ;; We display [CRM<separator>], e.g., [CRM,] if the separator is a comma.
-  (defun crm-indicator (args)
-    (cons (format "[CRM%s] %s"
-                  (replace-regexp-in-string
-                   "\\`\\[.*?]\\*\\|\\[.*?]\\*\\'" ""
-                   crm-separator)
-                  (car args))
-          (cdr args)))
-  (advice-add #'completing-read-multiple :filter-args #'crm-indicator)
-
-  ;; Do not allow the cursor in the minibuffer prompt
-  (setq minibuffer-prompt-properties
-        '(read-only t cursor-intangible t face minibuffer-prompt))
-  (add-hook 'minibuffer-setup-hook #'cursor-intangible-mode)
-
-  ;; Emacs 28: Hide commands in M-x which do not work in the current mode.
-  ;; Vertico commands are hidden in normal buffers.
-  ;; (setq read-extended-command-predicate
-  ;;       #'command-completion-default-include-p)
-
-  ;; Enable recursive minibuffers
-  (setq enable-recursive-minibuffers t))
-
-(define-key vertico-map (kbd "TAB") #'minibuffer-complete)
-(define-key vertico-map (kbd "C-n") #'vertico-next)
-(define-key vertico-map (kbd "C-p") #'vertico-previous)
 
 ;; Ensure you have these packages installed
 (use-package vertico
   :ensure t
-  :init
-  (vertico-mode))
+  :config
+  (vertico-mode)
+  ;; Performance improvements
+  (setq vertico-count 10)
+  (setq vertico-cycle nil)
+  (setq vertico-preselect 'first))
 
+;; Only show relevant commands in M-x
+(setq read-extended-command-predicate
+      #'command-completion-default-include-p)
+
+;; Optimize orderless for better performance
+(use-package orderless
+  :init
+  (setq completion-styles '(orderless basic)
+        completion-category-defaults nil
+        completion-category-overrides '((file (styles partial-completion))))
+  :config
+  ;; Use faster matching styles
+  (setq orderless-matching-styles '(orderless-literal orderless-regexp)))
 (use-package marginalia
   :ensure t
   :after vertico
   :init
   (marginalia-mode))
 
-(use-package orderless
-  :ensure t
-  :init
-  ;; Customize completion styles to include orderless
-  (setq completion-styles '(orderless basic))
-  ;; Optionally configure completion categories
-  (setq completion-category-defaults nil)
-  (setq completion-category-overrides '((file (styles basic partial-completion)))))
 
 (use-package savehist
   :ensure t
@@ -2167,7 +2064,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 (define-key vertico-map (kbd "TAB") #'minibuffer-complete)
 (define-key vertico-map (kbd "C-n") #'vertico-next)
 (define-key vertico-map (kbd "C-p") #'vertico-previous)
-
 ;; vterm
 ;; - exit nano w/ Esc Esc X https://stackoverflow.com/questions/66771206/how-do-i-exit-nano-in-emacs-26-3
 ;; - https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute_it/
@@ -2184,7 +2080,12 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   (setq vterm-max-scrollback 100000)
   (custom-set-faces
    '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC"))))))
+(with-eval-after-load 'vterm
+  ;; Paste with C-v in vterm buffers
+  (define-key vterm-mode-map (kbd "C-v") #'vterm-yank)
 
+  ;; Optionally also support C-S-v like many terminals
+  (define-key vterm-mode-map (kbd "C-S-v") #'vterm-yank))
 ;; Use-package
 
 (use-package web-mode
@@ -2196,11 +2097,9 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
          "\\.mustache\\'"
          "\\.djhtml\\'"
          "\\.html?\\'"))
-
 ;; yaml
 
 (use-package yaml-mode)
-
 ;; Use-package
 
 (use-package yasnippet
@@ -2216,7 +2115,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   :config
   (yas-global-mode 1) ; Enable yasnippet globally
   (define-key yas-minor-mode-map (kbd "<C-tab>") 'yas-expand))
-
 ;; (use-package yasnippet
 ;;   :init
 ;;   ;; Dynamically add subdirectories in ~/.emacs.d/snippets to yas-snippet-dirs
@@ -2225,21 +2123,15 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 ;;    :config
 ;;   (yas-global-mode 1) ; Enable yasnippet globally
 ;;   (define-key yas-minor-mode-map (kbd "<C-tab>") 'yas-expand))
-
 (defun my-org-mode-hook ()
   (setq-local yas-buffer-local-condition
               '(not (org-in-src-block-p t))))
 (add-hook 'org-mode-hook #'my-org-mode-hook)
-
 ;; Prevent company mode during expansions
 
 (add-hook 'yas-before-expand-snippet-hook (lambda () (setq-local company-backends nil)))
 (add-hook 'yas-after-exit-snippet-hook    (lambda () (kill-local-variable 'company-backends)))
-
 ;; Provide a setting to auto-expand snippets
-;; :PROPERTIES:
-;; :ID:       485a4034-bae9-4d46-bed1-e21bb23e258c
-;; :END:
 
 (setq require-final-newline nil)
 (defun yas-auto-expand ()
@@ -2255,45 +2147,9 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
       (yas-expand))))
 
 (add-hook 'post-command-hook #'my-yas-try-expanding-auto-snippets)
+;; org-repeat-by-cron
 
-;; tramp
-;; https://www.reddit.com/r/emacs/comments/oh36yi/company_and_companyshell_super_slow_over_tramp/
-;; https://willschenk.com/articles/2020/tramp_tricks/
-
-(setq tramp-default-method "ssh")
-
-;; https://willschenk.com/articles/2020/tramp_tricks/
-;; Open files in Docker containers like so: /docker:drunk_bardeen:/etc/passwd
-;; (push
-;;  (cons
-;;   "docker"
-;;   '((tramp-login-program "docker")
-;;     (tramp-login-args (("exec" "-it") ("%h") ("/bin/bash")))
-;;     (tramp-remote-shell "/bin/sh")
-;;     (tramp-remote-shell-args ("-i") ("-c"))))
-;;  tramp-methods)
-
-(defadvice tramp-completion-handle-file-name-all-completions
-  (around dotemacs-completion-docker activate)
-  "(tramp-completion-handle-file-name-all-completions \"\" \"/docker:\" returns
-    a list of active Docker container names, followed by colons."
-  (if (equal (ad-get-arg 1) "/docker:")
-      (let* ((dockernames-raw (shell-command-to-string "docker ps | awk '$NF != \"NAMES\" { print $NF \":\" }'"))
-             (dockernames (cl-remove-if-not
-                           #'(lambda (dockerline) (string-match ":$" dockerline))
-                           (split-string dockernames-raw "\n"))))
-        (setq ad-return-value dockernames))
-    ad-do-it))
-
-
-
-;; https://emacs.stackexchange.com/questions/29286/tramp-unable-to-open-some-files
-
-(setq tramp-copy-size-limit 10000000)
-
-
-;; https://www.reddit.com/r/emacs/comments/ukyeb6/how_to_disable_emacs_from_trying_to_connect_to_a/
-
-;;(setq tramp-ssh-controlmaster-options
-;;      "-o ControlMaster=auto -o ControlPath='tramp.%%C' -o ControlPersist=no")
-(require 'tramp)
+(use-package org-repeat-by-cron
+  :ensure t  ; If the file is already in your load-path
+  :config
+  (global-org-repeat-by-cron-mode))

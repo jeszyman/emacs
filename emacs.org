@@ -3,46 +3,411 @@
 :ID:       a49abc44-8e71-4a1a-bd35-a77849427c94
 :END:
 
-** [[id:d7d54139-64d0-4cfe-ab3a-879b3617b226][Org-mode]]
-** Local YAS
-:PROPERTIES:
-:ID:       8ae59292-b129-4eca-995b-4d275fced3f7
-:END:
-****** yas.org
-:PROPERTIES:
-:ID:       9c719656-c057-46b2-8ee8-0017fc79d4db
-:END:
-#+begin_src bash .tangle ~/repos/basecamp/emacs/public_yasnippets/org-mode/yas.org
-# -*. mode: snippet -*.
-# key: yas..rg		     .			     .
-# expand-en.. ((yas-indent-line 'none.)			 .
-# --	    .	    ...				.
-`(make-string (o....urrent-level) ?*)` $2 :yas:
-,#+begin_src b... :comment no :tangle ~/repos/baseca p/emacs/publi._yasnippets/${1:org-mode}/$2
-# -*- mode:   .ppet -*-							.
-# key: ${2:  KEY>}							      .
-# expand-env: ((yas-indent-line 'none))					       .
-# --										    .  ..
-$0
-,#+end_src
+#+begin_src emacs-lisp
+  (defadvice revert-buffer (around org-preserve-visibility activate)
+    (if (eq major-mode 'org-mode)                                                                             (org-save-outline-visibility t ad-do-it)
+      ad-do-it))
+
 #+end_src
 
-****** 80
-:PROPERTIES:
-:ID:       185cf551-09ec-4f26-93d6-4c8444fe492b
-:END:
-#+begin_src bash :comment no
-# -*- mode: snippet -*-
-# name: 80
-# key: 80
-# --
-;;;;;;;;;1;;;;;;;;;2;;;;;;;;;3;;;;;;;;;4;;;;;;;;;5;;;;;;;;;6;;;;;;;;;7;;;;;;;;;8
+
+#+begin_src emacs-lisp
+;; FIRST: Remove any existing problematic advice
+(when (fboundp 'ad-remove-advice)
+  (ad-remove-advice 'org-babel-tangle 'before 'make-files-writable)
+  (ad-remove-advice 'org-babel-tangle-single-block 'around 'force-writable)
+  (ad-activate 'org-babel-tangle)
+  (ad-activate 'org-babel-tangle-single-block))
+
+;; Disable all confirmation prompts
+(setq org-confirm-babel-evaluate nil)
+
+;; Clean approach: Override the tangle function completely
+(defun my-org-babel-tangle-force (&optional arg target-file lang)
+  "Tangle code blocks, making files writable without prompts."
+  (interactive "P")
+  (run-hooks 'org-babel-pre-tangle-hook)
+  ;; Get list of files that will be tangled to
+  (let ((tangle-files '()))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward org-babel-src-block-regexp nil t)
+        (let* ((info (org-babel-get-src-block-info 'light))
+               (params (nth 2 info))
+               (file (cdr (assq :tangle params))))
+          (when (and file
+                     (not (string= file "no"))
+                     (not (string= file "yes")))
+            (add-to-list 'tangle-files (expand-file-name file))))))
+
+    ;; Make all target files writable
+    (dolist (file tangle-files)
+      (when (file-exists-p file)
+        (set-file-modes file #o644)))
+
+    ;; Now do the actual tangling with original function
+    (let ((org-confirm-babel-evaluate nil))
+      (org-babel-tangle arg target-file lang))))
+
+;; Replace the default tangle command
+(define-key org-mode-map (kbd "C-c C-v t") 'my-org-babel-tangle-force)
+
+;; Alternative: Just override file permissions globally during tangle
+(defun my-simple-force-tangle ()
+  "Simple force tangle - make files writable then tangle."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (while (re-search-forward "^[ \t]*#\\+begin_src" nil t)
+      (when-let* ((element (org-element-at-point))
+                  (params (org-element-property :parameters element))
+                  (tangle-param (when (string-match ":tangle \\([^[:space:]]+\\)" (or params ""))
+                                 (match-string 1 params)))
+                  (file (when (and tangle-param
+                                   (not (string= tangle-param "no"))
+                                   (not (string= tangle-param "yes")))
+                         (expand-file-name tangle-param))))
+        (when (and file (file-exists-p file))
+          (set-file-modes file #o644)))))
+  (let ((org-confirm-babel-evaluate nil))
+    (org-babel-tangle)))
+
+;; Bind simple version as backup
+(define-key org-mode-map (kbd "C-c C-v f") 'my-simple-force-tangle)
 #+end_src
-** Org-mode and Emacs cookbook                                     :cookbook:
+
+#+begin_src emacs-lisp
+(remove-hook 'before-save-hook #'org-table-recalculate-buffer-tables)
+
+#+end_src
+
+- in dired, get files to open in apps they woudl by command line
+- no collapse on revert?
+** Emacs and Org-mode and Cookbook                                 :cookbook:
 :PROPERTIES:
 :ID:       88337952-4c36-402e-882f-6ccd6c7ff6a1
+:EXPORT_TITLE: Emacs and Org-mode Cookbook
 :export_file_name: /tmp/test
+:EXPORT_HTML_HEAD: <link rel="stylesheet" type="text/css" href="/tmp/cookbook.css" />
 :END:
+*** Org-ql for structured data
+**** Org-QL Structured Data Query Example
+:PROPERTIES:
+:ID: 4751fbea-a9f9-4e8e-9c76-b9df2cfd1d97
+:END:
+
+This section demonstrates querying structured org data using =org-ql=. The code block below queries all subheadings under this header and extracts various org syntax elements into a table.
+
+#+begin_src emacs-lisp :results replace value table :exports both
+;; ---------------------------------------------------------------------
+;; org-ql query: Extract structured data from org subheadings
+;; ---------------------------------------------------------------------
+;; This query demonstrates:
+;; - Restricting search to descendants of a specific org-id
+;; - Extracting TODO state, tags, properties, and clocked time
+;; - Combining multiple conditions with `and`/`or`
+;; - Sorting results
+;; - Formatting output as an org table with header row
+;; ---------------------------------------------------------------------
+
+(let* (
+       ;; ------------------------------------------------------------------
+       ;; TARGET-ID: The org-id of the parent heading whose descendants
+       ;; we want to query. Change this to match your use case.
+       ;; ------------------------------------------------------------------
+       (target-id "17560465-aec8-4ab9-ac0b-fbd5e6ce62a1")
+
+       ;; ------------------------------------------------------------------
+       ;; Get the parent heading text by navigating to the ID.
+       ;; We use `org-id-goto` which reliably finds the heading,
+       ;; then extract the heading text for use in the ancestor query.
+       ;; `save-excursion` preserves our original position.
+       ;; ------------------------------------------------------------------
+       (parent-heading
+        (save-excursion
+          (org-id-goto target-id)
+          (org-get-heading t t t t)))
+
+       ;; ------------------------------------------------------------------
+       ;; Get the file path containing the target ID.
+       ;; ------------------------------------------------------------------
+       (target-file (car (org-id-find target-id)))
+
+       ;; ------------------------------------------------------------------
+       ;; HEADER-ROW: Column names for our output table.
+       ;; ------------------------------------------------------------------
+       (header-row '("Heading" "TODO" "Tags" "Priority" "Assignee"
+                     "Category" "Clocked" "Closed"))
+
+       ;; ------------------------------------------------------------------
+       ;; Pre-compute clock sums for the entire file. This places an
+       ;; `:org-clock-minutes` text property on each heading STRING,
+       ;; which we can then retrieve in the :select clause.
+       ;; Note: The property is on the string returned by `org-get-heading`,
+       ;; not on the buffer position.
+       ;; ------------------------------------------------------------------
+       (_ (org-clock-sum))
+
+       ;; ------------------------------------------------------------------
+       ;; QUERY-RESULTS: Run the org-ql query.
+       ;; ------------------------------------------------------------------
+       (query-results
+        (org-ql-query
+
+         ;; ----------------------------------------------------------------
+         ;; :from - Specify which file(s) or buffer(s) to search.
+         ;; Can be a file path, buffer, or list of either.
+         ;; ----------------------------------------------------------------
+         :from target-file
+
+         ;; ----------------------------------------------------------------
+         ;; :where - The query predicate. This determines which headings
+         ;; are matched. Here we use `and` to combine conditions:
+         ;;
+         ;; 1. (ancestors (heading ...)) - Match headings that are
+         ;;    descendants of our target heading by checking if the
+         ;;    target's heading text appears in the ancestor chain.
+         ;;
+         ;; 2. (not (property "ID" ...)) - Exclude the parent heading
+         ;;    itself (we only want its children, not the container).
+         ;;
+         ;; 3. (or (todo) (done)) - Match headings with any TODO keyword,
+         ;;    whether incomplete or complete. Omit this to match all
+         ;;    headings.
+         ;; ----------------------------------------------------------------
+         :where `(and
+                  ;; Restrict to descendants of the target heading
+                  (ancestors (heading ,parent-heading))
+                  ;; Exclude the parent heading itself
+                  (not (property "ID" ,target-id))
+                  ;; Match any TODO state (active or done)
+                  (or (todo) (done)))
+
+         ;; ----------------------------------------------------------------
+         ;; :select - Transform each matched heading into a row of data.
+         ;; This form is evaluated with point at each matched heading.
+         ;; We use various org functions to extract data:
+         ;;
+         ;; - (org-get-heading t t t t) - Get heading text without TODO,
+         ;;   tags, priority, or statistics cookies. The four `t` args
+         ;;   suppress: TODO keyword, priority, tags, statistics.
+         ;;
+         ;; - (org-get-todo-state) - Get the TODO keyword as a string,
+         ;;   e.g., "TODO", "DONE", or nil if none.
+         ;;
+         ;; - (org-get-tags) - Get tags as a list of strings. We join
+         ;;   them with ":" for display.
+         ;;
+         ;; - (org-entry-get nil "PRIORITY") - Get the priority cookie,
+         ;;   e.g., "A", "B", "C", or nil.
+         ;;
+         ;; - (org-entry-get nil "PROPERTY") - Get any property value.
+         ;;
+         ;; - (get-text-property 0 :org-clock-minutes heading) - Retrieve
+         ;;   the clocked time from the heading string's text properties.
+         ;;   This is set by `org-clock-sum` called earlier.
+         ;;
+         ;; - (org-entry-get nil "CLOSED") - Get the CLOSED timestamp
+         ;;   when a heading was marked done.
+         ;; ----------------------------------------------------------------
+         :select '(let ((heading (org-get-heading t t t t)))
+                    (list
+                     ;; Heading text (without TODO, priority, tags)
+                     heading
+
+                     ;; TODO state (e.g., "TODO", "INPROCESS", "DONE")
+                     (or (org-get-todo-state) "")
+
+                     ;; Tags joined with colons (e.g., ":work:urgent:")
+                     ;; nil = current heading, t = local tags only
+                     (let ((tags (org-get-tags nil t)))
+                       (if tags
+                           (concat ":" (mapconcat #'identity tags ":") ":")
+                         ""))
+
+                     ;; Priority (e.g., "A", "B", "C", or empty)
+                     (or (org-entry-get nil "PRIORITY") "")
+
+                     ;; Custom property: ASSIGNEE
+                     (or (org-entry-get nil "ASSIGNEE") "")
+
+                     ;; Custom property: CATEGORY
+                     (or (org-entry-get nil "CATEGORY") "")
+
+                     ;; Total clocked time formatted as H:MM
+                     ;; Retrieved from text property on the heading string
+                     (let ((minutes (get-text-property 0 :org-clock-minutes
+                                                       heading)))
+                       (if (and minutes (> minutes 0))
+                           (format "%d:%02d" (/ minutes 60) (mod minutes 60))
+                         ""))
+
+                     ;; CLOSED timestamp (when item was marked done)
+                     (or (org-entry-get nil "CLOSED") "")))
+
+         ;; ----------------------------------------------------------------
+         ;; :order-by - Sort the results. Options include:
+         ;; - `priority` - Sort by priority (A before B before C)
+         ;; - `todo` - Sort by TODO keyword order
+         ;; - `date` - Sort by date (scheduled, deadline, etc.)
+         ;; - `deadline` - Sort by deadline specifically
+         ;; - `scheduled` - Sort by scheduled date
+         ;; - `reverse` - Reverse the sort order
+         ;; - A custom function for complex sorting
+         ;;
+         ;; Here we sort by priority first.
+         ;; ----------------------------------------------------------------
+         :order-by 'priority)))
+
+  ;; ----------------------------------------------------------------------
+  ;; BUILD THE FINAL TABLE
+  ;; Combine header row, hline separator, and query results.
+  ;; The `hline` symbol tells org-mode to render a horizontal divider.
+  ;; ----------------------------------------------------------------------
+  (cons header-row
+        (cons 'hline
+              query-results)))
+#+end_src
+
+#+RESULTS:
+| Heading                                       | TODO      | Tags                    | Priority | Assignee      | Category       | Clocked | Closed                 |
+|-----------------------------------------------+-----------+-------------------------+----------+---------------+----------------+---------+------------------------|
+| Implement user authentication                 | TODO      | :backend:security:      | A        | Alice         | Backend        |    3:45 |                        |
+| Design landing page mockup                    | INPROCESS | :frontend:design:       | B        | Bob           | Frontend       |    2:00 |                        |
+| Set up CI/CD pipeline                         | DONE      | :devops:                | A        | Carol         | Infrastructure |    2:45 | [2025-01-03 Fri 16:45] |
+| Update dependencies                           | DONE      | :maintenance:           | Y        | Dave          | Backend        |    0:30 | [2025-01-02 Thu 09:30] |
+| Review pull request from external contributor | WAITING   | :review:                | B        | Carol         | Collaboration  |         |                        |
+| Old feature implementation                    | CANCELED  | :deprecated:            | Y        | Bob           | Legacy         |         | [2025-01-01 Wed 08:00] |
+| Server migration planning                     | DELEGATED | :devops:infrastructure: | B        | External Team | Operations     |    1:00 |                        |
+
+*** Agenda views
+- For multiple agenda views, use "sticky agenda views". See [[https://orgmode.org/manual/Agenda-Dispatcher.html][Org manual]].
+  #+begin_src emacs-lisp
+;; 1) Enable sticky agendas
+(setq org-agenda-sticky t)
+
+;; 2) Call the basic agenda (agenda dispatcher key "a")
+(org-agenda nil "a")
+
+;; 3) Rename the resulting agenda buffer
+(with-current-buffer org-agenda-buffer-name
+  (rename-buffer "*Org Agenda: Basic*" t))
+
+#+end_src
+
+*** Org mode code blocks
+**** Org Mode code blocks for routine system work and dev ops
+***** Return setq variable values from a list
+#+name: watch-vars
+- fill-column
+- org-agenda-span
+- org-ellipsis
+
+#+BEGIN_SRC emacs-lisp :var vars=watch-vars :results replace value table :exports both
+(append '(("Variable" "Value") hline)
+        (mapcar (lambda (s)
+                  (let ((sym (intern s)))
+                    (list s (format "%S" (symbol-value sym)))))
+                vars))
+#+END_SRC
+
+#+RESULTS[b250f5d51f5aa93e099dfb17f8914957e22e0b49]:
+| Variable        | Value |
+|-----------------+-------|
+| fill-column     | 70    |
+| org-agenda-span | week  |
+| org-ellipsis    | nil   |
+
+**** Calls
+
+#+RESULTS: just captures and reuses the static output of a block, while #+call: actually re-executes a named block—optionally with different parameters or header arguments—making it useful when you want to treat code blocks like reusable functions.
+
+
+#+name: ExampleMermaid
+#+begin_src mermaid
+sequenceDiagram
+    actor Alice
+    actor Bob2
+    Alice ->> Bob: Hello
+#+end_src
+
+#+call: ExampleMermaid[:file /tmp/exampleMermaid.png]
+[[file:/tmp/exampleMermaid.png]]
+
+
+#+call: ExampleMermaid[:file /tmp/exampleMermaid.svg]
+[[file:/tmp/exampleMermaid.svg]]
+**** Not blocks- launching code from links and text
+**** Code and code blocks
+- Results header args
+
+- Elisp processes can be invoked as links in Org-mode with the link type `:elisp`. E.g. =[[elisp:(save-some-buffers 'no-confirm t)][Save all emacs buffers]]=
+- My additions and modifications
+  - [[id:5ace2dd4-9dfb-41b9-a7ec-5ca32aaf94ae][org-execute-named-block-anywhere]] - allows execution of a code block from another agenda file
+
+results replace raw will not replace but will append
+#+name: test-replace
+#+begin_src bash :results replace example
+echo "This is a test output: $(date)"
+#+end_src
+
+#+RESULTS: test-replace
+: This is a test output: Wed Jul  2 08:18:11 AM CDT 2025
+This is a test output: Wed Jul  2 08:14:04 AM CDT 2025
+This is a test output: Wed Jul  2 08:14:03 AM CDT 2025
+This is a test output: Wed Jul  2 08:14:03 AM CDT 2025
+
+
+https://chatgpt.com/c/682603cf-2324-8005-a61c-bdf2e56c626d
+#+begin_src emacs-lisp :results replace
+org-version
+#+end_src
+
+#+RESULTS:
+: 9.6.15
+
+
+
+- Run a simple timer
+  #+begin_src emacs-lisp
+(run-at-time "1 min" nil
+  (lambda ()
+    (progn
+      (ding)
+      (alert "Timer finished!" :title "Emacs Timer"))))
+
+#+end_src
+- Edit sources as sudo
+  - /sudo:root@localhost:<PATH>
+  - e.g. [[/sudo:root@localhost:/etc/apt/sources.list][Edit apt sources in etc as sudo]]
+- See current state of variables
+  #+begin_src emacs-lisp :results replace
+(defun my/org-babel-print-all-header-args ()
+  "Display all possible Org Babel header arguments and their current values."
+  (interactive)
+  (let* ((default-args org-babel-default-header-args)
+         (possible-args (mapcar #'car org-babel-common-header-args-w-values))
+         (all-args (mapcar (lambda (arg)
+                             (cons arg (or (cdr (assoc arg default-args)) "unset")))
+                           possible-args))
+         (output (mapconcat (lambda (arg)
+                              (format "%s: %s" (car arg) (cdr arg)))
+                            all-args "\n")))
+    (message "All Possible Org Babel Header Arguments:\n%s" output)))
+
+
+(org-babel-print-active-header-args)
+#+end_src
+
+#+RESULTS[b9768b1deec545f81c19c2e864f982a868e93781]:
+: Active Org Babel Header Arguments:
+: :results: silent
+: :exports: none
+: :mkdirp: yes
+: :noweb: yes
+: :cache: yes
+: :tangle: no
+: :eval: no-export
 *** YASnippets
 ****** demo.org.header                                                  :yas:
 :PROPERTIES:
@@ -211,79 +576,9 @@ CLOCK: [2024-10-02 Wed 13:00]--[2024-10-02 Wed 13:08] =>  0:08
 CLOCK: [2024-10-02 Wed 12:00]--[2024-10-02 Wed 12:08] =>  0:08
 :END:
 *** Running non-interactive commands (batch mode)
-*** Code and code blocks
-- Results header args
-
-- Elisp processes can be invoked as links in Org-mode with the link type `:elisp`. E.g. =[[elisp:(save-some-buffers 'no-confirm t)][Save all emacs buffers]]=
-- My additions and modifications
-  - [[id:5ace2dd4-9dfb-41b9-a7ec-5ca32aaf94ae][org-execute-named-block-anywhere]] - allows execution of a code block from another agenda file
-
-results replace raw will not replace but will append
-#+name: test-replace
-#+begin_src bash :results replace example
-echo "This is a test output: $(date)"
-#+end_src
-
-#+RESULTS: test-replace
-: This is a test output: Wed Jul  2 08:18:11 AM CDT 2025
-This is a test output: Wed Jul  2 08:14:04 AM CDT 2025
-This is a test output: Wed Jul  2 08:14:03 AM CDT 2025
-This is a test output: Wed Jul  2 08:14:03 AM CDT 2025
-
-
-https://chatgpt.com/c/682603cf-2324-8005-a61c-bdf2e56c626d
-#+begin_src emacs-lisp :results replace
-org-version
-#+end_src
-
-#+RESULTS:
-: 9.6.15
-
-
-
-- Run a simple timer
-  #+begin_src emacs-lisp
-(run-at-time "1 min" nil
-  (lambda ()
-    (progn
-      (ding)
-      (alert "Timer finished!" :title "Emacs Timer"))))
-
-#+end_src
-- Edit sources as sudo
-  - /sudo:root@localhost:<PATH>
-  - e.g. [[/sudo:root@localhost:/etc/apt/sources.list][Edit apt sources in etc as sudo]]
-- See current state of variables
-  #+begin_src emacs-lisp :results replace
-(defun my/org-babel-print-all-header-args ()
-  "Display all possible Org Babel header arguments and their current values."
-  (interactive)
-  (let* ((default-args org-babel-default-header-args)
-         (possible-args (mapcar #'car org-babel-common-header-args-w-values))
-         (all-args (mapcar (lambda (arg)
-                             (cons arg (or (cdr (assoc arg default-args)) "unset")))
-                           possible-args))
-         (output (mapconcat (lambda (arg)
-                              (format "%s: %s" (car arg) (cdr arg)))
-                            all-args "\n")))
-    (message "All Possible Org Babel Header Arguments:\n%s" output)))
-
-
-(org-babel-print-active-header-args)
-#+end_src
-
-#+RESULTS[b9768b1deec545f81c19c2e864f982a868e93781]:
-: Active Org Babel Header Arguments:
-: :results: silent
-: :exports: none
-: :mkdirp: yes
-: :noweb: yes
-: :cache: yes
-: :tangle: no
-: :eval: no-export
 *** Get emacs varibles as a table
 
-#+BEGIN_SRC emacs-lisp :var vars=latex-vars max=50 :results replace value table :exports both
+#+BEGIN_SRC emacs-lisp :var vars=2 max=50 :results replace value table :exports both :eval never
 (append '(("Variable" "Value") hline)
         (mapcar
          (lambda (s)
@@ -297,36 +592,12 @@ org-version
 #+END_SRC
 
 #+RESULTS[7deb63093c4974298f0013b644f2b4c67c444ce3]:
-| Variable                                                        | Value                                            |
-|-----------------------------------------------------------------+--------------------------------------------------|
-| [[help:org-latex-pdf-process][org-latex-pdf-process]]           | ("pdflatex -interaction nonstopmode -output-dir… |
-| [[help:citar-bibliography][citar-bibliography]]                 | ("~/repos/org/bib.bib")                          |
+| Variable                   | Value                                            |
+|----------------------------+--------------------------------------------------|
+| [[help:org-latex-pdf-process][org-latex-pdf-process]]      | ("pdflatex -interaction nonstopmode -output-dir… |
+| [[help:citar-bibliography][citar-bibliography]]         | ("~/repos/org/bib.bib")                          |
 | [[help:org-cite-export-processors][org-cite-export-processors]] | ((t basic))                                      |
-|                                                                 |                                                  |
-
-*** Org Mode code blocks for routine system work and dev ops
-**** Return setq variable values from a list
-#+name: watch-vars
-- fill-column
-- org-agenda-span
-- org-ellipsis
-
-#+BEGIN_SRC emacs-lisp :var vars=watch-vars :results replace value table :exports both
-(append '(("Variable" "Value") hline)
-        (mapcar (lambda (s)
-                  (let ((sym (intern s)))
-                    (list s (format "%S" (symbol-value sym)))))
-                vars))
-#+END_SRC
-
-#+RESULTS[b250f5d51f5aa93e099dfb17f8914957e22e0b49]:
-| Variable        | Value |
-|-----------------+-------|
-| fill-column     | 70    |
-| org-agenda-span | week  |
-| org-ellipsis    | nil   |
-
-
+|                            |                                                  |
 *** Transient menus- menus for anything
 #+begin_src emacs-lisp
 (transient-define-prefix hrm-help-transient ()
@@ -348,6 +619,91 @@ org-version
 #+end_src
 
 [[elisp:(hrm-help-transient)]]
+*** Appendices
+**** Cookbook CSS style
+:PROPERTIES:
+:ID:       b0cdf468-c2a7-4a01-9ca4-cb69fd8388dd
+:END:
+#+begin_src css :tangle /tmp/cookbook.css
+#content { max-width: 80em; }
+pre { max-width: 200em; overflow-x: auto; }
+/* add other customizations */
+#+end_src
+
+**** Data for org-ql Example
+:PROPERTIES:
+:CATEGORY: Examples
+:ID:       17560465-aec8-4ab9-ac0b-fbd5e6ce62a1
+:END:
+
+The headings below serve as example records for the query above. They demonstrate various org syntax elements.
+
+***** TODO [#A] Implement user authentication              :backend:security:
+:PROPERTIES:
+:ASSIGNEE: Alice
+:CATEGORY: Backend
+:END:
+:LOGBOOK:
+CLOCK: [2025-01-01 Wed 09:00]--[2025-01-01 Wed 11:30] =>  2:30
+CLOCK: [2025-01-01 Wed 13:00]--[2025-01-01 Wed 14:15] =>  1:15
+:END:
+
+***** INPROCESS [#B] Design landing page mockup             :frontend:design:
+:PROPERTIES:
+:ASSIGNEE: Bob
+:CATEGORY: Frontend
+:END:
+:LOGBOOK:
+CLOCK: [2025-01-02 Thu 10:00]--[2025-01-02 Thu 12:00] =>  2:00
+:END:
+
+***** DONE [#A] Set up CI/CD pipeline                                :devops:
+CLOSED: [2025-01-03 Fri 16:45]
+:PROPERTIES:
+:ASSIGNEE: Carol
+:CATEGORY: Infrastructure
+:END:
+:LOGBOOK:
+CLOCK: [2025-01-03 Fri 14:00]--[2025-01-03 Fri 16:45] =>  2:45
+:END:
+
+***** PLANNED [#C] Write API documentation                     :docs:backend:
+:PROPERTIES:
+:ASSIGNEE: Alice
+:CATEGORY: Documentation
+:END:
+
+***** DONE Update dependencies                                  :maintenance:
+CLOSED: [2025-01-02 Thu 09:30]
+:PROPERTIES:
+:ASSIGNEE: Dave
+:CATEGORY: Backend
+:END:
+:LOGBOOK:
+CLOCK: [2025-01-02 Thu 09:00]--[2025-01-02 Thu 09:30] =>  0:30
+:END:
+
+***** WAITING [#B] Review pull request from external contributor     :review:
+:PROPERTIES:
+:ASSIGNEE: Carol
+:CATEGORY: Collaboration
+:END:
+
+***** CANCELED Old feature implementation                        :deprecated:
+CLOSED: [2025-01-01 Wed 08:00]
+:PROPERTIES:
+:ASSIGNEE: Bob
+:CATEGORY: Legacy
+:END:
+
+***** DELEGATED [#B] Server migration planning        :devops:infrastructure:
+:PROPERTIES:
+:ASSIGNEE: External Team
+:CATEGORY: Operations
+:END:
+:LOGBOOK:
+CLOCK: [2025-01-04 Sat 08:00]--[2025-01-04 Sat 09:00] =>  1:00
+:END:
 ** Processes
 :PROPERTIES:
 :ID:       55964bf9-dba0-44b4-9b78-1ec6731822b0
@@ -356,12 +712,30 @@ org-version
 :PROPERTIES:
 :ID:       8d6e65d5-aa51-4dfa-804f-8ce9126f8ae9
 :END:
+- Logging settings per header
+  :LOGGING:    <TODO STATE>(@)
+  e.g. :LOGGING:    DONE(@)
+  can also (!) for timestamp w/o note
 - make minibuffer window
   #+begin_src emacs-lisp
 (make-frame '((minibuffer . only)))
 #+end_src
 **** Indentation
 - https://dougie.io/emacs/indentation/
+**** Make svg
+#+BEGIN_SRC sh :results file :file /tmp/hello.svg :results replace
+cat << 'EOF'
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40">
+  <rect x="10" y="10" width="100" height="20" fill="none" stroke="black" />
+  <text x="60" y="25" font-size="12" text-anchor="middle" dominant-baseline="middle">
+    Hello SVG fool
+  </text>
+</svg>
+EOF
+#+END_SRC
+
+#+RESULTS:
+[[file:/tmp/hello.svg]]
 
 **** Backup
 :PROPERTIES:
@@ -525,8 +899,6 @@ https://github.com/yilkalargaw/org-auto-tangle/blob/master/org-auto-tangle.el
 :ID:       b4829129-9568-49d5-89bf-f58d5b707ee4
 :END:
 https://www.reddit.com/r/emacs/comments/18mvqez/how_can_i_create_inputs_and_buttons_like_the/
-*** REPLs
-- https://www.reddit.com/r/emacs/comments/1hsky98/universal_repls_in_emacs_by_means_of_lsp_or/
 *** Appearance
 :PROPERTIES:
 :ID:       990e6299-2050-44ad-ab5e-e95ac1b03c12
@@ -1490,6 +1862,8 @@ https://www.reddit.com/r/emacs/comments/1fw7jbb/karthink_emacs_latex/
 :PROPERTIES:
 :ID:       907b0796-a3c5-4851-8cf7-272d6c9750d1
 :END:
+- https://www.reddit.com/r/emacs/comments/1qei50o/bending_emacs_episode_10/
+- https://www.reddit.com/r/emacs/comments/1nq0lb8/introducing_agentshell/
 - https://github.com/jwiegley/ob-gptel
 - https://github.com/chep/copilot-chat.el
 - https://www.reddit.com/r/emacs/comments/17hvcsi/ellama_moved_to_llm_library_and_now_supports/
@@ -1685,7 +2059,7 @@ def main():
     print(f"Markdown exported to: {extracted_md_path}")
 
 def generate_md_via_org(org_file, node_id):
-    command = f'''/usr/local/bin/emacs --batch -l "${{HOME}}/repos/basecamp/emacs/latex_init.el" --eval "(progn
+    command = f'''/usr/local/bin/emacs --batch -l "${{HOME}}/repos/latex/emacs/latex_init.el" --eval "(progn
         (require 'org)
         (require 'org-id)
         (setq org-confirm-babel-evaluate nil)
@@ -1737,156 +2111,24 @@ emacsclient -e "(progn (find-file \"$1\") \
                        (org-beamer-export-to-pdf nil t))"
 #+end_src
 
-** General reference and miscellaneous
-- [[id:BF9D824A-02EF-4580-97A1-B887299AD461][Lisp]]
-- Alternative documentation https://www2.lib.uchicago.edu/keith/emacs/#org9f6793b
-- https://arxiv.org/pdf/2008.06030
-*** Tutorials and Challenges
-  - [[https://blog.markhepburn.com/2013/12/07/andrew-hyatts-emacs-calc-tutorials][Andrew Hyatt's emacs calc tutorials]]
-  - [[https://vimeo.com/search/sort:latest?q=vimgolf+in+emacs][golf in emacs]]
-  - http://cestlaz.github.io/stories/emacs/
-  - https://sachachua.com/blog/2019/06/2019-06-10-emacs-news/
-  - guides
-    - https://www.reddit.com/r/emacs/comments/bbb42t/whats_your_job_whats_your_daily_emacs_workflow/
-    - [-] tuhdo
-      - [X] https://tuhdo.github.io/emacs-tutor.html
-      - [ ] https://tuhdo.github.io/emacs-tutor2.html
-    - http://emacslife.com/
-    - http://emacsrocks.com/
-    - [[http://emacs.stackexchange.com/questions?sort=votes][emacs stack exchange questions by vote]]
-    - [[https://pawelbx.github.io/emacs-theme-gallery/][nice emacs theme gallary]]
-    - cite:bingmann2015
-    - not useful
-      - [[http://david.rothlis.net/emacs/howtolearn.html][Rothlisberger How to Learn Emacs]]
-*** config/init file examples
-  - https://shreyas.ragavan.co/docs/emacs-config/
-  - https://github.com/jzohrab/emacs.d/blob/master/init.el#L31
-  - https://emacs.christianbaeuerlein.com/#org7a4a164
-  - https://www.reddit.com/r/emacs/comments/eewwyh/officially_introducing_memacs/
-  - https://jmonlong.github.io/Hippocamplus/emacs/
-  - https://github.com/0pendev/dotfiles/blob/master/emacs/config.org
-  - [[https://github.com/xgarrido/emacs-starter-kit/blob/master/starter-kit.org][github: xgarrido emacs starter kit]]
-*** Emacs conference
-- https://emacsconf.org/2024/talks/
-- https://emacsconf.org/2021/all/
-*** Miscellaneous
-- https://karthinks.com/software/batteries-included-with-emacs/
-- https://sheer.tj/the_way_of_emacs.html
-- https://github.com/LaurenceWarne/reddit-emacs-tips-n-tricks/blob/master/out.md
-*** Pre-configured distributions
-- https://github.com/sunnyhasija/DOOMEmacs
-- For emacs use in science- https://github.com/rougier
-- https://www.reddit.com/r/emacs/comments/1feaf37/minimal_emacsd_emacs_starter_kit_with_better/
-- https://github.com/jamescherti/minimal-emacs.d
-  - https://www.jamescherti.com/essential-emacs-packages/
-- https://github.com/a-schaefers/grokEmacs
-- https://lambdaland.org/posts/2025-07-15_bedrock_release/
-  - https://lambdaland.org/posts/2024-12-14_emacs_catchup/
-*** General reference
-:PROPERTIES:
-:ID:       1ead3d35-2700-49fc-859e-d7e887d2f30e
-:END:
-- https://www.reddit.com/r/emacs/comments/1bkw1j6/use_information_theory_to_choose_better/
-- https://www.reddit.com/r/emacs/comments/1bnj5xe/announcing_casual_an_opinionated_porcelain_for/
-- https://karthinks.com/software/batteries-included-with-emacs/
-- https://www.reddit.com/r/emacs/comments/wcupae/lets_share_your_top_3_packages_that_you_cant_live/
-
-
-*** Retired
-:properties:
-:header-args:emacs-lisp: :tangle no
-:end:
-
-**** org-ref
-:properties:
-:header-args:emacs-lisp: :tangle no
-:end:
-
-***** [[id:50da582a-7d75-4646-9a94-638244760b4a][Package notes]]
-***** Use-package
-#+begin_src emacs-lisp
-(use-package org-ref
-  :init
-  (require 'bibtex)
-  (require 'org-ref-ivy)
-  (require 'org-ref-bibtex)
-  (require 'org-ref-pubmed)
-  (require 'org-ref-scopus)
-  (require 'org-ref-wos)
-  :config
-  (setq
-   org-ref-default-bibliography '("~/repos/org/bib.bib")
-   org-ref-pdf-directory "~/library/"))
-#+end_src
-#+begin_src emacs-lisp
-(setq bibtex-completion-bibliography '("~/repos/org/bib.bib")
-      bibtex-completion-library-path '("~/data/library/")
-      bibtex-completion-additional-search-fields '(keywords)
-      bibtex-completion-display-formats
-      '((article       . "${=has-pdf=:1}${=has-note=:1} ${year:4} ${author:36} ${title:*} ${journal:40}")
-	(inbook        . "${=has-pdf=:1}${=has-note=:1} ${year:4} ${author:36} ${title:*} Chapter ${chapter:32}")
-	(incollection  . "${=has-pdf=:1}${=has-note=:1} ${year:4} ${author:36} ${title:*} ${booktitle:40}")
-	(inproceedings . "${=has-pdf=:1}${=has-note=:1} ${year:4} ${author:36} ${title:*} ${booktitle:40}")
-	(t             . "${=has-pdf=:1}${=has-note=:1} ${year:4} ${author:36} ${title:*}"))
-      bibtex-completion-pdf-open-function
-      (lambda (fpath)
-	(call-process "open" nil 0 nil fpath)))
-
-(define-key org-mode-map (kbd "C-c ]") 'org-ref-insert-link)
-
-(setq org-ref-show-broken-links nil)
-
-(setq org-ref-bibliography-notes "~/repo/org/notes"
-      org-ref-default-bibliography '("~/repos/org/bib.bib")
-      org-ref-pdf-directory "~/library")
-
-(require 'org-ref-ivy)
-(setq org-ref-insert-link-function 'org-ref-insert-link-hydra/body
-      org-ref-insert-cite-function 'org-ref-cite-insert-ivy
-      org-ref-insert-label-function 'org-ref-insert-label-link
-      org-ref-insert-ref-function 'org-ref-insert-ref-link
-      org-ref-cite-onclick-function (lambda (_) (org-ref-citation-hydra/body)))
-
-#+end_src
-***** Show citation info in minibuffer
-https://github.com/jkitchin/org-ref/issues/938
-#+begin_src emacs-lisp
-(defun org-ref-link-message (&optional a1 a2 a3)
-  (when (and (eq major-mode 'org-mode)
-   (eq (get-text-property (point) 'help-echo) 'org-ref-cite-tooltip))
-  (display-local-help)))
-
-(advice-add 'right-char :after 'org-ref-link-message)
-(advice-add 'left-char :after 'org-ref-link-message)
-(advice-add 'evil-forward-char :after 'org-ref-link-message)
-(advice-add 'evil-backward-char :after 'org-ref-link-message)
-
-
-#+end_src
 ** Org-mode
 :PROPERTIES:
 :ID:       d7d54139-64d0-4cfe-ab3a-879b3617b226
 :END:
-#+begin_src emacs-lisp
-(defun org-sort-by-deadline ()
-  "Sort headings by the DEADLINE property."
-  (interactive)
-  (org-sort-entries nil ?f
-                    (lambda ()
-                      (let ((deadline (org-entry-get nil "DEADLINE")))
-                        (if deadline
-                            (time-to-seconds (org-time-string-to-time deadline))
-                          most-positive-fixnum)))))
-
-;; Bind the function to a key if desired
-;(global-set-key (kbd "C-c s d") 'org-sort-by-deadline)
-(org-sort-by-deadline)
+*** [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][org-latex-classes definitions]]
+*** Processes
+:PROPERTIES:
+:ID:       8b5c515e-689b-436d-ac09-f368ec6d87ef
+:END:
+**** 0 Flat                                                            :flat:
+:PROPERTIES:
+:ID:       1c3e70f6-1ca0-44bd-b2fa-2cf5fae2a126
+:END:
+- Change org header end line ellipsis
+  #+begin_src emacs-lisp
+(setq org-ellipsis " ⮷")
 #+end_src
-https://www.reddit.com/r/orgmode/comments/1j2b2gx/update_orgsupertag_25_a_new_way_think_about_tag/
-- https://sachachua.com/blog/2024/11/excerpts-from-a-conversation-with-john-wiegley-johnw-and-adam-porter-alphapapa-about-personal-information-management/
-- https://github.com/yibie/org-supertag/
-- https://www.reddit.com/r/orgmode/comments/1hqlspw/reusing_a_code_block_with_different_file_arguments/
-- https://github.com/jdtsmith/org-modern-indent
+  - https://www.reddit.com/r/orgmode/comments/ljem1v/is_it_possible_to_change_at_the_end_of_each/
 - org map enteries example
   #+begin_src emacs-lisp
 (defun toggle-planned-to-unplanned ()
@@ -1901,144 +2143,6 @@ https://www.reddit.com/r/orgmode/comments/1j2b2gx/update_orgsupertag_25_a_new_wa
 
 
 #+end_src
-- [[http://orgmode.org/worg/org-hacks.html][cool hacks]]
-- https://www.reddit.com/r/orgmode/comments/ljem1v/is_it_possible_to_change_at_the_end_of_each/
-- http://orgmode.org/worg/dev/org-syntax.html
-- https://stackoverflow.com/questions/20033467/setting-a-local-file-variable-in-emacs-org-mode
-- http://endlessparentheses.com/use-org-mode-links-for-absolutely-anything.html
-- https://www.reddit.com/r/orgmode/comments/1gh7p92/how_do_you_use_properties/
-- General setup
-  #+BEGIN_SRC emacs-lisp
-(add-to-list
- 'org-latex-classes
- '("article"
-   "\\documentclass[12pt]{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage{titletoc}
-\\usepackage{graphicx} %Enhanced support for grpahics
-\\usepackage{tabularx} %Tables
-\\usepackage{fullpage}
-\\usepackage{grffile} %File name support for graphics
-\\usepackage{longtable}
-\\usepackage{wrapfig}
-\\usepackage{listingsutf8} %UTF8 file conversion?  \\usepackage[style=numeric,doi=false,isbn=false,firstinits=true,sorting=none,backend=biber]{biblatex}
-\\pagenumbering{arabic}
-  "("\\section{%s}" . "\\section*{%s}")
-  ("\\subsection{%s}" . "\\subsection*{%s}")
-  ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
-  ("\\paragraph{%s}" . "\\paragraph*{%s}")
-  ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
-  #+END_SRC
-  - Paper
-    #+BEGIN_SRC emacs-lisp
-(add-to-list
- 'org-latex-classes
- '("paper"
-   "\\documentclass[12pt]{paper}
-\\usepackage[utf8]{inputenc}
-\\usepackage{titletoc}
-\\usepackage{graphicx} %Enhanced support for grpahics
-\\usepackage{tabularx} %Tables
-\\usepackage{fullpage}
-\\usepackage{grffile} %File name support for graphics
-\\usepackage{longtable}
-\\usepackage{wrapfig}
-\\usepackage{listingsutf8} %UTF8 file conversion?
-"("\\section{%s}" . "\\section*{%s}")
-  ("\\subsection{%s}" . "\\subsection*{%s}")
-  ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
-  ("\\paragraph{%s}" . "\\paragraph*{%s}")
-  ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
-  #+END_SRC
-  - Presentations
-    #+BEGIN_SRC emacs-lisp
-;; https://tex.stackexchange.com/questions/222547/latex-package-stmaryrd-doesnt-work-together-with-org-mode-beamer-template
-(add-to-list 'org-latex-classes
-             '("present" "\\documentclass[12pt, aspectratio=169]{beamer}
-\\usecolortheme{default}"
-               ("\\section{%s}" . "\\section*{%s}")
-               ("\\begin{frame}[fragile]\\frametitle{%s}"
-                "\\end{frame}"
-                "\\begin{frame}[fragile]\\frametitle{%s}"
-                "\\end{frame}")))
-
-#+END_SRC
-  - Report
-    #+BEGIN_SRC emacs-lisp
-(add-to-list 'org-latex-classes
-             '("report" "\\documentclass[letterpaper, 12pt]{article}
-\\usepackage[pass]{geometry}
-\\usepackage[utf8]{inputenc}
-\\usepackage{graphicx} %Enhanced support for grpahics
-\\usepackage{tabularx} %Tables
-\\usepackage{fullpage}
-\\usepackage{grffile} %File name support for graphics
-\\usepackage{longtable}
-\\usepackage{wrapfig}
-\\usepackage{listingsutf8} %UTF8 file conversion?
-\\usepackage[style=numeric,doi=false,isbn=false,firstinits=true,sorting=none,backend=biber]{biblatex}
-\\pagenumbering{gobble}
-\\usepackage[none]{hyphenat}
-\\newcommand\\foo{bar}
-               [NO-DEFAULT-PACKAGES]
-               [NO-PACKAGES]
-               [EXTRA]"
-               ("\\section{%s}" . "\\section*{%s}")
-           ("\\subsection{%s}" . "\\subsection*{%s}")
-           ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
-           ("\\paragraph{%s}" . "\\paragraph*{%s}")
-           ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
-
-#+END_SRC
-  - Manuscript
-    #+BEGIN_SRC emacs-lisp
-
-(add-to-list 'org-latex-classes
-             '("manuscript" "\\documentclass[12pt]{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage{graphicx} %Enhanced support for grpahics
-\\usepackage{tabularx} %Tables
-\\usepackage{fullpage}
-\\usepackage{grffile} %File name support for graphics
-\\usepackage{longtable}
-\\usepackage{wrapfig}
-\\usepackage{listingsutf8} %UTF8 file conversion?
-\\pagenumbering{arabic}
-\\usepackage{lineno} %For line numbers
-\\usepackage{manuscript} %Manuscript-like type setting
-\\linenumbers
-\\newcommand\\foo{bar}
-               [NO-DEFAULT-PACKAGES]
-               [NO-PACKAGES]
-               [EXTRA]"
-               ("\\section{%s}" . "\\section*{%s}")
-           ("\\subsection{%s}" . "\\subsection*{%s}")
-           ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
-           ("\\paragraph{%s}" . "\\paragraph*{%s}")
-           ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
-
-#+END_SRC
-  - Test
-    #+BEGIN_SRC emacs-lisp
-(add-to-list
- 'org-latex-classes
- '("test" "\\documentclass[12pt]{article}
-   [PACKAGES]
-   [EXTRA]"
-   ("\\section{%s}" . "\\section*{%s}")
-   ("\\subsection{%s}" . "\\subsection*{%s}")
-   ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
-   ("\\paragraph{%s}" . "\\paragraph*{%s}")
-   ("\\subparagraph{%s}" . "\\subparagraph*{%s}")))
-  #+END_SRC
-*** Processes
-:PROPERTIES:
-:ID:       8b5c515e-689b-436d-ac09-f368ec6d87ef
-:END:
-**** 0 Flat                                                            :flat:
-:PROPERTIES:
-:ID:       1c3e70f6-1ca0-44bd-b2fa-2cf5fae2a126
-:END:
 ***** Org-attach
 - https://emacs.stackexchange.com/questions/2162/when-are-org-mode-attachments-preferable-to-file-hyperlinks
 ***** Prevent log recording
@@ -2282,6 +2386,9 @@ examples:
 - [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Visual-Line-Mode.html][default visual line mode]]
 - Themes
   - https://github.com/minad/org-modern
+    -
+    - https://github.com/jdtsmith/org-modern-indent
+
 - Code blocks
   #+begin_src emacs-lisp
 ;(use-package org-modern-indent
@@ -2475,6 +2582,7 @@ https://www.reddit.com/r/orgmode/comments/sngxpe/orgbabels_pythonsession_vs_emac
 :PROPERTIES:
 :ID:       5645fcce-dbf8-4233-9366-0f490ad83f46
 :END:
+
 #+begin_src emacs-lisp
 
 
@@ -2565,6 +2673,7 @@ emacs /tmp/present.org --batch -f org-latex-export-to-pdf
 :PROPERTIES:
 :ID:       2be55e2c-bc37-49a1-b17a-7e9a679dc2c4
 :END:
+- https://www.reddit.com/r/emacs/comments/3pvbag/is_there_a_collection_of_css_styles_for_org/
 - https://www.reddit.com/r/emacs/comments/1hbjq6n/package_niceorghtml/
 
 - Included elements
@@ -2690,6 +2799,8 @@ https://github.com/makuto/KeepToOrg
 - Python https://github.com/karlicoss/orgparse
 - Jupyter- see of getting juypter completion in code blocks - https://www.reddit.com/r/emacs/comments/i5xagf/ein_or_emacsjupyter_users_here/
 **** Links
+- Custom link types http://endlessparentheses.com/use-org-mode-links-for-absolutely-anything.html
+
 ***** Links between org files
 :PROPERTIES:
 :ID:       7a0c211b-168a-4821-aca6-4e0fad22d0f2
@@ -3039,6 +3150,12 @@ https://www.reddit.com/r/orgmode/comments/x2e90r/there_really_needs_to_be_a_bett
 :PROPERTIES:
 :ID:       a0cf47b6-2f7a-41cf-9d4f-9ce78ac648de
 :END:
+- Setting file-local variables
+  - https://stackoverflow.com/questions/20033467/setting-a-local-file-variable-in-emacs-org-mode
+- Org Syntax http://orgmode.org/worg/dev/org-syntax.html
+- [[http://orgmode.org/worg/org-hacks.html][cool hacks]]
+- https://docs.lepisma.xyz/orgdeep/
+  - https://chatgpt.com/c/69321d9f-0e94-832d-bcf5-a6d91883ce0c
 - https://orgmode.org/worg/dev/org-element-api.html
   - calls made e.g. https://www.reddit.com/r/orgmode/comments/147ofmi/what_element_type_is_the_colon/
 - https://www.reddit.com/r/datascience/comments/13wkkdv/which_is_the_best_editor_for_python_in_your/jmcj7f1/
@@ -3114,15 +3231,14 @@ https://www.reddit.com/r/orgmode/comments/q82k5v/new_video_scimax_orgdb_searchin
 :header-args: :tangle ./emacs/init.el
 :END:
 [[file:emacs/init.el]]
-- [ ] https://chatgpt.com/c/6791429d-3338-8005-93d1-928d30b9a343
 #+begin_src emacs-lisp
 ;;-*- mode: elisp -*-
 
 ;; Package Management Setup
 
 (require 'package)
-
-(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
+(add-to-list 'package-archives
+             '("melpa" . "https://melpa.org/packages/") t)
 
 ;; Ensure 'use-package' is installed
 (unless (package-installed-p 'use-package)
@@ -3132,43 +3248,63 @@ https://www.reddit.com/r/orgmode/comments/q82k5v/new_video_scimax_orgdb_searchin
 (require 'use-package)
 (setq use-package-always-ensure t)
 
-(defun load-directory (dir)
-  "Add DIR and its subdirectories to the load-path and load all .el files."
-  (when (file-directory-p dir)
-    (let ((default-directory dir))
-      (message "Adding %s and its subdirectories to load-path" dir)
-      (normal-top-level-add-to-load-path '("."))
-      (normal-top-level-add-subdirs-to-load-path))
-    (dolist (file (directory-files dir t "\\.el\\'"))
-      (load file nil 'nomessage))))
-
-
 ;; Function to safely load a file if it exists
 (defun safe-load-file-if-exists (filepath)
-  "Safely load the Emacs Lisp file at FILEPATH if it exists."
-  (when (file-exists-p filepath)
-    (condition-case err
-        (load (file-name-sans-extension filepath))
-      (error (message "Error loading %s: %s" filepath err)))))
+  "Safely load the Emacs Lisp file at FILEPATH if it exists.
+If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
+  (let* ((file (if (file-name-absolute-p filepath)
+                   filepath
+                 (expand-file-name filepath user-emacs-directory))))
+    (when (file-exists-p file)
+      (condition-case err
+          (load (file-name-sans-extension file))
+        (error (message "Error loading %s: %s" file err))))))
 
 ;; Load early configuration
-(safe-load-file-if-exists "~/.emacs.d/load-first.el")
+(safe-load-file-if-exists "load-first.el")
 
 ;; Define the path to your configuration directory
-(defvar my-config-dir "~/.emacs.d/config/"
+(defvar my-config-dir (expand-file-name "config/" user-emacs-directory)
   "Directory containing personal Emacs configuration files.")
 
 ;; Load all .el files in the config directory
 (when (file-directory-p my-config-dir)
-  (dolist (file (directory-files my-config-dir t "\\.el$"))
+  (dolist (file (directory-files my-config-dir t "\\.el\\'"))
     (condition-case err
         (load (file-name-sans-extension file))
       (error (message "Error loading %s: %s" file err)))))
 
+;; Define the path to your configuration directory
+(defvar my-lisp-dir (expand-file-name "lisp/" user-emacs-directory)
+  "Directory containing personal Emacs configuration files.")
+
+
+;; If my-lisp-dir exists on disk, load every *.el file in it.
+;; This is a "bulk loader" pattern: it eagerly loads everything at startup.
+(when (file-directory-p my-lisp-dir)
+
+  ;; Iterate over all files in my-lisp-dir whose names end in ".el".
+  ;; - `t` means return absolute paths.
+  ;; - "\\.el\\'" matches ".el" at end-of-string.
+  (dolist (file (directory-files my-lisp-dir t "\\.el\\'"))
+
+    ;; Try to load each file; if any file errors, catch it and continue.
+    (condition-case err
+        ;; `load` expects a library name, not necessarily a filename.
+        ;; Using (file-name-sans-extension file) strips ".el" so `load`
+        ;; will also find a corresponding ".elc" if present.
+        ;;
+        ;; 2nd arg NIL means: don't error if not found (still errors
+        ;; on evaluation problems inside the file).
+        ;; 3rd arg 'nomessage suppresses "Loading ..." chatter in *Messages*.
+        (load (file-name-sans-extension file) nil 'nomessage)
+
+      ;; If evaluation of that file signals an error, log it but keep going.
+      (error (message "Error loading %s: %s" file err)))))
+
+
 ;; Load late configuration
-(safe-load-file-if-exists "~/.emacs.d/load-last.el")
-
-
+(safe-load-file-if-exists "load-last.el")
 #+end_src
 *** Load First
 :PROPERTIES:
@@ -3178,100 +3314,64 @@ https://www.reddit.com/r/orgmode/comments/q82k5v/new_video_scimax_orgdb_searchin
 
 #+begin_src emacs-lisp
 (add-to-list 'exec-path "/usr/local/bin")
+
+;; Puts bib.bib into loaded buffers
+(find-file-noselect "~/repos/org/bib.bib")
+
 #+end_src
-
-#+begin_src emacs-lisp
-;(cua-selection-mode t)
-;(setq mark-even-if-inactive t) ;; Keep mark active even when buffer is inactive
-;(transient-mark-mode 1) ;; Enable transient-mark-mode for visual selection
-(scroll-bar-mode 'right) ;; Place scroll bar on the right side
-
-(setq org-export-backends '(ascii html latex odt icalendar md org)) ; This variable needs to be set before org.el is loaded.
-#+end_src
-
-*** Package configuration
+*** Base Emacs
 :PROPERTIES:
-:ID:       28ed3017-eedb-4a6c-94e5-f477353170c8
+:ID:       d0bcde8b-8e88-4f37-8a4a-3942507a8f10
 :header-args:emacs-lisp: :tangle ./emacs/public_config.el :comments org
 :END:
-- [[file:emacs/public_config.el]]
-- for config rewrite https://chatgpt.com/c/e16840b5-355a-42e3-bd97-70693daa17c0
-**** AUCTeX
-- documentation
-  - [[https://www.gnu.org/software/auctex/manual/auctex/Folding.html][3.2 Folding Macros and Environments]]
-- https://stackoverflow.com/questions/7587287/how-do-i-bind-latexmk-to-one-key-in-emacs-and-have-it-show-errors-if-there-are-a
-- [[https://www.gnu.org/software/auctex/manual/auctex.html#Quick-Start][Quick start]]
-- [[https://tex.stackexchange.com/questions/145318/how-to-make-auctex-not-prompt-me-on-c-c-c-c][stack:tex: How to make auctex not prompt me on C-c C-c]]
-- [[https://tex.stackexchange.com/questions/20843/useful-shortcuts-or-key-bindings-or-predefined-commands-for-emacsauctex][stack:tex: Useful shortcuts or key bindings or predefined commands for emacs+AUCTeX]]
-- [[https://www.gnu.org/software/auctex/manual/auctex.html#Quick-Start][documentation]]
-- [[https://www.gnu.org/software/auctex/][website]]
-- [[https://www.emacswiki.org/emacs/AUCTeX][EmacsWiki: AUCTeX]]
-- https://piotrkazmierczak.com/2010/emacs-as-the-ultimate-latex-editor/
-
-#+begin_src emacs-lisp
-(use-package tex
-  :ensure auctex
-  :config
-  (setenv "PATH" (concat "/usr/local/texlive/2021/bin/x86_64-linux:"
-			 (getenv "PATH")))
-  (add-to-list 'exec-path "/usr/local/texlive/2021/bin/x86_64-linux")
-
-  (setq TeX-auto-save t
-        TeX-parse-self t
-        TeX-save-query nil
-        TeX-view-program-selection '((output-pdf "Okular"))
-        TeX-view-program-list '(("Okular" "okular %o"))))
-#+end_src
-- [[id:eb4a0bb3-2e8a-4bf5-9186-11f972b2e06d][AUCTeX reference header]]
-**** Base Emacs
-#+begin_src emacs-lisp
-(setq comint-scroll-to-bottom-on-output t
-      comint-move-point-for-output t)
-#+end_src
-
-***** Dired
-:PROPERTIES:
-:ID:       b3bd2685-ea78-4097-ae4c-e4a5e7a422ea
-:END:
-- whenever you open a new directory in Dired, the old Dired buffer is automatically killed
-  #+begin_src emacs-lisp
-(setq dired-kill-when-opening-new-dired-buffer t)
-
-#+end_src
-- when listing files:
-  #+begin_src emacs-lisp
-(setq dired-listing-switches "-alh")
-
-#+end_src
-  -a → show all files, including dotfiles (. and ..).
-  - -l → use long listing format (permissions, owner, size, modification time).
-  -h → show file sizes in “human-readable” units (e.g. 1K, 2M, 3G).
-- Open files using [[id:05e700d9-77cc-4aef-b310-164c267274d0][xdg-utils]]
-  #+begin_src emacs-lisp
-    (defun my/dired-open-xdg ()
-      "Open file at point with xdg-open."
-      (interactive)
-      (let ((file (dired-get-file-for-visit)))
-	(start-process "xdg-open" nil "xdg-open" file)))
-
-    ;; Bind to a key in dired-mode
-    (with-eval-after-load 'dired
-      (define-key dired-mode-map (kbd "E") #'my/dired-open-xdg))
-#+end_src
-
-***** Needed in --batch
+**** Core settings
 Code that needs to be tangled both here and into custom inits for batch export
 #+name need_in_batch
 #+begin_src emacs-lisp
 (setq large-file-warning-threshold most-positive-fixnum) ; disable large file warning
 (setq-default cache-long-scans nil)
 #+end_src
-***** Add to load paths
+
 #+begin_src emacs-lisp
-(setq exec-path (append exec-path '("/opt/miniconda3/bin")))
-(setenv "PATH" (concat (getenv "PATH") ":/opt/miniconda3/bin"))
+;; Don't count two spaces after a period as the end of a sentence.
+(setq sentence-end-double-space nil)
+
+;; don't check package signatures
+;;  https://emacs.stackexchange.com/questions/233/how-to-proceed-on-package-el-signature-check-failure
+(setq package-check-signature nil)
+
+;; Avoid nesting exceeds max-lisp-eval-depth error
+;;  https://stackoverflow.com/questions/11807128/emacs-nesting-exceeds-max-lisp-eval-depth
+(setq max-lisp-eval-depth 1200)
+
+;; allow remembering risky variables
+;;  https://emacs.stackexchange.com/questions/10983/remember-permission-to-execute-risky-local-variables
+(defun risky-local-variable-p (sym &optional _ignored) nil)
+
+; Disable “buffer is read only” warning
+;;https://emacs.stackexchange.com/questions/19742/is-there-a-way-to-disable-the-buffer-is-read-only-warning
+(defun my-command-error-function (data context caller)
+  “Ignore the buffer-read-only signal; pass the rest to the default handler.”
+  (when (not (eq (car data) 'buffer-read-only))
+    (command-error-default-function data context caller)))
+
+(setq command-error-function #'my-command-error-function)
+
+;; auto-refresh if source changes
+;;  https://stackoverflow.com/questions/1480572/how-to-have-emacs-auto-refresh-all-buffers-when-files-have-changed-on-disk
+(global-auto-revert-mode 1)
+
+(setq browse-url-browser-function 'browse-url-generic
+      browse-url-generic-program “/usr/bin/brave-browser”)
+
+; y or n instead of yes or no
+(setopt use-short-answers t)
+
+(setq require-final-newline nil)
+(setq create-lockfiles nil)
 #+end_src
-***** Appearance
+
+**** Appearance
 #+begin_src emacs-lisp
 ; ---   General   --- ;
 ; ------------------- ;
@@ -3285,7 +3385,9 @@ Code that needs to be tangled both here and into custom inits for batch export
 ;; Remove bars:
 (menu-bar-mode -1)
 (tool-bar-mode -1)
+(scroll-bar-mode 'right) ;; Place scroll bar on the right side
 (scroll-bar-mode -1)
+
 ;
 ; Fringe- Set finge color to background
 ;https://emacs.stackexchange.com/a/31944/11502
@@ -3350,178 +3452,18 @@ Code that needs to be tangled both here and into custom inits for batch export
 
 ;https://emacs.stackexchange.com/questions/72483/how-to-define-consult-faces-generically-for-minibuffer-highlighting-that-fits-wi
 (global-hl-line-mode 1)
-(set-face-attribute 'highlight nil :background "#294F6E")
-
-#+end_src
-***** Tramp
-#+begin_src emacs-lisp
-(setq tramp-default-method "ssh")
-
-
-(defadvice tramp-completion-handle-file-name-all-completions
-  (around dotemacs-completion-docker activate)
-  "(tramp-completion-handle-file-name-all-completions \"\" \"/docker:\" returns
-    a list of active Docker container names, followed by colons."
-  (if (equal (ad-get-arg 1) "/docker:")
-      (let* ((dockernames-raw (shell-command-to-string "docker ps | awk '$NF != \"NAMES\" { print $NF \":\" }'"))
-             (dockernames (cl-remove-if-not
-                           #'(lambda (dockerline) (string-match ":$" dockerline))
-                           (split-string dockernames-raw "\n"))))
-        (setq ad-return-value dockernames))
-    ad-do-it))
-
-; https://emacs.stackexchange.com/questions/29286/tramp-unable-to-open-some-files
-(setq tramp-copy-size-limit 10000000)
-#+end_src
-***** Key bindings
-#+begin_src emacs-lisp
-; ASCII Arrows
-
-; ---   ASCII Arrows   --- ;
-; ------------------------ ;
-
-(global-set-key (kbd "C-<right>") (lambda () (interactive) (insert "\u2192")))
-(global-set-key (kbd "C-<up>") (lambda () (interactive) (insert "\u2191")))
-
-; ---   Disable Keys   --- ;
-; ------------------------ ;
-
-;; Minimize
-(global-unset-key (kbd "C-z"))
-;; Print
-(global-unset-key (kbd "s-p"))
-
-(global-set-key (kbd "C-S-n")
-		(lambda () (interactive) (next-line 10)))
-(global-set-key (kbd "C-S-p")
-		(lambda () (interactive) (next-line -10)))
-
-#+end_src
-***** On-save hooks and backup
-- Visited files are backed up to =~/.emacs.d/backup-save-list=.
-
-#+begin_src emacs-lisp
-;; Shorthand for save all buffers
-;;  https://stackoverflow.com/questions/15254414/how-to-silently-save-all-buffers-in-emacs
-(defun save-all ()
-  (interactive)
-  (save-some-buffers t))
-
-
-; ---   Saving And Backup   --- ;
-; ----------------------------- ;
-
-; Delete trailing whitespace on save
-(add-hook 'before-save-hook
-          'delete-trailing-whitespace)
-
-;; Backup process upon save
-
-(setq vc-make-backup-files t) ; Allow old versions to be saved
-(setq delete-old-versions 20) ; Save 20
-(setq backup-directory-alist '(("." . "~/.emacs.d/backup-save-list"))) ; Save them here
-
-(setq auto-save-visited-mode t) ; Visited files will be auto-saved
-
-
-(setq auto-save-file-name-transforms
-      `((".*" ,(concat user-emacs-directory "auto-save-list/") t)))
-
-
-#+end_src
-
-***** Miscellaneous
-#+begin_src emacs-lisp
-
-; ---   Miscellaneous   --- ;
-; ------------------------- ;
-
-;https://emacs.stackexchange.com/questions/62419/what-is-causing-emacs-remote-shell-to-be-slow-on-completion
-(defun my-shell-mode-setup-function ()
-  (when (and (fboundp 'company-mode)
-             (file-remote-p default-directory))
-    (company-mode -1)))
-
-(add-hook 'shell-mode-hook 'my-shell-mode-setup-function)
-
-;; delete the region when typing, just like as we expect nowadays.
-(delete-selection-mode t)
-
-(setq explicit-shell-file-name "/bin/bash")
-
-;; Don't count two spaces after a period as the end of a sentence.
-(setq sentence-end-double-space nil)
-
-;; don't check package signatures
-;;  https://emacs.stackexchange.com/questions/233/how-to-proceed-on-package-el-signature-check-failure
-(setq package-check-signature nil)
-
-;; Avoid nesting exceeds max-lisp-eval-depth error
-;;  https://stackoverflow.com/questions/11807128/emacs-nesting-exceeds-max-lisp-eval-depth
-(setq max-lisp-eval-depth 1200)
-
-;; allow remembering risky variables
-;;  https://emacs.stackexchange.com/questions/10983/remember-permission-to-execute-risky-local-variables
-(defun risky-local-variable-p (sym &optional _ignored) nil)
-
-; Disable "buffer is read only" warning
-;;https://emacs.stackexchange.com/questions/19742/is-there-a-way-to-disable-the-buffer-is-read-only-warning
-(defun my-command-error-function (data context caller)
-  "Ignore the buffer-read-only signal; pass the rest to the default handler."
-  (when (not (eq (car data) 'buffer-read-only))
-    (command-error-default-function data context caller)))
-
-(setq command-error-function #'my-command-error-function)
-
-; Follow symlinks in dired
-;;https://emacs.stackexchange.com/questions/41286/follow-symlinked-directories-in-dired
-(setq find-file-visit-truename t)
-
-(setq browse-url-browser-function 'browse-url-generic
-      browse-url-generic-program "/usr/bin/brave-browser")
-
-; y or n instead of yes or no
-(setopt use-short-answers t)
-
-;; don't check package signatures
-;;  https://emacs.stackexchange.com/questions/233/how-to-proceed-on-package-el-signature-check-failure
-(setq package-check-signature nil)
-
-;; Avoid nesting exceeds max-lisp-eval-depth error
-;;  https://stackoverflow.com/questions/11807128/emacs-nesting-exceeds-max-lisp-eval-depth
-(setq max-lisp-eval-depth 1200)
-;;
-
-;; normal c-c in ansi-term
-;; https://emacs.stackexchange.com/questions/32491/normal-c-c-in-ansi-term
-(eval-after-load "term"
-  '(progn (term-set-escape-char ?\C-c)
-          (define-key term-raw-map (kbd "C-c") nil)))
-
-(setq comint-scroll-to-bottom-on-output t)
-
-;; allow kill hidden part of line
-;;  https://stackoverflow.com/questions/3281581/how-to-word-wrap-in-emacs
-(setq-default word-wrap t)
-
-;; auto-refresh if source changes
-;;  https://stackoverflow.com/questions/1480572/how-to-have-emacs-auto-refresh-all-buffers-when-files-have-changed-on-disk
-(global-auto-revert-mode 1)
+(set-face-attribute 'highlight nil :background “#294F6E”)
 
 ; ---   Frames And Windows   --- ;
 ; ------------------------------ ;
 
 (setq truncate-partial-width-windows nil)
 (setq split-window-preferred-function (quote split-window-sensibly))
-
-; ---   Other   --- ;
-; ----------------- ;
-
-(setq require-final-newline nil)
 #+end_src
+
 #+begin_src emacs-lisp
 (defun toggle-theme ()
-  "Toggle between dark and light themes."
+  “Toggle between dark and light themes.”
   (interactive)
   (if (custom-theme-enabled-p 'manoj-dark)
       (progn
@@ -3531,35 +3473,200 @@ Code that needs to be tangled both here and into custom inits for batch export
       (disable-theme 'leuven)
       (load-theme 'manoj-dark t))))
 #+end_src
-#+begin_src emacs-lisp
-(setq create-lockfiles nil)
 
+**** Buffers and files
+- Visited files are backed up to =~/.emacs.d/backup-save-list=.
+
+#+begin_src emacs-lisp
+;; Shorthand for save all buffers
+;;  https://stackoverflow.com/questions/15254414/how-to-silently-save-all-buffers-in-emacs
+(defun save-all ()
+  (interactive)
+  (save-some-buffers t))
+
+; ---   Saving And Backup   --- ;
+; ----------------------------- ;
+
+; Delete trailing whitespace on save
+(add-hook 'before-save-hook
+          'delete-trailing-whitespace)
+
+;; Backup process upon save
+(setq vc-make-backup-files t) ; Allow old versions to be saved
+(setq delete-old-versions 20) ; Save 20
+(setq backup-directory-alist '((“.” . “~/.emacs.d/backup-save-list”))) ; Save them here
+
+(setq auto-save-visited-mode t) ; Visited files will be auto-saved
+
+(setq auto-save-file-name-transforms
+      `((“.*” ,(concat user-emacs-directory “auto-save-list/”) t)))
 #+end_src
 
-****** (open-texdoc-in-background)
+**** Dired
+:PROPERTIES:
+:ID:       b3bd2685-ea78-4097-ae4c-e4a5e7a422ea
+:END:
+- whenever you open a new directory in Dired, the old Dired buffer is automatically killed
+  #+begin_src emacs-lisp
+(setq dired-kill-when-opening-new-dired-buffer t)
+
+#+end_src
+- when listing files:
+  #+begin_src emacs-lisp
+(setq dired-listing-switches “-alh”)
+
+#+end_src
+  -a → show all files, including dotfiles (. and ..).
+  - -l → use long listing format (permissions, owner, size, modification time).
+  -h → show file sizes in “human-readable” units (e.g. 1K, 2M, 3G).
+- Follow symlinks
+  #+begin_src emacs-lisp
+; Follow symlinks in dired
+;;https://emacs.stackexchange.com/questions/41286/follow-symlinked-directories-in-dired
+(setq find-file-visit-truename t)
+#+end_src
+- Open files using [[id:05e700d9-77cc-4aef-b310-164c267274d0][xdg-utils]]
+  #+begin_src emacs-lisp
+    (defun my/dired-open-xdg ()
+      “Open file at point with xdg-open.”
+      (interactive)
+      (let ((file (dired-get-file-for-visit)))
+	(start-process “xdg-open” nil “xdg-open” file)))
+
+    ;; Bind to a key in dired-mode
+    (with-eval-after-load 'dired
+      (define-key dired-mode-map (kbd “E”) #'my/dired-open-xdg))
+#+end_src
+
+**** Key bindings
+#+begin_src emacs-lisp
+; ---   ASCII Arrows   --- ;
+; ------------------------ ;
+
+(global-set-key (kbd “C-<right>”) (lambda () (interactive) (insert “\u2192”)))
+(global-set-key (kbd “C-<up>”) (lambda () (interactive) (insert “\u2191”)))
+
+; ---   Disable Keys   --- ;
+; ------------------------ ;
+
+;; Minimize
+(global-unset-key (kbd “C-z”))
+;; Print
+(global-unset-key (kbd “s-p”))
+
+(global-set-key (kbd “C-S-n”)
+		(lambda () (interactive) (next-line 10)))
+(global-set-key (kbd “C-S-p”)
+		(lambda () (interactive) (next-line -10)))
+
+(cua-mode t)
+#+end_src
+
+**** Shell and terminal
+#+begin_src emacs-lisp
+(setq explicit-shell-file-name “/bin/bash”)
+
+;; Comint
+(setq comint-scroll-to-bottom-on-output t
+      comint-move-point-for-output t)
+
+;; Disable company completion for remote shells (slow)
+;; https://emacs.stackexchange.com/questions/62419/what-is-causing-emacs-remote-shell-to-be-slow-on-completion
+(defun my-shell-mode-setup-function ()
+  (when (and (fboundp 'company-mode)
+             (file-remote-p default-directory))
+    (company-mode -1)))
+
+(add-hook 'shell-mode-hook 'my-shell-mode-setup-function)
+
+(defun dont-ask-to-kill-shell-buffer ()
+  “Don't ask for confirmation when killing *shell* buffer.”
+  (let ((buffer-name (buffer-name)))
+    (when (string-equal buffer-name “*shell*”)
+      (setq kill-buffer-query-functions
+            (delq 'process-kill-buffer-query-function
+                  kill-buffer-query-functions)))))
+
+(add-hook 'shell-mode-hook 'dont-ask-to-kill-shell-buffer)
+
+;; normal c-c in ansi-term
+;; https://emacs.stackexchange.com/questions/32491/normal-c-c-in-ansi-term
+(eval-after-load “term”
+  '(progn (term-set-escape-char ?\C-c)
+          (define-key term-raw-map (kbd “C-c”) nil)))
+#+end_src
+
+***** Tramp
+#+begin_src emacs-lisp
+(setq tramp-default-method “ssh”)
+
+(defadvice tramp-completion-handle-file-name-all-completions
+  (around dotemacs-completion-docker activate)
+  “(tramp-completion-handle-file-name-all-completions \”\” \”/docker:\” returns
+    a list of active Docker container names, followed by colons.”
+  (if (equal (ad-get-arg 1) “/docker:”)
+      (let* ((dockernames-raw (shell-command-to-string “docker ps | awk '$NF != \”NAMES\” { print $NF \”:\” }'”))
+             (dockernames (cl-remove-if-not
+                           #'(lambda (dockerline) (string-match “:$” dockerline))
+                           (split-string dockernames-raw “\n”))))
+        (setq ad-return-value dockernames))
+    ad-do-it))
+
+; https://emacs.stackexchange.com/questions/29286/tramp-unable-to-open-some-files
+(setq tramp-copy-size-limit 10000000)
+#+end_src
+
+***** (open-texdoc-in-background)
 :PROPERTIES:
 :ID:       60651916-4ffa-458f-9084-1ade3d163ea0
 :END:
 #+begin_src emacs-lisp
 (defun open-texdoc-in-background (docname)
-  "Open a TEXDOC for DOCNAME in the background and close the terminal."
-  (interactive "sEnter the name of the document: ")
-  (let ((term-buffer (ansi-term "/bin/bash")))
+  “Open a TEXDOC for DOCNAME in the background and close the terminal.”
+  (interactive “sEnter the name of the document: “)
+  (let ((term-buffer (ansi-term “/bin/bash”)))
     (with-current-buffer term-buffer
-      (term-send-raw-string (concat "texdoc " docname "\n"))
-      (term-send-raw-string "sleep 2; exit\n")
+      (term-send-raw-string (concat “texdoc “ docname “\n”))
+      (term-send-raw-string “sleep 2; exit\n”)
       (set-process-sentinel
        (get-buffer-process term-buffer)
        (lambda (process signal)
-         (when (or (string= signal "finished\n")
-                   (string= signal "exited\n"))
+         (when (or (string= signal “finished\n”)
+                   (string= signal “exited\n”))
            (kill-buffer (process-buffer process)))))
       (bury-buffer))))
 
 #+end_src
 https://chatgpt.com/c/7fac1ba4-f0a9-4d8f-8393-736e64e0ced1
-example: [[elisp:(open-texdoc-in-background "acronym")][acronym]]
-***** Make header regions read-only via tag
+example: [[elisp:(open-texdoc-in-background “acronym”)][acronym]]
+
+**** Text editing
+#+begin_src emacs-lisp
+;; delete the region when typing, just like as we expect nowadays.
+(delete-selection-mode t)
+
+;; allow kill hidden part of line
+;;  https://stackoverflow.com/questions/3281581/how-to-word-wrap-in-emacs
+(setq-default word-wrap t)
+#+end_src
+
+***** Read-only regions
+https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
+#+begin_src emacs-lisp
+(defun make-region-read-only (start end)
+  (interactive “*r”)
+  (let ((inhibit-read-only t))
+    (put-text-property start end 'read-only t)
+    (put-text-property start end 'font-lock-face '(:background “#8B0000”))))
+
+(defun make-region-read-write (start end)
+  (interactive “*r”)
+  (let ((inhibit-read-only t))
+    (put-text-property start end 'read-only nil)
+    (remove-text-properties start end '(font-lock-face nil))))
+#+end_src
+
+***** Read-only org regions via tag
 #+begin_src emacs-lisp
 (defun org-mark-readonly ()
   (interactive)
@@ -3568,10 +3675,9 @@ example: [[elisp:(open-texdoc-in-background "acronym")][acronym]]
      (lambda ()
        (org-mark-subtree)
        (add-text-properties (region-beginning) (region-end) '(read-only t)))
-     "read_only")
+     “read_only”)
     (unless buf-mod
       (set-buffer-modified-p nil))))
-
 
 (defun org-remove-readonly ()
   (interactive)
@@ -3581,80 +3687,36 @@ example: [[elisp:(open-texdoc-in-background "acronym")][acronym]]
        (let* ((inhibit-read-only t))
      (org-mark-subtree)
      (remove-text-properties (region-beginning) (region-end) '(read-only t))))
-     "read_only")
+     “read_only”)
     (unless buf-mod
       (set-buffer-modified-p nil))))
 
 (add-hook 'org-mode-hook 'org-mark-readonly)
 #+end_src
 
-***** Protect text regions as read-only
-https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
-#+begin_src emacs-lisp
-
-(defun make-region-read-only (start end)
-  (interactive "*r")
-  (let ((inhibit-read-only t))
-    (put-text-property start end 'read-only t)
-    (put-text-property start end 'font-lock-face '(:background "#8B0000"))))
-
-(defun make-region-read-write (start end)
-  (interactive "*r")
-  (let ((inhibit-read-only t))
-    (put-text-property start end 'read-only nil)
-    (remove-text-properties start end '(font-lock-face nil))))
-
-
-#+end_src
-***** Shell
-#+begin_src emacs-lisp
-(defun dont-ask-to-kill-shell-buffer ()
-  "Don't ask for confirmation when killing *shell* buffer."
-  (let ((buffer-name (buffer-name)))
-    (when (string-equal buffer-name "*shell*")
-      (setq kill-buffer-query-functions
-            (delq 'process-kill-buffer-query-function
-                  kill-buffer-query-functions)))))
-
-(add-hook 'shell-mode-hook 'dont-ask-to-kill-shell-buffer)
-
-#+end_src
-
-***** cua-mode
-#+begin_src emacs-lisp
-(cua-mode t)
-#+end_src
 ***** remove-blank-lines
 #+begin_src emacs-lisp
 (defun remove-blank-lines ()
-  "Remove all blank lines (including lines with only whitespace) in the current buffer."
+  “Remove all blank lines (including lines with only whitespace) in the current buffer.”
   (interactive)
   (save-excursion
     (goto-char (point-min))
-    (flush-lines "^[[:space:]]*$")))
-
-
-
+    (flush-lines “^[[:space:]]*$”)))
 #+end_src
 
-***** Org-mode
+
+**** Org-mode
 :PROPERTIES:
 :ID:       45e28300-51fd-4ce7-aed1-15dca15022d4
 :END:
-#+begin_src emacs-lisp
-(setq org-display-inline-images t
-      org-startup-with-inline-images t)
-
-#+end_src
-
-****** Startup
+***** Startup
 #+begin_src emacs-lisp
 (require 'org)
 (setq org-startup-folded t)
 (setq org-startup-with-inline-images t)
 #+end_src
 
-****** Add persistant highlights
+***** Add persistant highlights
 #+begin_src emacs-lisp
 (defun org-add-persistent-highlights ()
   "Add persistent highlighting for custom markers in Org mode."
@@ -3677,7 +3739,7 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 (add-hook 'org-mode-hook #'org-hide-markers-without-space)
 
 #+end_src
-******* org.hl                                                          :yas:
+****** org.hl                                                           :yas:
 #+begin_src bash :comment no :tangle ~/repos/basecamp/emacs/public_yasnippets/org-mode/org.hl
 # -*- mode: snippet -*-
 # key: org.hl
@@ -3687,7 +3749,9 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 <\{$1\}>
 #+end_src
 <{test}>
-****** Tags
+***** Tags
+
+
 #+BEGIN_SRC emacs-lisp
         (setq
          org-tags-exclude-from-inheritance
@@ -3726,7 +3790,7 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
           "stretch"
           "study"))
       #+END_SRC
-****** .TODO
+***** .TODO
 #+begin_src emacs-lisp
 (setq org-todo-keyword-faces
       (quote (("TODO" :background "red")
@@ -3747,8 +3811,8 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 (setq org-default-priority 89)
 
 #+end_src
-****** Opening things
-******* open in same frame
+***** Opening things
+****** open in same frame
 #+begin_src emacs-lisp
 (setq org-link-frame-setup
       '((vm . vm-visit-folder)
@@ -3758,44 +3822,54 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
         (wl . wl)))
 
 #+end_src
-******* Set org-file-apps to use xdg-open for all file extensions
+****** Set org-file-apps to use xdg-open for all file extensions
 
 #+begin_src emacs-lisp
 (setq org-file-apps
       `((directory . "/usr/bin/gnome-terminal --working-directory=\"%s\"")
         ("\\.pdf\\'" . "setsid -w xdg-open \"%s\"")
+        ("\\.pptx\\'" . "setsid -w xdg-open \"%s\"")
         ("\\.svg\\'" . "setsid -w xdg-open \"%s\"")
-        ("\\.\\(yaml\\|yml\\|txt\\|md\\|conf\\|list\\)\\'" .
+        ("\\.xlsx\\'" . "setsid -w xdg-open \"%s\"")
+        ("\\.org\\'" . emacs)
+        ("\\.sty\\'" . emacs)
+        ("\\.tex\\'" . emacs)
+        ("\\.\\(yaml\\|yml\\|txt\\|md\\|conf\\|list\\|tex\\)\\'" .
          (lambda (file path)
            (start-process "emacsclient" nil
                           "setsid"
                           "/usr/local/bin/emacsclient"
                           "--socket-name" "/home/jeszyman/.emacs.d/server/server"
                           "-c" (expand-file-name file))))
-        (auto-mode . emacsclient)
         (t . "setsid -w xdg-open \"%s\"")))
-
 #+end_src
 
-****** Lists
+***** Lists
 #+BEGIN_SRC emacs-lisp
 (setq org-cycle-include-plain-lists 'integrate)
 (setq org-list-indent-offset 0)
 #+END_SRC
+***** Inline images
+#+begin_src emacs-lisp
 
-****** Tables
+(setq org-display-inline-images t
+      org-startup-with-inline-images t)
+
+#+end_src
+***** Tables
 #+begin_src emacs-lisp
 ;; https://emacs.stackexchange.com/questions/22210/auto-update-org-tables-before-each-export
-(add-hook 'before-save-hook 'org-table-recalculate-buffer-tables)
+;; broke tangle?
+;; (add-hook 'before-save-hook 'org-table-recalculate-buffer-tables)
 #+end_src
 #+BEGIN_SRC emacs-lisp
 (setq org-startup-align-all-tables t)
 (setq org-startup-shrink-all-tables t)
 #+END_SRC
 
-****** Searching customizations
+***** Searching customizations
 
-****** org-image-actual-width
+***** org-image-actual-width
 :PROPERTIES:
 :ID:       a760d06b-c2b2-4b54-a0b6-375a13a20538
 :END:
@@ -3803,7 +3877,7 @@ When set as a list as below, 300 pixels will be the default, but another width c
 #+begin_src emacs-lisp
 (setq org-image-actual-width '(300))
 #+end_src
-****** shk-fix-inline-images, reload inline images after code eval
+***** shk-fix-inline-images, reload inline images after code eval
 If you have code blocks in Org mode that produce images (such as R or Python plots), this setup refreshes the images right after code execution without requiring manual intervention.
 
 #+begin_src emacs-lisp
@@ -3816,12 +3890,17 @@ If you have code blocks in Org mode that produce images (such as R or Python plo
 
 #+end_src
 
-****** Source code and tangle
-******* [[id:32dc9158-01f6-4303-b4eb-3901fe98f8d8][Declare Babel languages]]
-******* Default header arguments
+***** Source code and tangle
+#+begin_src emacs-lisp
+; For org 9.7
+(setq org-babel-tangle-remove-file-before-write 'auto)
+
+#+end_src
+
+****** [[id:32dc9158-01f6-4303-b4eb-3901fe98f8d8][Declare Babel languages]]
+****** Default header arguments
 #+name: babel_default_header_args
 #+begin_src emacs-lisp :eval never-export
-
 (setq org-babel-default-header-args '(
 				      (:comments . "no")
 				      (:mkdirp . "yes")
@@ -3832,11 +3911,12 @@ If you have code blocks in Org mode that produce images (such as R or Python plo
                                       (:exports . "none")
                                       (:noweb . "yes")
                                       (:tangle . "no")
+                                      (:tangle-mode . #o755)
 				      ))
 
 #+end_src
 
-******* General
+****** General
 #+begin_src emacs-lisp
 
 (setq
@@ -3868,7 +3948,7 @@ If you have code blocks in Org mode that produce images (such as R or Python plo
 
 #+end_src
 
-******* Toggle collapse blocks
+****** Toggle collapse blocks
 #+begin_src emacs-lisp
 (defvar org-blocks-hidden nil)
 
@@ -3881,7 +3961,7 @@ If you have code blocks in Org mode that produce images (such as R or Python plo
 
 #+end_src
 
-******* org-babel-min-lines-for-block-output
+****** org-babel-min-lines-for-block-output
 When executing a source block in org mode with the output set to verbatim, it will sometimes wrap the results in an #begin_example block, and sometimes it uses : symbols at the beginning of the line. Prevented with org-babel-src-preserve-indentation
 
 https://emacs.stackexchange.com/questions/39390/force-org-to-use-instead-of-begin-example-for-source-block-output
@@ -3889,13 +3969,13 @@ https://emacs.stackexchange.com/questions/39390/force-org-to-use-instead-of-begi
 #+begin_src emacs-lisp
 (setq org-babel-min-lines-for-block-output 1000)
 #+end_src
-******* Change noweb wrapper symbols
+****** Change noweb wrapper symbols
 #+begin_src emacs-lisp
 (setq org-babel-noweb-wrap-start "<#"
       org-babel-noweb-wrap-end "#>")
 #+end_src
-******* Post-tangle hooks
-******** stripe properties drawer on tangle
+****** Post-tangle hooks
+******* stripe properties drawer on tangle
 #+begin_src emacs-lisp
 ;; (defun my/org-babel-tangle-no-drawers ()
 ;;   "Tangle with `:comments org`, removing property drawers entirely."
@@ -3918,7 +3998,7 @@ https://emacs.stackexchange.com/questions/39390/force-org-to-use-instead-of-begi
 
 #+end_src
 https://chatgpt.com/c/675d9823-49a8-8005-840d-464e88f9c994?model=o1
-******* Distinguish Org Edit Special buffers
+****** Distinguish Org Edit Special buffers
 #+begin_src emacs-lisp
 ;; Distinguish Org Edit Special buffers
 ;;
@@ -3943,7 +4023,7 @@ https://chatgpt.com/c/675d9823-49a8-8005-840d-464e88f9c994?model=o1
 
 #+end_src
 
-****** Header views and cycling
+***** Header views and cycling
 #+begin_src emacs-lisp
 (setq org-show-hierarchy-above t)
 
@@ -3989,7 +4069,7 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 
 #+end_src
 
-****** No blank lines!
+***** No blank lines!
 #+begin_src emacs-lisp
 (setq org-cycle-separator-lines 0)
 (setq yas-indent-line 'fixed)
@@ -4009,7 +4089,7 @@ https://chatgpt.com/c/670d4cb7-5c08-8005-bec8-a2800e4bd0c4
 
 #+end_src
 
-****** General
+***** General
 #+begin_src emacs-lisp
 (setq org-confirm-shell-link-function nil)
 
@@ -4055,14 +4135,14 @@ https://chatgpt.com/c/670d4cb7-5c08-8005-bec8-a2800e4bd0c4
 
 
 
-******* org-blank-before-new-entry
+****** org-blank-before-new-entry
 https://stackoverflow.com/questions/28351465/emacs-orgmode-do-not-insert-line-between-headers
 #+begin_src emacs-lisp
 (setq org-blank-before-new-entry '((heading . nil) (plain-list-item . nil)))
 
 #+end_src
 
-******* my-org-tree-to-indirect-buffer
+****** my-org-tree-to-indirect-buffer
 #+begin_src emacs-lisp
 (defun my-org-tree-to-indirect-buffer (&optional arg)
   "Open current org tree in indirect buffer, using one prefix argument.
@@ -4076,7 +4156,7 @@ When called with two prefix arguments, ARG, run the original function without pr
 
 #+end_src
 
-****** Export
+***** Export
 :PROPERTIES:
 :ID:       8fb9a592-2ad4-44c4-a8d6-ce33f691c010
 :END:
@@ -4086,6 +4166,8 @@ When called with two prefix arguments, ARG, run the original function without pr
 (setq org-export-babel-evaluate t)
 ;; https://emacs.stackexchange.com/questions/23982/cleanup-org-mode-export-intermediary-file/24000#24000
 
+(with-eval-after-load 'org
+  (setq org-export-backends '(ascii html latex odt icalendar md org)))
 
 (setq-default cache-long-scans nil)
 (setq org-export-with-broken-links t)
@@ -4101,50 +4183,8 @@ When called with two prefix arguments, ARG, run the original function without pr
   #+begin_src emacs-lisp
 (setq org-odt-preferred-output-format "docx")
 #+end_src
-******* LaTeX
-#+name: orgmode_export_latex
-#+begin_src emacs-lisp
-(require 'ox-latex)
-
-(customize-set-value 'org-latex-with-hyperref nil)
-
-(setq org-latex-logfiles-extensions (quote ("auto" "lof" "lot" "tex~" "aux" "idx" "log" "out" "toc" "nav" "snm" "vrb" "dvi" "fdb_latexmk" "blg" "brf" "fls" "entoc" "ps" "spl" "bbl")))
-
-(add-to-list 'org-latex-packages-alist '("" "listings"))
-(add-to-list 'org-latex-packages-alist '("" "color"))
-(setq org-latex-caption-above nil)
-
-(setq org-latex-remove-logfiles t)
-
-(add-to-list 'org-latex-packages-alist '("" "listingsutf8"))
-(setq org-latex-src-block-backend 'minted)
-
-(setq org-latex-pdf-process
-      '("pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
-    "bibtex %b"
-    "pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
-    "pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"))
-
-
-(setq org-export-preserve-breaks t)
-#+end_src
-******** Empty latex class
-#+name: org_latex_empty_class
-#+begin_src emacs-lisp
-(with-eval-after-load 'ox-latex
-  (add-to-list 'org-latex-classes '("empty"
-                                    "\\documentclass{article}
-\\newcommand\\foo{bar}
-[NO-DEFAULT-PACKAGES]
-[NO-PACKAGES]"
-                                    ("\\section{%s}" . "\\section*{%s}")
-                                    ("\\subsection{%s}" . "\\subsection*{%s}")
-                                    ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
-                                    ("\\paragraph{%s}" . "\\paragraph*{%s}")
-                                    ("\\subparagraph{%s}" . "\\subparagraph*{%s}"))))
-
-#+end_src
-****** Open URLs in new window with C-u C-c C-o
+****** [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][Emacs LaTeX setup]]
+***** Open URLs in new window with C-u C-c C-o
 #+begin_src emacs-lisp
 (defun my-org-open-in-brave-new-window (link)
   "Open the LINK in Brave browser in a new window."
@@ -4188,7 +4228,7 @@ Open in a new Emacs frame if ARG is non-nil for ID or file links."
 
 #+end_src
 
-****** Checkboxes
+***** Checkboxes
 
 #+begin_src emacs-lisp
 ;; (defun org-toggle-checkbox-and-children ()
@@ -4227,7 +4267,17 @@ Open in a new Emacs frame if ARG is non-nil for ID or file links."
     - [ ] nested
     - [ ] check
       - [ ] boxes
-****** Documentation
+***** Capture
+#+begin_src emacs-lisp
+;; Make C-o a prefix key
+(define-prefix-command 'jg-C-o-map)
+(global-set-key (kbd "C-o") #'jg-C-o-map)
+
+;; Bind C-o c to org-capture
+(define-key jg-C-o-map (kbd "c") #'org-capture)
+#+end_src
+
+***** Documentation
 #+begin_src emacs-lisp
 (with-eval-after-load 'ox-latex
   (add-to-list 'org-latex-classes
@@ -4263,7 +4313,7 @@ Open in a new Emacs frame if ARG is non-nil for ID or file links."
                  ("\\subparagraph{%s}" . "\\subparagraph{%s}"))))
 #+end_src
 
-****** iCalendar
+***** iCalendar
 #+begin_src emacs-lisp
 (setq org-icalendar-with-timestamps 'active)
 (setq org-icalendar-use-scheduled t)
@@ -4279,11 +4329,11 @@ Open in a new Emacs frame if ARG is non-nil for ID or file links."
 
 #+end_src
 
-****** Properties
+***** Properties
 #+begin_src emacs-lisp
 (setq org-use-property-inheritance t)
 #+end_src
-****** (browse-org-table-urls-by-name)
+***** (browse-org-table-urls-by-name)
 
 #+begin_src emacs-lisp
 (defun browse-org-table-urls-by-name (table-name)
@@ -4320,7 +4370,7 @@ TABLE-NAME is the name of the table identified as #+name."
 
 #+end_src
 
-****** Agenda
+***** Agenda
 #+begin_src emacs-lisp
 (global-set-key "\C-ca" 'org-agenda)
 
@@ -4370,7 +4420,7 @@ TABLE-NAME is the name of the table identified as #+name."
 (setq org-confirm-elisp-link-function nil)
 
 #+end_src
-****** :plain link type
+***** :plain link type
 :PROPERTIES:
 :ID:       0f1b7abb-233b-4e81-abcb-e424e9b860e4
 :END:
@@ -4414,7 +4464,7 @@ https://claude.ai/chat/c775f0eb-fa91-45b4-82d6-e1a0df8b5526
   (require 'ol-plain))
 #+end_src
 
-******* org-image-actual-width
+****** org-image-actual-width
 :PROPERTIES:
 :ID:       a760d06b-c2b2-4b54-a0b6-375a13a20538
 :END:
@@ -4422,7 +4472,7 @@ When set as a list as below, 300 pixels will be the default, but another width c
 #+begin_src emacs-lisp
 (setq org-image-actual-width '(300))
 #+end_src
-****** Checkbox intermediate states!
+***** Checkbox intermediate states!
 
 https://claude.ai/chat/81ca7e51-65b4-4c0d-892b-a94861979890
 
@@ -4554,7 +4604,11 @@ Parent checkboxes with children cannot be directly toggled."
           ;; Update parent checkbox if it exists
           (let ((parent-line (my/find-parent-checkbox)))
             (when parent-line
-              (my/update-parent-checkbox parent-line))))))))
+              (my/update-parent-checkbox parent-line)))
+          ;; Update statistics cookies (e.g., [0%] or [/])
+          (org-update-checkbox-count-maybe)
+          (when (org-at-heading-p)
+            (org-update-parent-todo-statistics)))))))
 
 ;; Alternative function that always cycles through three states
 (defun my/org-cycle-checkbox-three-state ()
@@ -4682,17 +4736,17 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 - [X] Test
   - [X] Test 2
   - [X] test 3
-****** Ideas
-******* Default reset check boxes
+***** Ideas
+****** Default reset check boxes
 https://chatgpt.com/c/67069939-5e04-8005-80b3-7865981a8843
 - currently an edit at point for all properties- NO!
 
-***** Editing text
+**** Editing text
   #+begin_src emacs-lisp
 ;;https://emacs.stackexchange.com/questions/12701/kill-a-line-deletes-the-line-but-leaves-a-blank-newline-character
 (setq kill-whole-line t)
 #+end_src
-***** bibtex
+**** bibtex
 #+begin_src emacs-lisp
 (setq reftex-default-bibliography '("~/repos/org/bib.bib"))
 
@@ -4703,11 +4757,72 @@ https://chatgpt.com/c/67069939-5e04-8005-80b3-7865981a8843
       bibtex-completion-notes-path "~/repo/org/notes")
 
 #+end_src
-****** get-bibtex-from-doi
+***** get-bibtex-from-doi
 :PROPERTIES:
 :ID:       f22974c3-ff99-4da0-b253-35ced07588bf
 :END:
 #+begin_src emacs-lisp
+(defun get-bibtex-from-doi (dois-string)
+  "Get BibTeX entry or entries from one or more DOIs and insert them at point.
+You can enter multiple DOIs separated by spaces.
+
+For each DOI, if an entry with the same DOI is already present in
+the current buffer (based on a `doi = {…}` field), that DOI is
+skipped and nothing is inserted for it."
+  (interactive "MDOI (space-separated for multiple): ")
+  ;; Split the minibuffer input on whitespace into a list of DOIs.
+  (let ((dois (split-string dois-string "[ \t\n]+" t)))
+    (dolist (doi dois)
+      ;; Normalize DOI: strip http(s)://(dx.)doi.org/ if present.
+      (let* ((normalized-doi
+              (replace-regexp-in-string
+               "\\`https?://\\(dx\\.\\)?doi\\.org/" "" doi))
+             (doi-field-regexp
+              (concat "doi[[:space:]]*=[[:space:]]*[{\"]"
+                      (regexp-quote normalized-doi)
+                      "[}\"]")))
+        ;; Check whether this DOI already exists in the current buffer.
+        (if (save-excursion
+              (goto-char (point-min))
+              (re-search-forward doi-field-regexp nil t))
+            (message "Entry with DOI %s already exists in this buffer, skipping"
+                     normalized-doi)
+          ;; Otherwise, fetch and insert it.
+          (let ((url-mime-accept-string "text/bibliography;style=bibtex")
+                bibtex-entry
+                entry)
+            ;; Retrieve BibTeX text from dx.doi.org.
+            (let ((buf (url-retrieve-synchronously
+                        (format "http://dx.doi.org/%s" normalized-doi))))
+              (unless buf
+                (error "Could not retrieve DOI %s" normalized-doi))
+              (with-current-buffer buf
+                (goto-char (point-max))
+                (setq bibtex-entry
+                      (buffer-substring
+                       (string-match "@" (buffer-string))
+                       (point))))
+              (kill-buffer buf))
+            ;; Decode and postprocess the BibTeX entry.
+            (setq entry (decode-coding-string bibtex-entry 'utf-8))
+            ;; Build key = first-author-lastname + year, e.g. tomczak2024.
+            (when (string-match "author={\\([^,{}]+\\)" entry)
+              (let* ((first-author (match-string 1 entry))
+                     (lastname (replace-regexp-in-string "[^a-zA-Z]" "" first-author)))
+                (when (string-match "year={\\([0-9]+\\)" entry)
+                  (let* ((year (match-string 1 entry))
+                         (new-key (downcase (concat lastname year))))
+                    (setq entry
+                          (replace-regexp-in-string
+                           "@\\(\\w+\\){[^,]+,"
+                           (format "@\\1{%s," new-key)
+                           entry))))))
+            ;; Insert and format this one entry at point.
+            (insert entry "\n\n")
+            (bibtex-fill-entry)))))))
+#+end_src
+
+#+begin_src emacs-lisp :tangle no
 ;; Amazing bibtex from doi fetcher
 ;; https://www.anghyflawn.net/blog/2014/emacs-give-a-doi-get-a-bibtex-entry/
 (defun get-bibtex-from-doi (doi)
@@ -4729,7 +4844,7 @@ https://chatgpt.com/c/67069939-5e04-8005-80b3-7865981a8843
  (bibtex-fill-entry))
 
 #+end_src
-******* dev
+****** dev
 :PROPERTIES:
 :header-args:emacs-lisp: :tangle no
 :header-args:bash: :tangle no
@@ -4826,7 +4941,7 @@ but i haven't build this into the retreival yet.
 
 see also https://claude.ai/chat/cce7d404-eb1b-4424-8272-f46660f53612
 https://github.com/jkitchin/org-ref/blob/master/doi-utils.el
-***** python.el
+**** python.el
 https://github.com/gregsexton/ob-ipython/issues/28
 #+begin_src emacs-lisp
 
@@ -4837,7 +4952,7 @@ https://github.com/gregsexton/ob-ipython/issues/28
 
 (setq python-indent-guess-indent-offset-verbose nil)
 #+end_src
-***** UTF8
+**** UTF8
 #+begin_src emacs-lisp
 (set-buffer-file-coding-system 'utf-8)
 (prefer-coding-system 'utf-8)
@@ -4845,11 +4960,11 @@ https://github.com/gregsexton/ob-ipython/issues/28
 
 #+end_src
 
-***** Alpha key
+**** Alpha key
 #+begin_src emacs-lisp
 (global-set-key (kbd "C-x a") (lambda () (interactive) (insert "α")))
 #+end_src
-***** dev
+**** dev
 :PROPERTIES:
 :header-args:emacs-lisp: :tangle no
 :END:
@@ -4859,7 +4974,7 @@ https://github.com/gregsexton/ob-ipython/issues/28
 #+end_src
 
 
-***** Prevent properties drawers in tangle with org comments
+**** Prevent properties drawers in tangle with org comments
 :PROPERTIES:
 :ID:       aa896a50-db72-45a7-9f41-ed822ffb43e6
 :END:
@@ -4882,6 +4997,59 @@ https://github.com/gregsexton/ob-ipython/issues/28
 #+end_src
 https://chat.openai.com/c/75a4844b-df8c-4690-8bf0-3078d341d584
 
+*** Package configuration
+:PROPERTIES:
+:ID:       28ed3017-eedb-4a6c-94e5-f477353170c8
+:header-args:emacs-lisp: :tangle ./emacs/public_config.el :comments org
+:END:
+- [[file:emacs/public_config.el]]
+- for config rewrite https://chatgpt.com/c/e16840b5-355a-42e3-bd97-70693daa17c0
+**** AUCTeX
+- [[https://www.gnu.org/software/auctex/manual/auctex.html#Quick-Start][documentation]]
+  - [[https://www.gnu.org/software/auctex/manual/auctex/Folding.html][3.2 Folding Macros and Environments]]
+- https://stackoverflow.com/questions/7587287/how-do-i-bind-latexmk-to-one-key-in-emacs-and-have-it-show-errors-if-there-are-a
+- [[https://www.gnu.org/software/auctex/manual/auctex.html#Quick-Start][Quick start]]
+- [[https://tex.stackexchange.com/questions/145318/how-to-make-auctex-not-prompt-me-on-c-c-c-c][stack:tex: How to make auctex not prompt me on C-c C-c]]
+- [[https://tex.stackexchange.com/questions/20843/useful-shortcuts-or-key-bindings-or-predefined-commands-for-emacsauctex][stack:tex: Useful shortcuts or key bindings or predefined commands for emacs+AUCTeX]]
+- https://piotrkazmierczak.com/2010/emacs-as-the-ultimate-latex-editor/
+
+#+begin_src emacs-lisp
+(use-package tex
+  :ensure auctex
+  :config
+  (setenv "PATH" (concat "/usr/local/texlive/2021/bin/x86_64-linux:"
+			 (getenv "PATH")))
+  (add-to-list 'exec-path "/usr/local/texlive/2021/bin/x86_64-linux")
+  (setq TeX-auto-save t
+        TeX-parse-self t
+        TeX-save-query nil
+        TeX-view-program-selection '((output-pdf "Okular"))
+        TeX-view-program-list '(("Okular" "okular %o"))))
+#+end_src
+
+#+begin_src emacs-lisp
+(eval-after-load "tex"
+  '(progn
+     (add-to-list 'TeX-command-list
+       '("LatexMk"
+         "latexmk -pdf -f -pdflatex=pdflatex -shell-escape -interaction=nonstopmode %s"
+         TeX-run-TeX nil t
+         :help "Run LatexMk to build PDF"))
+     (setq TeX-command-default "LatexMk")))
+
+(eval-after-load "tex"
+  '(progn
+     (add-to-list 'TeX-command-list
+       '("LatexMk"
+         "latexmk -pdf -f -pdflatex=pdflatex -shell-escape -interaction=nonstopmode %s"
+         TeX-run-TeX nil t
+         :help "Run LatexMk to build PDF"))
+     (setq TeX-command-default "LatexMk")
+     (setq TeX-view-program-selection '((output-pdf "Okular")))
+     (setq TeX-view-program-list
+           '(("Okular" ("okular --unique %o"))))))
+#+end_src
+
 **** Blacken
 ***** Use-package
 #+begin_src emacs-lisp
@@ -4889,7 +5057,6 @@ https://chat.openai.com/c/75a4844b-df8c-4690-8bf0-3078d341d584
   :after elpy
   :hook (elpy-mode . blacken-mode))
 #+end_src
-
 **** citar
 #+begin_src emacs-lisp
 ;; Citar configuration for org-cite integration
@@ -4900,7 +5067,7 @@ https://chat.openai.com/c/75a4844b-df8c-4690-8bf0-3078d341d584
 
   :custom
   ;; Bibliography paths
-  (org-cite-global-bibliography '("~/repos/org/bib.bib"))
+  (org-cite-global-bibliography '("/home/jeszyman/repos/org/bib.bib"))
   (citar-bibliography org-cite-global-bibliography)
   (citar-library-paths '("~/data/library/"))   ;; PDF storage
 
@@ -4936,6 +5103,14 @@ https://chat.openai.com/c/75a4844b-df8c-4690-8bf0-3078d341d584
         (t . find-file)))                   ;; Default to Emacs for others
 
 
+(require 'oc-biblatex)
+
+(setq org-cite-biblatex-styles
+      '((nil nil "autocite" "autocites")   ;; DEFAULT: [cite:@key] -> \autocite{}
+        ("auto" nil "autocite" "autocites")
+        ("plain" nil "cite" "cites")))     ;; [cite/plain:@key] -> \cite{}
+
+
 #+end_src
 #+begin_src emacs-lisp
 (use-package citar-embark
@@ -4947,37 +5122,93 @@ https://chat.openai.com/c/75a4844b-df8c-4690-8bf0-3078d341d584
 #+end_src
 https://blog.tecosaur.com/tmio/2021-07-31-citations.html
 https://kristofferbalintona.me/posts/202206141852/
+
+#+begin_src emacs-lisp
+(setq org-cite-biblatex-styles
+      '(("auto" "autocite" "Autocite")
+        ("plain" "cite" "Cite")))
+
+(setq org-cite-biblatex-default-style "auto")
+#+end_src
+
 **** [[file:config/public_emacs_config.el][Compiled elisp file]]
 **** Conda
-
-#+begin_src emacs-lisp
-(setenv "WORKON_HOME" "~/miniconda3/envs")
-#+end_src
-#+begin_src emacs-lisp
-;;Anaconda support
-;(require 'conda)
-;(use-package conda)
-
-(custom-set-variables
- '(conda-anaconda-home "~/miniconda3/"))
-
-(setq conda-env-home-directory (expand-file-name "~/miniconda3") ;
-      conda-env-subdirectory "envs")
-
-(setq conda-env-home-directory "~/miniconda3")
-;;get current environment--from environment variable CONDA_DEFAULT_ENV
-;;(conda-env-activate 'getenv "CONDA_DEFAULT_ENV")
-;;(conda-env-autoactivate-mode t)
-(setq-default mode-line-format (cons mode-line-format '(:exec conda-env-current-name)))
-
-(setenv "WORKON_HOME" "~/miniconda3/envs")
-(pyvenv-mode 1)
-#+end_src
-#+begin_src emacs-lisp
-(setenv "CONDA_DEFAULT_ENV" "basecamp")
-(getenv "CONDA_DEFAULT_ENV")
-#+end_src
 - https://github.com/necaris/conda.el
+
+
+M-x conda-env-activate
+
+#+begin_src emacs-lisp
+;; Remove everything and evaluate this clean version:
+(use-package conda
+  :ensure t
+  :init
+  (setq conda-anaconda-home (expand-file-name "~/miniconda3"))
+  (setq conda-env-home-directory (expand-file-name "~/miniconda3"))
+  :config
+  ;; Tell conda to be quiet
+  (setenv "CONDA_VERBOSITY" "0")
+
+  ;; Initialize shells
+  (conda-env-initialize-interactive-shells)
+  (conda-env-initialize-eshell)
+
+  ;; DO NOT enable autoactivate
+  (conda-env-autoactivate-mode -1))
+
+;; Silence the elisp-level messages
+(with-eval-after-load 'conda
+  (defun conda--message (&rest _args)
+    "Suppress all conda messages."
+    nil))
+#+end_src
+
+
+
+***** Conda ESS patch
+:PROPERTIES:
+:ID:       d710ddb5-b7e7-44e2-ab6d-e3be42a76278
+:END:
+#+begin_src emacs-lisp :tangle no
+(with-eval-after-load 'conda
+  (defun my/ess-use-conda-r ()
+    "Set `inferior-ess-r-program' to Conda's R if Conda env is active."
+    (when (and (boundp 'conda-env-current-env)
+               conda-env-current-env
+               (not (string-empty-p conda-env-current-env)))
+      (setq inferior-ess-r-program
+            (expand-file-name "bin/R" conda-env-current-path))))
+
+  (add-hook 'ess-r-mode-hook #'my/ess-use-conda-r))
+
+(defun my/ess-use-conda-r ()
+  "Set `inferior-ess-r-program` to Conda's R if a Conda env is active."
+  (when (and (boundp 'conda-env-current-path)
+             conda-env-current-path
+             (file-exists-p (expand-file-name "bin/R" conda-env-current-path)))
+    (setq inferior-ess-r-program
+          (expand-file-name "bin/R" conda-env-current-path))))
+
+;; Run this after activating a Conda env
+(advice-add 'conda-env-activate :after (lambda (&rest _) (my/ess-use-conda-r)))
+
+;; Also patch on ESS startup as fallback
+(add-hook 'ess-r-mode-hook #'my/ess-use-conda-r)
+
+#+end_src
+#+begin_src emacs-lisp
+(defun my/ess-use-conda-r ()
+  "Set `inferior-ess-r-program` to Conda's R if a Conda env is active."
+  (when (and (boundp 'conda-env-current-path)
+             conda-env-current-path
+             (file-exists-p (expand-file-name "bin/R" conda-env-current-path)))
+    (setq inferior-ess-r-program
+          (expand-file-name "bin/R" conda-env-current-path))))
+
+(with-eval-after-load 'ess-r-mode
+  (add-hook 'ess-r-mode-hook #'my/ess-use-conda-r))
+
+#+end_src
 
 **** Corfu
 #+begin_src emacs-lisp
@@ -5109,72 +5340,12 @@ https://kristofferbalintona.me/posts/202206141852/
 #+end_src
 
 **** ESS
-- [[id:147724ad-7598-4be6-b8a9-725a19eb39fe][ESS reference header]]
-***** Use-package
-#+begin_src emacs-lisp
-(use-package ess
-  :init
-  (require 'ess-site)
-  :config
-  (setq ess-ask-for-ess-directory nil
-	ess-help-own-frame 'one
-	ess-indent-with-fancy-comments nil
-	ess-use-auto-complete t
-	ess-use-company t
-	inferior-ess-own-frame t
-	inferior-ess-same-window nil)
-  (define-key ess-mode-map (kbd "C-c C-n") 'ess-eval-line-and-step)
-  :mode (
-         ("/R/.*\\.q\\'"       . R-mode)
-         ("\\.[rR]\\'"         . R-mode)
-         ("\\.[rR]profile\\'"  . R-mode)
-         ("NAMESPACE\\'"       . R-mode)
-         ("CITATION\\'"        . R-mode)
-         ("\\.[Rr]out"         . R-transcript-mode)
-         ("\\.Rd\\'"           . Rd-mode)
-         ))
-#+end_src
-***** Syntax highlighting
-#+begin_src emacs-lisp
-(custom-set-variables
- '(ess-R-font-lock-keywords
-   (quote
-    ((ess-R-fl-keyword:modifiers . t)
-     (ess-R-fl-keyword:fun-defs . t)
-     (ess-R-fl-keyword:keywords . t)
-     (ess-R-fl-keyword:assign-ops . t)
-     (ess-R-fl-keyword:constants . t)
-     (ess-fl-keyword:fun-calls . t)
-     (ess-fl-keyword:numbers . t)
-     (ess-fl-keyword:operators . t)
-     (ess-fl-keyword:delimiters . t)
-     (ess-fl-keyword:= . t)
-     (ess-R-fl-keyword:F&T . t)
-     (ess-R-fl-keyword:%op% . t)))))
-#+end_src
 
-***** ESS (Emacs Speaks Statistics)
-:PROPERTIES:
-:ID:       147724ad-7598-4be6-b8a9-725a19eb39fe
-:END:
-- ESS Frames setup
-  #+begin_src emacs-lisp
-;;;
-(setq inferior-ess-own-frame t)
-(setq inferior-ess-same-window nil)
-;;;
-;;;;;create a new frame for each help instance
-;;;
-(setq ess-help-own-frame t)
-;;;;;If you want all help
-;;;;; buffers to go into one frame do:
-;;;
-(setq ess-help-own-frame 'one)
-
-(setq ess-ask-for-ess-directory nil)
-(setq ess-local-process-name "R")
-
-#+end_src
+- Session prompt behavior: ESS only asks "which R session?" once per interactive REPL
+  window (zero times if the session was launched directly via e.g. =R= or =julia=).
+  Subsequent evals in the same ESS window reuse that session silently. Potentially
+  replicable for =ESSshell= (shell REPL) — investigate whether the same
+  =ess-ask-for-ess-directory= / process-association mechanism applies there.
 - no python support- https://github.com/emacs-ess/ESS/issues/910
 - ess-remote to docker R
 https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute_it/
@@ -5190,16 +5361,73 @@ https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute
 - cite:rossini2016
 - https://stat.ethz.ch/pipermail/ess-help/2010-January/005822.html
 - https://github.com/emacs-lsp/lsp-mode/issues/1383
-**** exec-path-from-shell
-- Ensures parts of Emacs inherit shell PATH when Emacs is runnng as a daemon
-***** Use-package
+
+
 #+begin_src emacs-lisp
-(use-package exec-path-from-shell
-  :config
-  (when (daemonp)
-    (exec-path-from-shell-initialize)))
+(use-package ess
+  :ensure t
+  :init
+  (setq ess-ask-for-ess-directory nil
+        ess-help-own-frame 'one
+        ess-indent-with-fancy-comments nil
+        ess-use-auto-complete t
+        ess-use-company t
+        inferior-ess-own-frame t
+        inferior-ess-same-window nil)
+  :mode (("/R/.*\\.q\\'"       . ess-r-mode)
+         ("\\.[rR]\\'"         . ess-r-mode)
+         ("\\.[rR]profile\\'"  . ess-r-mode)
+         ("NAMESPACE\\'"       . ess-r-mode)
+         ("CITATION\\'"        . ess-r-mode)
+         ("\\.[Rr]out"         . R-transcript-mode)
+         ("\\.Rd\\'"           . Rd-mode))
+  :hook
+  (ess-r-mode . (lambda ()
+                 (local-set-key (kbd "C-c C-n") #'ess-eval-line-and-step))))
+
+(custom-set-variables
+ '(ess-R-font-lock-keywords
+   '((ess-R-fl-keyword:modifiers . t)
+     (ess-R-fl-keyword:fun-defs . t)
+     (ess-R-fl-keyword:keywords . t)
+     (ess-R-fl-keyword:assign-ops . t)
+     (ess-R-fl-keyword:constants . t)
+     (ess-fl-keyword:fun-calls . t)
+     (ess-fl-keyword:numbers . t)
+     (ess-fl-keyword:operators . t)
+     (ess-fl-keyword:delimiters . t)
+     (ess-fl-keyword:= . t)
+     (ess-R-fl-keyword:F&T . t)
+     (ess-R-fl-keyword:%op% . t))))
 
 #+end_src
+
+***** [[id:d710ddb5-b7e7-44e2-ab6d-e3be42a76278][Conda ESS patch]]
+
+**** exec-path-from-shell
+:PROPERTIES:
+:ID:       3c5baef9-d1c5-41f5-aa43-368c8b346790
+:END:
+- Ensures parts of Emacs inherit shell PATH when Emacs is runnng as a daemon
+#+begin_src emacs-lisp
+;; -----------------------------------------------------------------------------
+;; Shell environment integration
+;; -----------------------------------------------------------------------------
+;; GUI Emacs doesn't inherit shell environment variables since it's not
+;; launched from an interactive shell. exec-path-from-shell fixes this by
+;; spawning a shell and importing specified variables.
+;;
+;; Variables imported:
+;;   - PATH, MANPATH (defaults)
+;;   - TEXINPUTS: LaTeX package search path (for ~/repos/latex/sty)
+;; -----------------------------------------------------------------------------
+(use-package exec-path-from-shell
+  :ensure t
+  :config
+  (add-to-list 'exec-path-from-shell-variables "TEXINPUTS")
+  (exec-path-from-shell-initialize))
+#+end_src
+
 **** expand-region
 :PROPERTIES:
 :ID:       aa87da56-3f24-475c-adbe-d4d99a7376cc
@@ -5342,7 +5570,7 @@ https://joostkremers.github.io/ebib/
 ;(use-package key-chord
 ;  :ensure t)
 (key-chord-mode 1)
-(setq key-chord-two-keys-delay 0.2)
+(setq key-chord-two-keys-delay 0.01)
 ;;(key-chord-define evil-insert-state-map "jj" 'evil-normal-state)
 
 #+end_src
@@ -5446,8 +5674,17 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 
 #+end_src
 
-**** orderless
+**** openwith
 ***** Use-package
+#+begin_src emacs-lisp
+(use-package openwith
+  :config
+  (setq openwith-associations
+        '(("\\.\\(pdf\\|docx\\|xlsx\\|pptx\\|svg\\|png\\|jpg\\|mp4\\)\\'" "xdg-open" (file))))
+  (openwith-mode t))
+#+end_src
+
+**** orderless
 #+begin_src emacs-lisp
 (use-package orderless
   :init
@@ -5483,6 +5720,8 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 
 #+end_src
 **** org-ql
+- org-ql to pull time logs as tabular data exports [[https://claude.ai/chat/c4df90a0-faa0-459e-99a5-cd8d8e3945a6]]
+
 #+begin_src emacs-lisp
 (use-package org-ql)
 #+end_src
@@ -5595,19 +5834,7 @@ https://github.com/LionyxML/ros
 (add-hook 'tree-sitter-mode-hook #'disable-tree-sitter-for-org-mode)
 #+end_src
 
-**** vc-use-package
-#+begin_src emacs-lisp
-(unless (package-installed-p 'vc-use-package)
-  (package-vc-install "https://github.com/slotThe/vc-use-package"))
-(require 'vc-use-package)
-#+end_src
-
 **** vertico
-***** Use-package
-#+begin_src emacs-lisp
-(use-package vertico)
-#+end_src
-
 ***** Use `consult-completion-in-region' if Vertico is enabled.
 #+begin_src emacs-lisp
 
@@ -5622,59 +5849,35 @@ https://github.com/LionyxML/ros
 #+end_src
 ***** other
 #+begin_src emacs-lisp
-;; A few more useful configurations...
-(use-package emacs
-  :init
-  ;; Add prompt indicator to `completing-read-multiple'.
-  ;; We display [CRM<separator>], e.g., [CRM,] if the separator is a comma.
-  (defun crm-indicator (args)
-    (cons (format "[CRM%s] %s"
-                  (replace-regexp-in-string
-                   "\\`\\[.*?]\\*\\|\\[.*?]\\*\\'" ""
-                   crm-separator)
-                  (car args))
-          (cdr args)))
-  (advice-add #'completing-read-multiple :filter-args #'crm-indicator)
-
-  ;; Do not allow the cursor in the minibuffer prompt
-  (setq minibuffer-prompt-properties
-        '(read-only t cursor-intangible t face minibuffer-prompt))
-  (add-hook 'minibuffer-setup-hook #'cursor-intangible-mode)
-
-  ;; Emacs 28: Hide commands in M-x which do not work in the current mode.
-  ;; Vertico commands are hidden in normal buffers.
-  ;; (setq read-extended-command-predicate
-  ;;       #'command-completion-default-include-p)
-
-  ;; Enable recursive minibuffers
-  (setq enable-recursive-minibuffers t))
-
-(define-key vertico-map (kbd "TAB") #'minibuffer-complete)
-(define-key vertico-map (kbd "C-n") #'vertico-next)
-(define-key vertico-map (kbd "C-p") #'vertico-previous)
-
-#+end_src
-#+begin_src emacs-lisp
 ;; Ensure you have these packages installed
 (use-package vertico
   :ensure t
-  :init
-  (vertico-mode))
+  :config
+  (vertico-mode)
+  ;; Performance improvements
+  (setq vertico-count 10)
+  (setq vertico-cycle nil)
+  (setq vertico-preselect 'first))
 
+;; Only show relevant commands in M-x
+(setq read-extended-command-predicate
+      #'command-completion-default-include-p)
+
+;; Optimize orderless for better performance
+(use-package orderless
+  :init
+  (setq completion-styles '(orderless basic)
+        completion-category-defaults nil
+        completion-category-overrides '((file (styles partial-completion))))
+  :config
+  ;; Use faster matching styles
+  (setq orderless-matching-styles '(orderless-literal orderless-regexp)))
 (use-package marginalia
   :ensure t
   :after vertico
   :init
   (marginalia-mode))
 
-(use-package orderless
-  :ensure t
-  :init
-  ;; Customize completion styles to include orderless
-  (setq completion-styles '(orderless basic))
-  ;; Optionally configure completion categories
-  (setq completion-category-defaults nil)
-  (setq completion-category-overrides '((file (styles basic partial-completion)))))
 
 (use-package savehist
   :ensure t
@@ -5735,6 +5938,16 @@ https://github.com/LionyxML/ros
    '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC"))))))
 
 
+
+#+end_src
+
+#+begin_src emacs-lisp
+(with-eval-after-load 'vterm
+  ;; Paste with C-v in vterm buffers
+  (define-key vterm-mode-map (kbd "C-v") #'vterm-yank)
+
+  ;; Optionally also support C-S-v like many terminals
+  (define-key vterm-mode-map (kbd "C-S-v") #'vterm-yank))
 
 #+end_src
 
@@ -5868,16 +6081,52 @@ https://github.com/joaotavora/yasnippet/issues/998
 
 - add # condition: 'auto
 
-**** anki-editor
+**** org-repeat-by-cron
+#+begin_src emacs-lisp
+(use-package org-repeat-by-cron
+  :ensure t  ; If the file is already in your load-path
+  :config
+  (global-org-repeat-by-cron-mode))
+#+end_src
+- https://github.com/TomoeMami/org-repeat-by-cron.el
+
+
+*** anki-editor
 :PROPERTIES:
 :ID:       037ae1d1-f3b6-4b63-8d43-4d642b947c71
 :END:
 - anki editor is working- save the .el https://github.com/anki-editor/anki-editor
+- https://yiufung.net/post/anki-org/
+- dependencies
+  - [[https://github.com/FooSoft/anki-connect#installation][anki connect add-on]]
 
- - General reference
-   - https://yiufung.net/post/anki-org/
-   - dependencies
-     - [[https://github.com/FooSoft/anki-connect#installation][anki connect add-on]]
+#+begin_src bash :tangle no
+curl localhost:8765 -X POST -d '{
+  "action": "addNote",
+  "version": 6,
+  "params": {
+    "note": {
+      "deckName": "default",
+      "modelName": "Basic (and reversed card)",
+      "fields": {
+        "Front": "Some like it hot",
+        "Back": "it's raining very hard"
+      },
+      "tags": ["emacs"],
+      "options": {"allowDuplicate": false}
+    }
+  }
+}'
+
+
+#+end_src
+
+#+begin_src emacs-lisp :tangle no
+(setq anki-editor-debug t)
+(setq anki-editor--log-level 'debug)
+
+#+end_src
+
 ***** anki.cloze                                                        :yas:
 :PROPERTIES:
 :ID:       1c768948-d494-47ba-b5f3-2629c072e527
@@ -5896,8 +6145,6 @@ https://github.com/joaotavora/yasnippet/issues/998
 $0
 `(make-string (+ 1 (org-current-level)) ?*)` Extra
 #+end_src
-
-
 **** tramp
 https://www.reddit.com/r/emacs/comments/oh36yi/company_and_companyshell_super_slow_over_tramp/
 https://willschenk.com/articles/2020/tramp_tricks/
@@ -5967,7 +6214,43 @@ case "$TERM" in
 :header-args: :tangle ./emacs/load-last.el
 :END:
 #+begin_src emacs-lisp
-(load-directory "~/.emacs.d/lisp/")
+(defun jg--parse-org-enums (file tag)
+  "Parse recipe enums from a heading tagged with TAG in FILE.
+Expects a nested list structure where top-level items are field names
+and sub-items are the values. Returns an alist of (FIELD . (value1 value2 ...))."
+  (with-current-buffer (find-file-noselect file)
+    (save-excursion
+      (goto-char (point-min))
+      (let ((tag-regexp (concat ":" (regexp-quote tag) ":")))
+        (if (re-search-forward (concat "^\\*+.*" tag-regexp) nil t)
+            (progn
+              (forward-line 1)
+              (let (result current-field)
+                ;; Parse the nested list
+                (while (and (not (looking-at "^\\*"))  ; Stop at next heading
+                            (not (eobp)))
+                  (cond
+                   ;; Top-level list item (field name)
+                   ((looking-at "^- \\([A-Z_]+\\)$")
+                    (setq current-field (intern (match-string 1)))
+                    (push (cons current-field nil) result))
+                   ;; Sub-item (value for current field)
+                   ((looking-at "^  - \\(.+\\)$")
+                    (when current-field
+                      (let* ((value (string-trim (match-string 1)))
+                             (pair (assq current-field result)))
+                        (when pair
+                          (setcdr pair (append (cdr pair) (list value)))))))
+                   ;; Empty line or other content - ignore
+                   (t nil))
+                  (forward-line 1))
+                (message "Parsed enums from tag :%s:" tag)
+                (nreverse result)))
+          (error "Heading with tag ':%s:' not found in %s" tag file))))))
+
+#+end_src
+
+#+begin_src emacs-lisp
 
 (run-with-idle-timer
  1 nil
@@ -6087,7 +6370,151 @@ needs an install?
 (require 'org-collector)
 #+end_src
 
+** General reference and miscellaneous
+
+- https://www.reddit.com/r/emacs/comments/1bkw1j6/use_information_theory_to_choose_better/
+- https://www.reddit.com/r/emacs/comments/1bnj5xe/announcing_casual_an_opinionated_porcelain_for/
+- https://karthinks.com/software/batteries-included-with-emacs/
+- [[id:BF9D824A-02EF-4580-97A1-B887299AD461][Lisp]]
+- Alternative documentation https://www2.lib.uchicago.edu/keith/emacs/#org9f6793b
+- https://arxiv.org/pdf/2008.06030
+*** Tutorials and Challenges
+  - [[https://blog.markhepburn.com/2013/12/07/andrew-hyatts-emacs-calc-tutorials][Andrew Hyatt's emacs calc tutorials]]
+  - [[https://vimeo.com/search/sort:latest?q=vimgolf+in+emacs][golf in emacs]]
+  - http://cestlaz.github.io/stories/emacs/
+  - https://sachachua.com/blog/2019/06/2019-06-10-emacs-news/
+  - guides
+    - https://www.reddit.com/r/emacs/comments/bbb42t/whats_your_job_whats_your_daily_emacs_workflow/
+    - [-] tuhdo
+      - [X] https://tuhdo.github.io/emacs-tutor.html
+      - [ ] https://tuhdo.github.io/emacs-tutor2.html
+    - http://emacslife.com/
+    - http://emacsrocks.com/
+    - [[http://emacs.stackexchange.com/questions?sort=votes][emacs stack exchange questions by vote]]
+    - [[https://pawelbx.github.io/emacs-theme-gallery/][nice emacs theme gallary]]
+    - cite:bingmann2015
+    - not useful
+      - [[http://david.rothlis.net/emacs/howtolearn.html][Rothlisberger How to Learn Emacs]]
+*** config/init file examples
+- https://shreyas.ragavan.co/docs/emacs-config/
+- https://github.com/jzohrab/emacs.d/blob/master/init.el#L31
+- https://emacs.christianbaeuerlein.com/#org7a4a164
+- https://www.reddit.com/r/emacs/comments/eewwyh/officially_introducing_memacs/
+- https://jmonlong.github.io/Hippocamplus/emacs/
+- https://github.com/0pendev/dotfiles/blob/master/emacs/config.org
+- [[https://github.com/xgarrido/emacs-starter-kit/blob/master/starter-kit.org][github: xgarrido emacs starter kit]]
+- https://www.reddit.com/r/emacs/comments/1r6g20h/how_long_is_your_initel_file_these_days/
+*** Emacs conference
+- https://emacsconf.org/2024/talks/
+- https://emacsconf.org/2021/all/
+*** Miscellaneous
+- https://sachachua.com/blog/2024/11/excerpts-from-a-conversation-with-john-wiegley-johnw-and-adam-porter-alphapapa-about-personal-information-management/
+- https://karthinks.com/software/batteries-included-with-emacs/
+- https://sheer.tj/the_way_of_emacs.html
+- https://github.com/LaurenceWarne/reddit-emacs-tips-n-tricks/blob/master/out.md
+*** Pre-configured distributions
+- https://github.com/sunnyhasija/DOOMEmacs
+- For emacs use in science- https://github.com/rougier
+- https://www.reddit.com/r/emacs/comments/1feaf37/minimal_emacsd_emacs_starter_kit_with_better/
+- https://github.com/jamescherti/minimal-emacs.d
+  - https://www.jamescherti.com/essential-emacs-packages/
+- https://github.com/a-schaefers/grokEmacs
+- https://lambdaland.org/posts/2025-07-15_bedrock_release/
+  - https://lambdaland.org/posts/2024-12-14_emacs_catchup/
 ** Ideas
+*** dwim
+- https://www.reddit.com/r/emacs/comments/1qpkbv6/post_your_favorite_dwim_commands_packages_or_own/
+- DWIM commands examine context and adapt behavior, reducing cognitive load from multiple bindings. One keybinding handles multiple related actions based on point location, region state, or buffer context.
+- Canonical examples: =comment-dwim= (M-;) comments/uncomments/aligns based on context; =org-ctrl-c-ctrl-c= executes source blocks, toggles checkboxes, recalculates tables; =dired-dwim-target= guesses copy/move destination from other dired window
+- Useful when: collapsing region vs no-region variants into single binding, smart defaults that save typing, genuinely context-dependent operations
+- References: [[https://github.com/xenodium/dwim-shell-command][dwim-shell-command]] (xenodium), [[https://www.emacswiki.org/emacs/DoWhatIMean][EmacsWiki: DoWhatIMean]]Want to be notified when Claude responds?Notify Opus 4.5Claude is AI and can make mistakes. Please double-check responses.
+*** org-edna
+:PROPERTIES:
+:ID:       2acfefa2-2fd1-465f-8c79-d14160de0284
+:END:
+blockers and counters are not respected in orgzly
+https://chatgpt.com/c/673a1bcb-dbe0-8005-b289-3292f7066d63
+https://www.nongnu.org/org-edna-el/
+- id syntax- can be a linker with [[id: , but cannot have a name like [[ ][
+#+begin_src emacs-lisp
+(use-package org-edna
+  :ensure t
+  :config
+  (org-edna-mode 1))
+#+end_src
+
+
+
+
+*** abbrev mod
+#+NAME: abbrevs_table
+| abbrev | expansion     |
+|--------+---------------|
+| btw    | by the way    |
+| idk    | I don't know  |
+| brb    | be right back |
+
+#+begin_src emacs-lisp
+
+(defun define-abbrevs-from-org-table (table-name)
+  "Define global abbrevs from a named Org table in the current buffer."
+  (interactive "sTable name: ")
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward (format "#\\+NAME: *%s" (regexp-quote table-name)) nil t)
+      (forward-line 1) ; move to the table
+      (let ((table (org-table-to-lisp)))
+        ;; Skip header row
+        (dolist (row (cdr table))
+          (let ((abbrev (string-trim (nth 0 row)))
+                (expansion (string-trim (nth 1 row))))
+            (define-abbrev global-abbrev-table abbrev expansion)))))))
+
+#+end_src
+
+#+begin_src emacs-lisp
+(defun define-abbrevs-from-org-table (table-name)
+  "Define global abbrevs from a named Org table in the current buffer."
+  (interactive "sTable name: ")
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward (format "#\\+NAME: *%s" (regexp-quote table-name)) nil t)
+      (forward-line 1) ; move to the table
+      (let ((table (org-table-to-lisp)))
+        (dolist (row (cdr table)) ; skip header
+          (when (and (listp row) (= (length row) 2))
+            (let ((abbrev (string-trim (nth 0 row)))
+                  (expansion (string-trim (nth 1 row))))
+              (define-abbrev global-abbrev-table abbrev expansion))))))))
+
+#+end_src
+#+begin_src emacs-lisp
+(define-abbrevs-from-org-table "abbrevs_table")
+
+#+end_src
+by the way
+*** Display inline pdf image in orgmode
+:PROPERTIES:
+:ID:       14ea79f5-5ffe-4ced-ba91-e84c2d5bcb84
+:END:
+[2025-07-31 Thu] Possible but really slows down emacs. Stick to SVG for now.
+  #+begin_src emacs-lisp
+;; Enable PDF display using pdf-tools
+;(pdf-tools-install)
+;(setq org-file-apps (quote ((auto-mode . emacs)
+;                            ("\\.pdf\\'" . "emacsclient -n %s"))))
+
+(add-to-list 'image-type-file-name-regexps '("\\.pdf\\'" . imagemagick))
+(add-to-list 'image-file-name-extensions "pdf")
+(setq imagemagick-types-inhibit (remove 'PDF imagemagick-types-inhibit))
+(setq org-image-actual-width 600)
+
+
+#+end_src
+*** Minor annoyances
+- switch-to-buffer Agenda as normal buffer file
+*** Not organized
+- https://www.reddit.com/r/emacs/comments/1og34ko/configuring_displaybufferalist_is_absolutely/
 
 
 #+begin_src emacs-lisp
@@ -6100,6 +6527,8 @@ needs an install?
   (advice-add command :after #'pulse-line))
 #+end_src
 show with C-l
+- https://www.reddit.com/r/orgmode/comments/1ojnrq1/i_figured_it_out_text_highlighting/
+- https://github.com/SenkiReign/org-grapher?tab=readme-ov-file
 
 #+begin_src emacs-lisp
 ;; ditaa setup
@@ -6285,6 +6714,116 @@ let* ((txt (or yas-selected-text
     (apply orig args)))
 
 (advice-add 'org-babel-tangle :around #'my/ob-tangle-auto-yes-write-protected)
+
+#+end_src
+- supertag https://github.com/yibie/org-supertag
+
+*** Jinx spelling
+https://github.com/minad/jinx
+#+begin_src emacs-lisp
+(use-package jinx
+  :hook (emacs-startup . global-jinx-mode)
+  :bind (("M-$" . jinx-correct)
+	 ))
+#+end_src
+
+*** Whisper emacs speech to text
+#+begin_src bash
+mkdir -p ~/.emacs.d/lisp
+git clone https://github.com/natrys/whisper.el ~/.emacs.d/lisp/whisper.el
+sudo apt update
+sudo apt install git build-essential cmake ffmpeg
+
+#+end_src
+#+begin_src emacs-lisp
+(use-package whisper
+  :load-path "~/.emacs.d/lisp/whisper.el"
+  :bind ("C-H-r" . whisper-run)
+  :config
+  (setq whisper-install-directory "/tmp/"
+        whisper-model "base"
+        whisper-language "en"
+        whisper-translate nil
+        whisper-use-threads (/ (num-processors) 2)))
+#+end_src
+
+
+#+begin_src emacs-lisp
+(setq whisper--ffmpeg-input-device "alsa_input.usb-046d_Logitech_Webcam_C925e_9891F59F-02.analog-stereo")
+
+(setq whisper-install-directory "~/.emacs.d/.cache/whisper.cpp/")
+
+#+end_src
+
+*** Strip properties on tangle with org comments
+#+begin_src emacs-lisp
+(defun strip-org-properties-comments ()
+  "Remove ;; :PROPERTIES: drawers and collapse blank lines in tangled config."
+  (interactive)
+  (when (and buffer-file-name
+             (string-match-p "public_config\\.el\\'" buffer-file-name))
+    (message "Running cleanup on: %s" buffer-file-name)
+    (goto-char (point-min))
+    ;; Remove PROPERTIES drawers
+    (while (re-search-forward "^;; :PROPERTIES:\\(?:.\\|\n\\)*?^;; :END:\n" nil t)
+      (replace-match ""))
+    ;; Collapse multiple blank lines
+    (goto-char (point-min))
+    (while (re-search-forward "\n\\{3,\\}" nil t)
+      (replace-match "\n\n"))
+    (message "Cleanup complete for: %s" buffer-file-name)))
+
+(defun strip-org-properties-comments ()
+  "Remove `;; :PROPERTIES:` drawers and collapse blank lines in tangled config."
+  (interactive)
+  (when (and buffer-file-name
+             (string-match-p "public_config\\.el\\'" buffer-file-name))
+    (message "Running cleanup on: %s" buffer-file-name)
+    (goto-char (point-min))
+    (let ((start (point-min)))
+      (while (re-search-forward "^;; :PROPERTIES:$" nil t)
+        (let ((drawer-start (match-beginning 0)))
+          (when (re-search-forward "^;; :END:$" nil t)
+            (delete-region drawer-start (1+ (point)))))))
+    ;; Collapse multiple blank lines
+    (goto-char (point-min))
+    (while (re-search-forward "\n\\{3,\\}" nil t)
+      (replace-match "\n\n"))
+    (message "Cleanup complete for: %s" buffer-file-name)))
+
+(defun my/run-before-save-hooks ()
+  "Run buffer-local before-save hooks and save the buffer."
+  (run-hooks 'before-save-hook)
+  (save-buffer))
+
+;; Ensure this runs after tangling
+(add-hook 'org-babel-post-tangle-hook #'my/run-before-save-hooks)
+
+;; Install cleanup on emacs-lisp-mode files
+(add-hook 'emacs-lisp-mode-hook
+          (lambda ()
+            (when (and buffer-file-name
+                       (string-match-p "public_config\\.el\\'" buffer-file-name))
+              (add-hook 'before-save-hook #'strip-org-properties-comments nil 'local))))
+#+end_src
+
+*** plantuml
+#+begin_src emacs-lisp
+(use-package ob-plantuml
+  :after org
+  :config
+  ;; Point this to your plantuml.jar
+  (setq org-plantuml-jar-path "/usr/share/plantuml/plantuml.jar")
+  ;; Or if you have the plantuml executable
+  ;; (setq org-plantuml-exec-mode 'plantuml)
+  )
+
+;; enable plantuml without dropping existing langs
+(add-to-list 'org-babel-load-languages '(plantuml . t))
+
+(org-babel-do-load-languages
+ 'org-babel-load-languages
+ org-babel-load-languages)
 
 #+end_src
 
@@ -6579,6 +7118,7 @@ Invoke by org-open-at-point like [[elisp:(run-gnome-ctrl)]]
 
 https://github.com/oantolin/embark
 *** Casual / transient test
+https://www.reddit.com/r/emacs/comments/1qnqgto/alternative_transient_documentation/
 #+begin_src emacs-lisp
 (use-package casual
   :ensure t
@@ -6772,87 +7312,17 @@ prin
 prin
 
 [[cite:&wallis2021cnf]]
-*** Ideas
-**** org-edna
-:PROPERTIES:
-:ID:       2acfefa2-2fd1-465f-8c79-d14160de0284
-:END:
-blockers and counters are not respected in orgzly
-https://chatgpt.com/c/673a1bcb-dbe0-8005-b289-3292f7066d63
-https://www.nongnu.org/org-edna-el/
-- id syntax- can be a linker with [[id: , but cannot have a name like [[ ][
+*** claude-code
+[[file:~/.claude/CLAUDE.md]]
 #+begin_src emacs-lisp
-(use-package org-edna
-  :ensure t
+(use-package claude-code-ide
+  :vc (:url "https://github.com/manzaltu/claude-code-ide.el" :rev :newest)
   :config
-  (org-edna-mode 1))
+  (claude-code-ide-emacs-tools-setup)
+  ;; Open claude buffers in a dedicated frame, reusing it if already visible
+  (add-to-list 'display-buffer-alist
+               '("\\*claude-code\\["
+                 (display-buffer-reuse-window display-buffer-pop-up-frame)
+                 (reusable-frames . t))))
 #+end_src
-
-
-
-
-**** abbrev mode
-#+NAME: abbrevs_table
-| abbrev | expansion     |
-|--------+---------------|
-| btw    | by the way    |
-| idk    | I don't know  |
-| brb    | be right back |
-
-#+begin_src emacs-lisp
-
-(defun define-abbrevs-from-org-table (table-name)
-  "Define global abbrevs from a named Org table in the current buffer."
-  (interactive "sTable name: ")
-  (save-excursion
-    (goto-char (point-min))
-    (when (re-search-forward (format "#\\+NAME: *%s" (regexp-quote table-name)) nil t)
-      (forward-line 1) ; move to the table
-      (let ((table (org-table-to-lisp)))
-        ;; Skip header row
-        (dolist (row (cdr table))
-          (let ((abbrev (string-trim (nth 0 row)))
-                (expansion (string-trim (nth 1 row))))
-            (define-abbrev global-abbrev-table abbrev expansion)))))))
-
-#+end_src
-
-#+begin_src emacs-lisp
-(defun define-abbrevs-from-org-table (table-name)
-  "Define global abbrevs from a named Org table in the current buffer."
-  (interactive "sTable name: ")
-  (save-excursion
-    (goto-char (point-min))
-    (when (re-search-forward (format "#\\+NAME: *%s" (regexp-quote table-name)) nil t)
-      (forward-line 1) ; move to the table
-      (let ((table (org-table-to-lisp)))
-        (dolist (row (cdr table)) ; skip header
-          (when (and (listp row) (= (length row) 2))
-            (let ((abbrev (string-trim (nth 0 row)))
-                  (expansion (string-trim (nth 1 row))))
-              (define-abbrev global-abbrev-table abbrev expansion))))))))
-
-#+end_src
-#+begin_src emacs-lisp
-(define-abbrevs-from-org-table "abbrevs_table")
-
-#+end_src
-by the way
-**** Display inline pdf image in orgmode
-:PROPERTIES:
-:ID:       14ea79f5-5ffe-4ced-ba91-e84c2d5bcb84
-:END:
-[2025-07-31 Thu] Possible but really slows down emacs. Stick to SVG for now.
-  #+begin_src emacs-lisp
-;; Enable PDF display using pdf-tools
-;(pdf-tools-install)
-;(setq org-file-apps (quote ((auto-mode . emacs)
-;                            ("\\.pdf\\'" . "emacsclient -n %s"))))
-
-(add-to-list 'image-type-file-name-regexps '("\\.pdf\\'" . imagemagick))
-(add-to-list 'image-file-name-extensions "pdf")
-(setq imagemagick-types-inhibit (remove 'PDF imagemagick-types-inhibit))
-(setq org-image-actual-width 600)
-
-
-#+end_src
+- Need to integrate across machines- maybe symlink
