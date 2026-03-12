@@ -2,87 +2,15 @@
 :PROPERTIES:
 :ID:       a49abc44-8e71-4a1a-bd35-a77849427c94
 :END:
-
-#+begin_src emacs-lisp
-  (defadvice revert-buffer (around org-preserve-visibility activate)
-    (if (eq major-mode 'org-mode)                                                                             (org-save-outline-visibility t ad-do-it)
-      ad-do-it))
-
-#+end_src
-
-
-#+begin_src emacs-lisp
-;; FIRST: Remove any existing problematic advice
-(when (fboundp 'ad-remove-advice)
-  (ad-remove-advice 'org-babel-tangle 'before 'make-files-writable)
-  (ad-remove-advice 'org-babel-tangle-single-block 'around 'force-writable)
-  (ad-activate 'org-babel-tangle)
-  (ad-activate 'org-babel-tangle-single-block))
-
-;; Disable all confirmation prompts
-(setq org-confirm-babel-evaluate nil)
-
-;; Clean approach: Override the tangle function completely
-(defun my-org-babel-tangle-force (&optional arg target-file lang)
-  "Tangle code blocks, making files writable without prompts."
-  (interactive "P")
-  (run-hooks 'org-babel-pre-tangle-hook)
-  ;; Get list of files that will be tangled to
-  (let ((tangle-files '()))
-    (save-excursion
-      (goto-char (point-min))
-      (while (re-search-forward org-babel-src-block-regexp nil t)
-        (let* ((info (org-babel-get-src-block-info 'light))
-               (params (nth 2 info))
-               (file (cdr (assq :tangle params))))
-          (when (and file
-                     (not (string= file "no"))
-                     (not (string= file "yes")))
-            (add-to-list 'tangle-files (expand-file-name file))))))
-
-    ;; Make all target files writable
-    (dolist (file tangle-files)
-      (when (file-exists-p file)
-        (set-file-modes file #o644)))
-
-    ;; Now do the actual tangling with original function
-    (let ((org-confirm-babel-evaluate nil))
-      (org-babel-tangle arg target-file lang))))
-
-;; Replace the default tangle command
-(define-key org-mode-map (kbd "C-c C-v t") 'my-org-babel-tangle-force)
-
-;; Alternative: Just override file permissions globally during tangle
-(defun my-simple-force-tangle ()
-  "Simple force tangle - make files writable then tangle."
-  (interactive)
-  (save-excursion
-    (goto-char (point-min))
-    (while (re-search-forward "^[ \t]*#\\+begin_src" nil t)
-      (when-let* ((element (org-element-at-point))
-                  (params (org-element-property :parameters element))
-                  (tangle-param (when (string-match ":tangle \\([^[:space:]]+\\)" (or params ""))
-                                 (match-string 1 params)))
-                  (file (when (and tangle-param
-                                   (not (string= tangle-param "no"))
-                                   (not (string= tangle-param "yes")))
-                         (expand-file-name tangle-param))))
-        (when (and file (file-exists-p file))
-          (set-file-modes file #o644)))))
-  (let ((org-confirm-babel-evaluate nil))
-    (org-babel-tangle)))
-
-;; Bind simple version as backup
-(define-key org-mode-map (kbd "C-c C-v f") 'my-simple-force-tangle)
-#+end_src
-
-#+begin_src emacs-lisp
-(remove-hook 'before-save-hook #'org-table-recalculate-buffer-tables)
-
-#+end_src
-
-- in dired, get files to open in apps they woudl by command line
-- no collapse on revert?
+pkill -USR2 emacs for frozen emacs
+** README                                                          :noexport:
+*** Change log
+- [2026-03-11 Wed] org-sleeper: autonomous background org-mode linter. Cron-triggered (5 min), gates on Emacs idle + token budget, picks random heading, applies approved fixes. Agent definition tangled from =**** Approved fix set= block. 12 rules (2 auto, 10 propose). Gate script at =~/repos/org/scripts/org-sleeper.sh=, TSV log at =~/repos/org/logs/org-sleeper.tsv=.
+- [2026-03-10 Tue] emacs-jupyter: added =use-package jupyter= with =ob-jupyter= + =aliases-from-kernelspecs=; registered R/Python kernels for biotools/basecamp conda envs; converted frag.org bioinfo-dev section from =#+begin_src R= to =jupyter-R= with per-heading =:header-args:jupyter-R:= for per-block conda env selection
+- [2026-03-09 Mon] Added =my/extract-pdf-annotations= + =my/pdf-from-cite-at-point= (pdfannots + citar) to =**** PDF annotation= under Base Emacs; tangles to public_config.el
+- [2026-03-08 Sun] corfu: delay→1.0, cape+read-extended-command-predicate added; avy+casual-avy integrated (jj chord, embark/mark-word dispatch); org-include-inline per-buffer toggle
+- [2026-03-08 Sun] whisper STT: =**** whisper= added to Package configuration; ansible deps (ffmpeg, build-essential, cmake, whisper.el clone) in [[file:~/repos/basecamp/basecamp.org][basecamp.org]]; =my/whisper-run-with-mic= with mic boost + =ww= key-chord
+- [2026-03-08 Sun] =emacsdev-mod= skill created; =:emacsdev:mod:= module in [[file:~/repos/org/work.org][work.org]]; org-edit style guide: org links convention added
 ** Emacs and Org-mode and Cookbook                                 :cookbook:
 :PROPERTIES:
 :ID:       88337952-4c36-402e-882f-6ccd6c7ff6a1
@@ -1440,12 +1368,7 @@ https://www.gnu.org/software/tramp/#Overview
 - https://jmonlong.github.io/Hippocamplus/emacs/
 - https://www.google.com/search?q=emacs+change+keybinding
 - https://www.reddit.com/r/emacs/comments/mqtwzx/creating_custom_minor_modes_learning_emacs_lisp_7/
-*** Emacs for literate scientific notebooks
-:PROPERTIES:
-:ID:       011e15b9-66d4-4b3f-adaf-a95941f9e502
-:END:
-- https://github.com/rougier/notebook-mode
-- https://github.com/lf-araujo/workbenchless
+*** [[id:011e15b9-66d4-4b3f-adaf-a95941f9e502][Emacs for literate scientific notebooks]]
 *** Emacs Interfaces
 :PROPERTIES:
 :ID:       0c0667a7-dcb3-4ef8-98c1-8fa1b9cc3116
@@ -1885,6 +1808,236 @@ https://www.reddit.com/r/emacs/comments/1fw7jbb/karthink_emacs_latex/
 - :diminish: keep off mod line
 - https://jwiegley.github.io/use-package/keywords/
 - https://www.reddit.com/r/emacs/comments/j2xezg/usepackage_best_practices/
+*** org-sleeper
+
+Autonomous background linter for org-mode files. Runs on cron every 5 minutes during Emacs idle time. Picks a random agenda file (weighted by size) and a random heading (up to depth 6), applies approved syntax fixes, commits, and logs.
+
+**** How it works
+
+1. Cron fires =org-sleeper.sh= every 5 minutes
+2. Gate script checks Emacs idle time (>= 10 min) via =(current-idle-time)=
+3. Checks monthly token budget from TSV log
+4. Saves all Emacs buffers, re-checks idle
+5. Picks random agenda file (weighted by byte size), random heading (depth 1-6)
+6. Invokes =claude -p --agent org-sleeper= headless (Haiku model, $0.05/run cap)
+7. Post-run: re-checks idle (aborts if user returned), validates diff scope, reverts org buffers in Emacs, warns on conflicts
+
+**** Components
+
+| Component        | Location                                                               |
+|------------------+------------------------------------------------------------------------|
+| Gate script      | [[file:~/repos/org/scripts/org-sleeper.sh][~/repos/org/scripts/org-sleeper.sh]]                                     |
+| Agent definition | [[file:~/.claude/agents/org-sleeper.md][~/.claude/agents/org-sleeper.md]]                                        |
+| TSV log          | [[file:~/repos/org/logs/org-sleeper.tsv][~/repos/org/logs/org-sleeper.tsv]]                                       |
+| Design spec      | [[file:docs/superpowers/specs/2026-03-11-org-sleeper-design.md][org-sleeper design spec]]                                                |
+| Impl plan        | [[file:docs/superpowers/plans/2026-03-11-org-sleeper.md][org-sleeper impl plan]]                                                  |
+| Cron entry       | =*/5 * * * * /bin/bash ~/repos/org/scripts/org-sleeper.sh 2>/dev/null= |
+
+**** Approved fix set
+:PROPERTIES:
+:header-args:markdown: :tangle ~/.claude/agents/org-sleeper.md :comments no
+:END:
+
+These rules define what the agent is allowed to change. Each rule has a mode: =auto= (apply and commit) or =propose= (log only, awaiting promotion). New rules start as =propose= and are promoted to =auto= after manual review of logged proposals.
+
+The block below tangles to [[file:~/.claude/agents/org-sleeper.md][the agent definition]]. Edit the rules here, then tangle.
+
+#+begin_src markdown
+---
+name: org-sleeper
+description: Autonomous background org-mode linter. Reads a target subtree, applies approved fixes, commits, and outputs TSV log rows. Invoked headless by cron via org-sleeper.sh.
+model: claude-haiku-4-5-20251001
+tools:
+  - Bash
+  - Read
+  - Edit
+---
+
+You are the org-sleeper agent — an autonomous background linter for org-mode files. You run headless via cron during Emacs idle time.
+
+## Input
+
+You receive a prompt like: `Fix: /home/jeszyman/repos/org/work.org heading: Modules/Flat/breast`
+
+The file path is absolute. The heading is the exact text of the org heading (without stars or tags).
+
+## Behavior
+
+1. Read the target file. Find the heading matching the provided heading text.
+2. Identify the line range of the target subtree (from the heading line to the line before the next heading at same or higher level).
+3. Scan the subtree for fixable issues from the **Approved Fix Set** below.
+4. For each issue found:
+   - If the fix type mode is `auto`: apply the fix using the Edit tool.
+   - If the fix type mode is `propose`: do NOT apply. Just note it for logging.
+5. After all fixes are applied, if any `auto` fixes were made:
+   - Stage the changed file: `git -C <repo-root> add <file>`
+   - Count the applied fixes. Commit: `git -C <repo-root> commit -m "org-sleeper: N fixes in <basename>::<heading>"`
+6. Output TSV rows to stdout — one row per fix (both applied and proposed). Format:
+   ```
+   <timestamp>\t<commit_hash>\t<basename>\t<heading>\t<fix_type>\t<status>\t<description>\t<tokens_used>
+   ```
+   - `timestamp`: ISO 8601 (e.g., `2026-03-11T03:22:14`)
+   - `commit_hash`: short hash from the commit, or `NONE` if proposed/no commit
+   - `basename`: filename only (e.g., `work.org`)
+   - `heading`: the heading text as received
+   - `fix_type`: identifier from the fix set (e.g., `trailing-ws`)
+   - `status`: `applied` or `proposed`
+   - `description`: brief human-readable note
+   - `tokens_used`: put total token count on the first row, `0` on subsequent rows
+7. If nothing to fix, output nothing. No TSV rows, no commit.
+8. Output ONLY TSV rows. No other text, no explanations, no markdown.
+
+## Boundaries
+
+- NEVER make structural changes (move/delete/add headings, change hierarchy).
+- NEVER touch content outside the target subtree's line range.
+- NEVER apply fix types not listed in the Approved Fix Set.
+- ONE commit per run, or no commit if nothing was auto-fixed.
+- Do NOT output anything except TSV rows.
+
+## Approved Fix Set
+
+### trailing-ws (mode: auto)
+Remove trailing whitespace from any line in the subtree.
+- Match: lines ending with one or more spaces or tabs before the newline
+- Fix: remove the trailing whitespace
+- Do NOT modify lines inside `#+begin_src` / `#+end_src` blocks (code blocks are exempt)
+
+### blank-after-heading (mode: auto)
+Ensure exactly one blank line between a heading line (or its PROPERTIES drawer / planning line) and the first content line.
+- Match: heading (or PROPERTIES `:END:` / `DEADLINE` / `SCHEDULED` line) immediately followed by a non-blank content line (not another heading, not a blank line)
+- Fix: insert one blank line
+- Do NOT insert blank lines between a heading and its PROPERTIES drawer
+- Do NOT insert between `:END:` and `DEADLINE`/`SCHEDULED` lines
+- Do NOT insert between a heading and the next sub-heading
+
+### lowercase-directives (mode: propose)
+Convert uppercase or mixed-case `#+` directives to lowercase.
+- Match: any line starting with `#+` followed by an uppercase keyword — `#+BEGIN_SRC`, `#+END_SRC`, `#+RESULTS:`, `#+NAME:`, `#+PROPERTY:`, `#+INCLUDE:`, `#+STARTUP:`, `#+CAPTION:`, `#+ATTR_ORG:`, `#+TODO:`, and any other `#+KEYWORD` variant
+- Fix: lowercase the directive keyword only (e.g., `#+BEGIN_SRC emacs-lisp` → `#+begin_src emacs-lisp`)
+- Preserve the rest of the line (language, header args, values) exactly as-is
+- Do NOT modify lines inside `#+begin_src` / `#+end_src` blocks (template variables like `#+BEGIN_${...}` in yasnippets are exempt)
+
+### blank-around-blocks (mode: propose)
+Ensure one blank line before and after each `#+begin_src`/`#+end_src` block pair.
+- Match: `#+begin_src` line not preceded by a blank line, or `#+end_src` line not followed by a blank line
+- Fix: insert one blank line where missing
+- Exception: do NOT add a trailing blank after the last block in a section (i.e., if `#+end_src` is immediately followed by a heading)
+- Exception: do NOT add a leading blank if `#+begin_src` is immediately after a heading line or `:END:` line
+
+### no-double-blanks (mode: propose)
+Collapse runs of 3 or more consecutive blank lines to exactly 2.
+- Match: 3+ consecutive blank lines
+- Fix: reduce to exactly 2 blank lines
+- Do NOT modify blank lines inside `#+begin_src` / `#+end_src` blocks
+
+### properties-adjacent (mode: propose)
+Remove blank lines between a heading and its PROPERTIES drawer.
+- Match: heading line followed by one or more blank lines, then `:PROPERTIES:`
+- Fix: remove the blank lines so `:PROPERTIES:` is immediately after the heading
+- Only fix when the line after the blank(s) is literally `:PROPERTIES:` — do not move other content
+
+### trailing-blank-in-block (mode: propose)
+Remove trailing blank lines inside src blocks.
+- Match: one or more blank lines immediately before `#+end_src`
+- Fix: remove the trailing blank lines so the last code line is immediately followed by `#+end_src`
+
+### missing-nohelm (mode: propose)
+Add `:nohelm:` tag to standard structural subheadings under `:mod:` tagged headings.
+- Match: heading whose title exactly matches (case-insensitive) one of: `Reference`, `Agent`, `Claude skill`, `Emacs functions`, `Notes`, `Test` — AND whose parent has a `:mod:` tag — AND which does not already have `:nohelm:` tag
+- Fix: append `:nohelm:` to the heading's tag list
+- Do NOT match partial titles (e.g., "General reference" does NOT match "Reference")
+
+### missing-id (mode: propose)
+Add `:ID:` property to module instance headings that lack one.
+- Match: heading that has a tag matching a known module identifier tag (any tag found on `:mod:` headings in the same file) — AND is not itself a `:mod:` definition — AND does not have an `:ID:` property in its PROPERTIES drawer
+- Fix: add `:ID:` property with a new UUID (generated via `uuidgen`)
+- If the heading has no PROPERTIES drawer, create one
+
+### org-id-link-ordering (mode: propose)
+Ensure org-id link headings appear first among their siblings, sorted alphabetically.
+- Match: a group of sibling headings where some titles are org-id links (`[[id:UUID][text]]`) and some are not — AND any non-linked heading precedes a linked heading, or linked headings are not in alphabetical order by display text
+- Fix: reorder only the linked headings to appear first among siblings, sorted alphabetically by display text
+- Do NOT reorder non-linked headings relative to each other
+
+### no-empty-properties (mode: propose)
+Remove empty PROPERTIES drawers.
+- Match: `:PROPERTIES:` immediately followed by `:END:` with no properties between (possibly with blank lines)
+- Fix: remove the entire empty drawer (`:PROPERTIES:` line through `:END:` line)
+
+### uppercase-property-names (mode: propose)
+Ensure drawer property names are uppercase.
+- Match: property lines inside `:PROPERTIES:` / `:END:` where the property name is lowercase or mixed case (e.g., `:id:`, `:Created:`)
+- Fix: uppercase the property name (e.g., `:id:` → `:ID:`, `:created:` → `:CREATED:`)
+- Preserve the property value exactly as-is
+#+end_src
+
+***** Rule summary
+
+| Rule                       | Mode    | Description                                            |
+|----------------------------+---------+--------------------------------------------------------|
+| =trailing-ws=              | auto    | Remove trailing whitespace (exempt code blocks)        |
+| =blank-after-heading=      | auto    | Blank line between heading metadata and content        |
+| =lowercase-directives=     | propose | =#+BEGIN_SRC= → =#+begin_src= (all =#+= directives)    |
+| =blank-around-blocks=      | propose | Blank line before/after src block pairs                |
+| =no-double-blanks=         | propose | Collapse 3+ blank lines to 2                           |
+| =properties-adjacent=      | propose | No blank between heading and PROPERTIES drawer         |
+| =trailing-blank-in-block=  | propose | Remove trailing blanks inside src blocks               |
+| =missing-nohelm=           | propose | Add =:nohelm:= to structural subheadings under =:mod:= |
+| =missing-id=               | propose | Add =:ID:= to module instances missing one             |
+| =org-id-link-ordering=     | propose | ID-link headings first among siblings, sorted alpha    |
+| =no-empty-properties=      | propose | Remove empty PROPERTIES drawers                        |
+| =uppercase-property-names= | propose | =:id:= → =:ID:= in PROPERTIES drawers                  |
+
+**** TSV log format
+
+#+begin_example
+timestamp	commit_hash	file	heading	fix_type	status	description	tokens_used
+#+end_example
+
+Status values: =applied=, =proposed=, =aborted=, =boundary-violation=.
+
+**** Concurrency safety
+
+The gate script brackets the agent run with Emacs coordination:
+1. Pre-run: =(save-some-buffers t)= flushes buffers to disk
+2. Pre-run: re-check idle to catch user returning during save
+3. Post-run: re-check idle — if user returned, =git checkout= to discard changes
+4. Post-run: validate diff is within target file — revert commit if boundary violated
+5. Post-run: revert unmodified org buffers so Emacs picks up changes
+6. Post-run: warn on modified buffers where disk is now newer (conflict detection)
+
+**** Expanding the fix set
+
+***** How =propose= mode works
+
+Rules with =mode: propose= are logged but not applied. When the agent encounters an issue matching a =propose= rule, it:
+1. Does NOT edit the file
+2. Outputs a TSV row with =status=proposed= and a description of what it would fix
+3. Makes no commit for proposed fixes
+
+Over time, =proposed= rows accumulate in [[file:~/repos/org/logs/org-sleeper.tsv][the TSV log]]. Review them with:
+
+#+begin_example
+awk -F'\t' '$6 == "proposed"' ~/repos/org/logs/org-sleeper.tsv
+#+end_example
+
+***** Promoting a rule to =auto=
+
+Once you're satisfied the proposals for a rule are consistently correct:
+1. Change =mode: propose= to =mode: auto= in the code block under "Approved fix set"
+2. Tangle to update [[file:~/.claude/agents/org-sleeper.md][the agent definition]]
+
+From that point on, the agent applies those fixes and commits them.
+
+***** Adding a new rule
+
+1. Add the rule to the code block in "Approved fix set" with =mode: propose=
+2. Add a row to the summary table
+3. Tangle to update the agent definition
+4. Monitor the TSV log for =proposed= entries, review them
+5. When confident, promote to =auto= as above
+
 *** Plain text diagraming
 - see mermaid
 - https://github.com/skuro/plantuml-mode
@@ -2553,14 +2706,65 @@ https://emacs.stackexchange.com/questions/54497/how-to-set-tab-behavior-in-org-m
   - http://www.hardakers.net/code/bbdb-to-org-contacts/
 **** Dev Ops
 https://howardism.org/Technical/Emacs/literate-devops.html
-**** Emacs jupyter integration
+**** Emacs jupyter integration for per-conda-env org-babel blocks
 :PROPERTIES:
 :ID:       ad2bbe49-7ba1-413f-87b6-3705e9d20ca0
 :END:
-- https://rgoswami.me/posts/jupyter-orgmode/
-- https://emacs.stackexchange.com/questions/42389/integrating-jupyter-notebook-ipython-into-org-mode-notebook
 
-https://www.reddit.com/r/orgmode/comments/sngxpe/orgbabels_pythonsession_vs_emacsjupyter/
+Goal: use =jupyter-R= and =jupyter-python= org-babel blocks with =:kernel <env-name>= to select
+a conda env per block, replacing the current =.dir-locals.el= workaround that locks an entire
+project to one env.
+
+**Why:** ESS resolves the =R= binary from the global Emacs =exec-path=, making per-block env
+selection impossible with standard =#+begin_src R= blocks. The =emacs-jupyter= package routes
+execution through registered Jupyter kernels, one per conda env, cleanly solving this.
+
+**Setup steps:**
+
+1. Install =emacs-jupyter= via =use-package= in =*** Package configuration=:
+   #+begin_src emacs-lisp :tangle no
+   (use-package jupyter
+     :demand t)
+   #+end_src
+
+2. Register an IRkernel for each conda env that needs R org-babel support:
+   #+begin_src sh :tangle no
+   conda run -n biotools R -e "install.packages('IRkernel'); IRkernel::installspec(name='biotools', displayname='R biotools')"
+   conda run -n basecamp R -e "install.packages('IRkernel'); IRkernel::installspec(name='basecamp', displayname='R basecamp')"
+   #+end_src
+
+3. For Python envs, register ipykernel:
+   #+begin_src sh :tangle no
+   conda run -n biotools python -m ipykernel install --user --name=biotools
+   #+end_src
+
+4. Verify registered kernels:
+   #+begin_src sh :tangle no
+   jupyter kernelspec list
+   #+end_src
+
+**Usage in org files:**
+
+Per-file default via PROPERTY header:
+#+begin_src org :tangle no
+#+PROPERTY: header-args:jupyter-R :session *R* :kernel biotools :results output
+#+end_src
+
+Per-block override (different env for one section):
+#+begin_src org :tangle no
+#+begin_src jupyter-R :kernel basecamp :session *R:basecamp*
+library(snakemake)
+#+end_src
+#+end_src
+
+Note: same =:session= name can be reused across different =:kernel= values — the underlying
+REPL buffer is named from both, so they stay separate.
+
+**References:**
+- [[https://rgoswami.me/posts/jupyter-orgmode/][Rgoswami: Jupyter + org-mode]]
+- [[https://emacs.stackexchange.com/questions/42389/integrating-jupyter-notebook-ipython-into-org-mode-notebook][StackExchange: jupyter in org-mode]]
+- [[https://www.reddit.com/r/orgmode/comments/sngxpe/orgbabels_pythonsession_vs_emacsjupyter/][Reddit: ob-python session vs emacs-jupyter]]
+- [[https://github.com/nnicandro/emacs-jupyter][emacs-jupyter GitHub]]
 **** Email
 :PROPERTIES:
 :ID:       2970f5cc-e915-4fca-a00d-908ad7545184
@@ -3057,6 +3261,35 @@ https://emacs.stackexchange.com/questions/60708/how-to-open-a-folder-with-a-loca
 :END:
 - https://www.reddit.com/r/orgmode/comments/ialsz3/using_tikz_in_orgmode/
 - See for adding properties latex headers- need +!!!https://lists.gnu.org/archive/html/emacs-orgmode/2016-03/msg00054.html
+
+***** org-format-latex-options — scale and color for inline preview
+Controls size and foreground/background of images rendered by ~org-latex-preview~.
+- ~:scale~ — multiplier on image size; default 1.0; 1.5–2.0 is readable on HiDPI
+- ~"auto"~ is broken in this org version: ~org-latex-color-format~ tries to decompose it
+  into RGB via ~(format "%s,%s,%s" ...)~ and gets nil regardless of backend.
+- Safe values: ~"default"~ (reads the default face color) or an explicit color string.
+- For dark themes: ~:foreground "default"~ picks up the theme's light foreground;
+  ~:background "Transparent"~ avoids a white box around the equation.
+
+#+begin_src emacs-lisp :tangle no
+(setq debug-on-error t)
+(setq org-preview-latex-default-process 'dvisvgm))
+(after! org (plist-put org-format-latex-options :scale 2.0))
+(after! org (plist-put org-format-latex-options :foreground "default"))
+(after! org (plist-put org-format-latex-options :background "Transparent"))
+#+end_src
+(after! org (plist-put org-format-latex-options :scale 1.75))
+If previews render correctly, integrate into ~**** Org-mode~ in ~*** Base Emacs~:
+
+#+begin_src emacs-lisp :tangle no
+;; Candidate for Base Emacs > Org-mode:
+(with-eval-after-load 'org
+  (setq org-preview-latex-default-process 'dvisvgm)
+  (plist-put org-format-latex-options :scale 2.0)
+  (plist-put org-format-latex-options :foreground "default")
+  (plist-put org-format-latex-options :background "Transparent"))
+#+end_src
+
 **** Working with raw text
 :PROPERTIES:
 :ID:       cd69d1e8-079e-40b9-b1db-a217c3cf055a
@@ -3225,6 +3458,64 @@ https://www.reddit.com/r/orgmode/comments/x2e90r/there_really_needs_to_be_a_bett
 :END:
 https://www.reddit.com/r/orgmode/comments/q82k5v/new_video_scimax_orgdb_searching_for_things_in/
 ** My public configuration
+*** Architecture
+#+begin_src mermaid :file /tmp/emacs-config-map.png :scale 3
+graph TD
+
+  subgraph THIS["This repo: ~/repos/emacs/"]
+    EO["emacs.org\n(literate source)"]
+    subgraph TNG["emacs/  ← tangle outputs"]
+      INIT_S["init.el"]
+      LF_S["load-first.el"]
+      LL_S["load-last.el"]
+      PC_S["public_config.el"]
+      AUX_S["auxiliary .el files"]
+    end
+  end
+
+  subgraph EXT["External sources"]
+    PRIV["private config repo\n(private_config.el, work.el, ...)"]
+    OTHR["other repos\n(latex, basecamp, ...)"]
+    VEND["vendored libraries\n(anki-editor.el, org-collector.el, ...)"]
+    ORGF["org agenda files\n(private repo)"]
+  end
+
+  subgraph ED["~/.emacs.d/  ← runtime"]
+    INIT["init.el"]
+    LF["load-first.el"]
+    LL["load-last.el"]
+    subgraph CFG["config/  ← loaded in full"]
+      PC["public_config.el"]
+      PCFG["private .el files"]
+    end
+    subgraph LISP["lisp/  ← loaded in full"]
+      SLSP["symlinked .el files"]
+      VLSP["vendored .el files"]
+    end
+  end
+
+  EO -->|"org-babel-tangle"| TNG
+
+  INIT_S -->|"symlink"| INIT
+  LF_S  -->|"symlink"| LF
+  LL_S  -->|"symlink"| LL
+  PC_S  -->|"symlink"| PC
+  AUX_S -->|"symlink"| SLSP
+
+  PRIV -->|"symlink"| PCFG
+  OTHR -->|"symlink"| SLSP
+  VEND -->|"copy"| VLSP
+
+  INIT -->|"① load"| LF
+  INIT -->|"② load all"| CFG
+  INIT -->|"③ load all"| LISP
+  INIT -->|"④ load"| LL
+
+  PC -->|"org-agenda-files"| ORGF
+#+end_src
+#+RESULTS:
+[[file:/tmp/emacs-config-map.png]]
+
 *** Initialization
 :PROPERTIES:
 :ID:       2750378f-d025-4f26-87c4-99ea711942c9
@@ -3324,51 +3615,64 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 :ID:       d0bcde8b-8e88-4f37-8a4a-3942507a8f10
 :header-args:emacs-lisp: :tangle ./emacs/public_config.el :comments org
 :END:
-**** Core settings
+#+begin_src emacs-lisp
+(remove-hook 'before-save-hook #'org-table-recalculate-buffer-tables)
+
+#+end_src
+
+#+begin_src emacs-lisp
+(advice-add 'revert-buffer :around
+  (lambda (orig &rest args)
+  (advice-mapc (lambda (f props) (message "%s %s" (car props) f)) 'revert-buffer)
+    (if (derived-mode-p 'org-mode)
+        (org-fold-save-outline-visibility t
+          (apply orig args))
+      (apply orig args)))
+  '((name . org/preserve-outline-visibility)))
+
+#+end_src
+
+**** Dired
+:PROPERTIES:
+:ID:       b3bd2685-ea78-4097-ae4c-e4a5e7a422ea
+:END:
+- whenever you open a new directory in Dired, the old Dired buffer is automatically killed
+  #+begin_src emacs-lisp
+(setq dired-kill-when-opening-new-dired-buffer t)
+
+#+end_src
+- when listing files:
+  #+begin_src emacs-lisp
+(setq dired-listing-switches "-alh")
+
+#+end_src
+  -a → show all files, including dotfiles (. and ..).
+  - -l → use long listing format (permissions, owner, size, modification time).
+  -h → show file sizes in “human-readable” units (e.g. 1K, 2M, 3G).
+- Open files using [[id:05e700d9-77cc-4aef-b310-164c267274d0][xdg-utils]]
+  #+begin_src emacs-lisp
+    (defun my/dired-open-xdg ()
+      "Open file at point with xdg-open."
+      (interactive)
+      (let ((file (dired-get-file-for-visit)))
+	(start-process "xdg-open" nil "xdg-open" file)))
+
+    ;; Bind to a key in dired-mode
+    (with-eval-after-load 'dired
+      (define-key dired-mode-map (kbd "E") #'my/dired-open-xdg))
+#+end_src
+
+**** Needed in --batch
 Code that needs to be tangled both here and into custom inits for batch export
 #+name need_in_batch
 #+begin_src emacs-lisp
 (setq large-file-warning-threshold most-positive-fixnum) ; disable large file warning
 (setq-default cache-long-scans nil)
 #+end_src
-
+**** Comint
 #+begin_src emacs-lisp
-;; Don't count two spaces after a period as the end of a sentence.
-(setq sentence-end-double-space nil)
-
-;; don't check package signatures
-;;  https://emacs.stackexchange.com/questions/233/how-to-proceed-on-package-el-signature-check-failure
-(setq package-check-signature nil)
-
-;; Avoid nesting exceeds max-lisp-eval-depth error
-;;  https://stackoverflow.com/questions/11807128/emacs-nesting-exceeds-max-lisp-eval-depth
-(setq max-lisp-eval-depth 1200)
-
-;; allow remembering risky variables
-;;  https://emacs.stackexchange.com/questions/10983/remember-permission-to-execute-risky-local-variables
-(defun risky-local-variable-p (sym &optional _ignored) nil)
-
-; Disable “buffer is read only” warning
-;;https://emacs.stackexchange.com/questions/19742/is-there-a-way-to-disable-the-buffer-is-read-only-warning
-(defun my-command-error-function (data context caller)
-  “Ignore the buffer-read-only signal; pass the rest to the default handler.”
-  (when (not (eq (car data) 'buffer-read-only))
-    (command-error-default-function data context caller)))
-
-(setq command-error-function #'my-command-error-function)
-
-;; auto-refresh if source changes
-;;  https://stackoverflow.com/questions/1480572/how-to-have-emacs-auto-refresh-all-buffers-when-files-have-changed-on-disk
-(global-auto-revert-mode 1)
-
-(setq browse-url-browser-function 'browse-url-generic
-      browse-url-generic-program “/usr/bin/brave-browser”)
-
-; y or n instead of yes or no
-(setopt use-short-answers t)
-
-(setq require-final-newline nil)
-(setq create-lockfiles nil)
+(setq comint-scroll-to-bottom-on-output t
+      comint-move-point-for-output t)
 #+end_src
 
 **** Appearance
@@ -3452,29 +3756,54 @@ Code that needs to be tangled both here and into custom inits for batch export
 
 ;https://emacs.stackexchange.com/questions/72483/how-to-define-consult-faces-generically-for-minibuffer-highlighting-that-fits-wi
 (global-hl-line-mode 1)
-(set-face-attribute 'highlight nil :background “#294F6E”)
+(set-face-attribute 'highlight nil :background "#294F6E")
 
-; ---   Frames And Windows   --- ;
-; ------------------------------ ;
-
-(setq truncate-partial-width-windows nil)
-(setq split-window-preferred-function (quote split-window-sensibly))
 #+end_src
-
+**** Tramp
 #+begin_src emacs-lisp
-(defun toggle-theme ()
-  “Toggle between dark and light themes.”
-  (interactive)
-  (if (custom-theme-enabled-p 'manoj-dark)
-      (progn
-        (disable-theme 'manoj-dark)
-        (load-theme 'leuven t))
-    (progn
-      (disable-theme 'leuven)
-      (load-theme 'manoj-dark t))))
-#+end_src
+(setq tramp-default-method "ssh")
 
-**** Buffers and files
+
+(defadvice tramp-completion-handle-file-name-all-completions
+  (around dotemacs-completion-docker activate)
+  "(tramp-completion-handle-file-name-all-completions \"\" \"/docker:\" returns
+    a list of active Docker container names, followed by colons."
+  (if (equal (ad-get-arg 1) "/docker:")
+      (let* ((dockernames-raw (shell-command-to-string "docker ps | awk '$NF != \"NAMES\" { print $NF \":\" }'"))
+             (dockernames (cl-remove-if-not
+                           #'(lambda (dockerline) (string-match ":$" dockerline))
+                           (split-string dockernames-raw "\n"))))
+        (setq ad-return-value dockernames))
+    ad-do-it))
+
+; https://emacs.stackexchange.com/questions/29286/tramp-unable-to-open-some-files
+(setq tramp-copy-size-limit 10000000)
+#+end_src
+**** Key bindings
+#+begin_src emacs-lisp
+; ASCII Arrows
+
+; ---   ASCII Arrows   --- ;
+; ------------------------ ;
+
+(global-set-key (kbd "C-<right>") (lambda () (interactive) (insert "\u2192")))
+(global-set-key (kbd "C-<up>") (lambda () (interactive) (insert "\u2191")))
+
+; ---   Disable Keys   --- ;
+; ------------------------ ;
+
+;; Minimize
+(global-unset-key (kbd "C-z"))
+;; Print
+(global-unset-key (kbd "s-p"))
+
+(global-set-key (kbd "C-S-n")
+		(lambda () (interactive) (next-line 10)))
+(global-set-key (kbd "C-S-p")
+		(lambda () (interactive) (next-line -10)))
+
+#+end_src
+**** On-save hooks and backup
 - Visited files are backed up to =~/.emacs.d/backup-save-list=.
 
 #+begin_src emacs-lisp
@@ -3484,6 +3813,7 @@ Code that needs to be tangled both here and into custom inits for batch export
   (interactive)
   (save-some-buffers t))
 
+
 ; ---   Saving And Backup   --- ;
 ; ----------------------------- ;
 
@@ -3492,86 +3822,27 @@ Code that needs to be tangled both here and into custom inits for batch export
           'delete-trailing-whitespace)
 
 ;; Backup process upon save
+
 (setq vc-make-backup-files t) ; Allow old versions to be saved
 (setq delete-old-versions 20) ; Save 20
-(setq backup-directory-alist '((“.” . “~/.emacs.d/backup-save-list”))) ; Save them here
+(setq backup-directory-alist '(("." . "~/.emacs.d/backup-save-list"))) ; Save them here
 
 (setq auto-save-visited-mode t) ; Visited files will be auto-saved
 
+
 (setq auto-save-file-name-transforms
-      `((“.*” ,(concat user-emacs-directory “auto-save-list/”) t)))
-#+end_src
+      `((".*" ,(concat user-emacs-directory "auto-save-list/") t)))
 
-**** Dired
-:PROPERTIES:
-:ID:       b3bd2685-ea78-4097-ae4c-e4a5e7a422ea
-:END:
-- whenever you open a new directory in Dired, the old Dired buffer is automatically killed
-  #+begin_src emacs-lisp
-(setq dired-kill-when-opening-new-dired-buffer t)
 
 #+end_src
-- when listing files:
-  #+begin_src emacs-lisp
-(setq dired-listing-switches “-alh”)
 
-#+end_src
-  -a → show all files, including dotfiles (. and ..).
-  - -l → use long listing format (permissions, owner, size, modification time).
-  -h → show file sizes in “human-readable” units (e.g. 1K, 2M, 3G).
-- Follow symlinks
-  #+begin_src emacs-lisp
-; Follow symlinks in dired
-;;https://emacs.stackexchange.com/questions/41286/follow-symlinked-directories-in-dired
-(setq find-file-visit-truename t)
-#+end_src
-- Open files using [[id:05e700d9-77cc-4aef-b310-164c267274d0][xdg-utils]]
-  #+begin_src emacs-lisp
-    (defun my/dired-open-xdg ()
-      “Open file at point with xdg-open.”
-      (interactive)
-      (let ((file (dired-get-file-for-visit)))
-	(start-process “xdg-open” nil “xdg-open” file)))
-
-    ;; Bind to a key in dired-mode
-    (with-eval-after-load 'dired
-      (define-key dired-mode-map (kbd “E”) #'my/dired-open-xdg))
-#+end_src
-
-**** Key bindings
+**** Miscellaneous
 #+begin_src emacs-lisp
-; ---   ASCII Arrows   --- ;
-; ------------------------ ;
 
-(global-set-key (kbd “C-<right>”) (lambda () (interactive) (insert “\u2192”)))
-(global-set-key (kbd “C-<up>”) (lambda () (interactive) (insert “\u2191”)))
+; ---   Miscellaneous   --- ;
+; ------------------------- ;
 
-; ---   Disable Keys   --- ;
-; ------------------------ ;
-
-;; Minimize
-(global-unset-key (kbd “C-z”))
-;; Print
-(global-unset-key (kbd “s-p”))
-
-(global-set-key (kbd “C-S-n”)
-		(lambda () (interactive) (next-line 10)))
-(global-set-key (kbd “C-S-p”)
-		(lambda () (interactive) (next-line -10)))
-
-(cua-mode t)
-#+end_src
-
-**** Shell and terminal
-#+begin_src emacs-lisp
-(setq explicit-shell-file-name “/bin/bash”)
-
-;; Comint
-(setq comint-scroll-to-bottom-on-output t
-      comint-move-point-for-output t)
-
-;; Disable company completion for remote shells (slow)
-;; https://emacs.stackexchange.com/questions/62419/what-is-causing-emacs-remote-shell-to-be-slow-on-completion
+;https://emacs.stackexchange.com/questions/62419/what-is-causing-emacs-remote-shell-to-be-slow-on-completion
 (defun my-shell-mode-setup-function ()
   (when (and (fboundp 'company-mode)
              (file-remote-p default-directory))
@@ -3579,41 +3850,96 @@ Code that needs to be tangled both here and into custom inits for batch export
 
 (add-hook 'shell-mode-hook 'my-shell-mode-setup-function)
 
-(defun dont-ask-to-kill-shell-buffer ()
-  “Don't ask for confirmation when killing *shell* buffer.”
-  (let ((buffer-name (buffer-name)))
-    (when (string-equal buffer-name “*shell*”)
-      (setq kill-buffer-query-functions
-            (delq 'process-kill-buffer-query-function
-                  kill-buffer-query-functions)))))
+;; delete the region when typing, just like as we expect nowadays.
+(delete-selection-mode t)
 
-(add-hook 'shell-mode-hook 'dont-ask-to-kill-shell-buffer)
+(setq explicit-shell-file-name "/bin/bash")
+
+;; Don't count two spaces after a period as the end of a sentence.
+(setq sentence-end-double-space nil)
+
+;; don't check package signatures
+;;  https://emacs.stackexchange.com/questions/233/how-to-proceed-on-package-el-signature-check-failure
+(setq package-check-signature nil)
+
+;; Avoid nesting exceeds max-lisp-eval-depth error
+;;  https://stackoverflow.com/questions/11807128/emacs-nesting-exceeds-max-lisp-eval-depth
+(setq max-lisp-eval-depth 1200)
+
+;; allow remembering risky variables
+;;  https://emacs.stackexchange.com/questions/10983/remember-permission-to-execute-risky-local-variables
+(defun risky-local-variable-p (sym &optional _ignored) nil)
+
+; Disable "buffer is read only" warning
+;;https://emacs.stackexchange.com/questions/19742/is-there-a-way-to-disable-the-buffer-is-read-only-warning
+(defun my-command-error-function (data context caller)
+  "Ignore the buffer-read-only signal; pass the rest to the default handler."
+  (when (not (eq (car data) 'buffer-read-only))
+    (command-error-default-function data context caller)))
+
+(setq command-error-function #'my-command-error-function)
+
+; Follow symlinks in dired
+;;https://emacs.stackexchange.com/questions/41286/follow-symlinked-directories-in-dired
+(setq find-file-visit-truename t)
+
+(setq browse-url-browser-function 'browse-url-generic
+      browse-url-generic-program "/usr/bin/brave-browser")
+
+; y or n instead of yes or no
+(setopt use-short-answers t)
+
+;; don't check package signatures
+;;  https://emacs.stackexchange.com/questions/233/how-to-proceed-on-package-el-signature-check-failure
+(setq package-check-signature nil)
+
+;; Avoid nesting exceeds max-lisp-eval-depth error
+;;  https://stackoverflow.com/questions/11807128/emacs-nesting-exceeds-max-lisp-eval-depth
+(setq max-lisp-eval-depth 1200)
+;;
 
 ;; normal c-c in ansi-term
 ;; https://emacs.stackexchange.com/questions/32491/normal-c-c-in-ansi-term
-(eval-after-load “term”
+(eval-after-load "term"
   '(progn (term-set-escape-char ?\C-c)
-          (define-key term-raw-map (kbd “C-c”) nil)))
+          (define-key term-raw-map (kbd "C-c") nil)))
+
+(setq comint-scroll-to-bottom-on-output t)
+
+;; allow kill hidden part of line
+;;  https://stackoverflow.com/questions/3281581/how-to-word-wrap-in-emacs
+(setq-default word-wrap t)
+
+;; auto-refresh if source changes
+;;  https://stackoverflow.com/questions/1480572/how-to-have-emacs-auto-refresh-all-buffers-when-files-have-changed-on-disk
+(global-auto-revert-mode 1)
+
+; ---   Frames And Windows   --- ;
+; ------------------------------ ;
+
+(setq truncate-partial-width-windows nil)
+(setq split-window-preferred-function (quote split-window-sensibly))
+
+; ---   Other   --- ;
+; ----------------- ;
+
+(setq require-final-newline nil)
 #+end_src
-
-***** Tramp
 #+begin_src emacs-lisp
-(setq tramp-default-method “ssh”)
+(defun toggle-theme ()
+  "Toggle between dark and light themes."
+  (interactive)
+  (if (custom-theme-enabled-p 'manoj-dark)
+      (progn
+        (disable-theme 'manoj-dark)
+        (load-theme 'leuven t))
+    (progn
+      (disable-theme 'leuven)
+      (load-theme 'manoj-dark t))))
+#+end_src
+#+begin_src emacs-lisp
+(setq create-lockfiles nil)
 
-(defadvice tramp-completion-handle-file-name-all-completions
-  (around dotemacs-completion-docker activate)
-  “(tramp-completion-handle-file-name-all-completions \”\” \”/docker:\” returns
-    a list of active Docker container names, followed by colons.”
-  (if (equal (ad-get-arg 1) “/docker:”)
-      (let* ((dockernames-raw (shell-command-to-string “docker ps | awk '$NF != \”NAMES\” { print $NF \”:\” }'”))
-             (dockernames (cl-remove-if-not
-                           #'(lambda (dockerline) (string-match “:$” dockerline))
-                           (split-string dockernames-raw “\n”))))
-        (setq ad-return-value dockernames))
-    ad-do-it))
-
-; https://emacs.stackexchange.com/questions/29286/tramp-unable-to-open-some-files
-(setq tramp-copy-size-limit 10000000)
 #+end_src
 
 ***** (open-texdoc-in-background)
@@ -3622,51 +3948,64 @@ Code that needs to be tangled both here and into custom inits for batch export
 :END:
 #+begin_src emacs-lisp
 (defun open-texdoc-in-background (docname)
-  “Open a TEXDOC for DOCNAME in the background and close the terminal.”
-  (interactive “sEnter the name of the document: “)
-  (let ((term-buffer (ansi-term “/bin/bash”)))
+  "Open a TEXDOC for DOCNAME in the background and close the terminal."
+  (interactive "sEnter the name of the document: ")
+  (let ((term-buffer (ansi-term "/bin/bash")))
     (with-current-buffer term-buffer
-      (term-send-raw-string (concat “texdoc “ docname “\n”))
-      (term-send-raw-string “sleep 2; exit\n”)
+      (term-send-raw-string (concat "texdoc " docname "\n"))
+      (term-send-raw-string "sleep 2; exit\n")
       (set-process-sentinel
        (get-buffer-process term-buffer)
        (lambda (process signal)
-         (when (or (string= signal “finished\n”)
-                   (string= signal “exited\n”))
+         (when (or (string= signal "finished\n")
+                   (string= signal "exited\n"))
            (kill-buffer (process-buffer process)))))
       (bury-buffer))))
 
 #+end_src
 https://chatgpt.com/c/7fac1ba4-f0a9-4d8f-8393-736e64e0ced1
-example: [[elisp:(open-texdoc-in-background “acronym”)][acronym]]
+example: [[elisp:(open-texdoc-in-background "acronym")][acronym]]
 
-**** Text editing
+**** PDF annotation
+Extract highlights and comments from a PDF into a temporary org buffer.
+When point is on an org-cite reference, resolves the PDF automatically via =citar=.
+Requires =pdfannots= on PATH (=pip install pdfannots=).
+
 #+begin_src emacs-lisp
-;; delete the region when typing, just like as we expect nowadays.
-(delete-selection-mode t)
-
-;; allow kill hidden part of line
-;;  https://stackoverflow.com/questions/3281581/how-to-word-wrap-in-emacs
-(setq-default word-wrap t)
+(defun my/pdf-from-cite-at-point ()
+  "Return the PDF path for the org-cite key at point, or nil if not on a citation.
+citar-get-files returns a hash-table keyed by citekey; extract the list with gethash."
+  (when-let* ((elem (org-element-context))
+              (_ (eq (org-element-type elem) 'citation-reference))
+              (key (org-element-property :key elem))
+              (files-hash (let ((inhibit-message t) (message-log-max nil))
+                            (citar-get-files (list key))))
+              (files (gethash key files-hash))
+              (pdf (seq-find (lambda (f) (string-match-p "\\.pdf\\'" f)) files)))
+    pdf))
 #+end_src
 
-***** Read-only regions
-https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 #+begin_src emacs-lisp
-(defun make-region-read-only (start end)
-  (interactive “*r”)
-  (let ((inhibit-read-only t))
-    (put-text-property start end 'read-only t)
-    (put-text-property start end 'font-lock-face '(:background “#8B0000”))))
-
-(defun make-region-read-write (start end)
-  (interactive “*r”)
-  (let ((inhibit-read-only t))
-    (put-text-property start end 'read-only nil)
-    (remove-text-properties start end '(font-lock-face nil))))
+(defun my/extract-pdf-annotations (pdf-file)
+  "Extract highlights and comments from PDF-FILE into a temporary org buffer.
+When point is on an org-cite reference, resolves the PDF automatically via citar.
+Requires pdfannots to be installed and on PATH."
+  (interactive
+   (list (or (my/pdf-from-cite-at-point)
+             (read-file-name "PDF file: " nil nil t nil
+                             (lambda (f) (string-match-p "\\.pdf\\'" f))))))
+  (let* ((output (shell-command-to-string
+                  (concat "pdfannots " (shell-quote-argument (expand-file-name pdf-file)))))
+         (buf (get-buffer-create "*pdf-annotations*")))
+    (with-current-buffer buf
+      (erase-buffer)
+      (org-mode)
+      (insert (format "#+title: Annotations: %s\n\n" (file-name-nondirectory pdf-file)))
+      (insert output))
+    (switch-to-buffer buf)))
 #+end_src
 
-***** Read-only org regions via tag
+**** Make header regions read-only via tag
 #+begin_src emacs-lisp
 (defun org-mark-readonly ()
   (interactive)
@@ -3675,9 +4014,10 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
      (lambda ()
        (org-mark-subtree)
        (add-text-properties (region-beginning) (region-end) '(read-only t)))
-     “read_only”)
+     "read_only")
     (unless buf-mod
       (set-buffer-modified-p nil))))
+
 
 (defun org-remove-readonly ()
   (interactive)
@@ -3687,23 +4027,77 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
        (let* ((inhibit-read-only t))
      (org-mark-subtree)
      (remove-text-properties (region-beginning) (region-end) '(read-only t))))
-     “read_only”)
+     "read_only")
     (unless buf-mod
       (set-buffer-modified-p nil))))
 
 (add-hook 'org-mode-hook 'org-mark-readonly)
 #+end_src
 
-***** remove-blank-lines
+**** Protect text regions as read-only
+https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
+#+begin_src emacs-lisp
+
+(defun make-region-read-only (start end)
+  (interactive "*r")
+  (let ((inhibit-read-only t))
+    (put-text-property start end 'read-only t)
+    (put-text-property start end 'font-lock-face '(:background "#8B0000"))))
+
+(defun make-region-read-write (start end)
+  (interactive "*r")
+  (let ((inhibit-read-only t))
+    (put-text-property start end 'read-only nil)
+    (remove-text-properties start end '(font-lock-face nil))))
+
+
+#+end_src
+**** Shell
+#+begin_src emacs-lisp
+(defun dont-ask-to-kill-shell-buffer ()
+  "Don't ask for confirmation when killing *shell* buffer."
+  (let ((buffer-name (buffer-name)))
+    (when (string-equal buffer-name "*shell*")
+      (setq kill-buffer-query-functions
+            (delq 'process-kill-buffer-query-function
+                  kill-buffer-query-functions)))))
+
+(add-hook 'shell-mode-hook 'dont-ask-to-kill-shell-buffer)
+
+#+end_src
+
+**** cua-mode
+#+begin_src emacs-lisp
+(cua-mode t)
+#+end_src
+**** remove-blank-lines
 #+begin_src emacs-lisp
 (defun remove-blank-lines ()
-  “Remove all blank lines (including lines with only whitespace) in the current buffer.”
+  "Remove all blank lines (including lines with only whitespace) in the current buffer."
   (interactive)
   (save-excursion
     (goto-char (point-min))
-    (flush-lines “^[[:space:]]*$”)))
+    (flush-lines "^[[:space:]]*$")))
+
+
+
 #+end_src
 
+**** Window navigation
+#+begin_src emacs-lisp
+;; Focus on another split in one step: switch to next window, then make it the
+;; only visible window. Replaces the two-step C-x o then C-x 1 sequence.
+(defun my/other-window-only ()
+  "Switch to the next window and delete all others."
+  (interactive)
+  (other-window 1)
+  (delete-other-windows))
+
+;; C-x O (capital O) — distinct from the built-in C-x o (other-window)
+(global-set-key (kbd "C-x O") #'my/other-window-only)
+;; key-chord "oo" for fast single-handed access
+(key-chord-define-global "OO" #'my/other-window-only)
+#+end_src
 
 **** Org-mode
 :PROPERTIES:
@@ -3833,6 +4227,7 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
         ("\\.xlsx\\'" . "setsid -w xdg-open \"%s\"")
         ("\\.org\\'" . emacs)
         ("\\.sty\\'" . emacs)
+        ("\\.sh\\'" . emacs)
         ("\\.tex\\'" . emacs)
         ("\\.\\(yaml\\|yml\\|txt\\|md\\|conf\\|list\\|tex\\)\\'" .
          (lambda (file path)
@@ -3842,6 +4237,17 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
                           "--socket-name" "/home/jeszyman/.emacs.d/server/server"
                           "-c" (expand-file-name file))))
         (t . "setsid -w xdg-open \"%s\"")))
+#+end_src
+
+****** ssh: link type
+
+Opens a gnome-terminal SSH session. Usage: =[[ssh:jeff-beast][label]]=
+
+#+begin_src emacs-lisp
+(org-link-set-parameters "ssh"
+  :follow (lambda (path)
+    (start-process "gnome-terminal-ssh" nil
+                   "/usr/bin/gnome-terminal" "--" "ssh" path)))
 #+end_src
 
 ***** Lists
@@ -4151,7 +4557,10 @@ When called with two prefix arguments, ARG, run the original function without pr
   (if (equal arg '(16)) ; 'C-u C-u' produces (16)
       (org-tree-to-indirect-buffer nil) ; original behavior
     (org-tree-to-indirect-buffer t)) ; one prefix argument
-  (my-collapse-all-drawers))
+  ;; Defer drawer collapse: org-tree-to-indirect-buffer calls org-show-entry
+  ;; internally, which re-opens drawers after the buffer is created. Running
+  ;; after the current command cycle ensures we collapse last.
+  (run-with-idle-timer 0 nil #'my-collapse-all-drawers))
 (define-key org-mode-map (kbd "C-c C-x b") 'my-org-tree-to-indirect-buffer)
 
 #+end_src
@@ -5050,6 +5459,38 @@ https://chat.openai.com/c/75a4844b-df8c-4690-8bf0-3078d341d584
            '(("Okular" ("okular --unique %o"))))))
 #+end_src
 
+**** Avy
+[[https://github.com/abo-abo/avy][github: abo-abo/avy]] | [[https://karthinks.com/software/avy-can-do-anything/][Avy can do anything (karthinks)]]
+#+begin_src emacs-lisp
+(use-package avy
+  :ensure t
+  :config
+  (defun avy-action-embark (pt)
+    (unwind-protect
+        (save-excursion
+          (goto-char pt)
+          (embark-act))
+      (select-window
+       (cdr (ring-ref avy-ring 0))))
+    t)
+  (setf (alist-get ?. avy-dispatch-alist) 'avy-action-embark)
+  (defun avy-action-mark-word (pt)
+    "Mark the whole word at PT."
+    (goto-char pt)
+    (mark-word 1)
+    (activate-mark))
+  (setf (alist-get ?m avy-dispatch-alist) 'avy-action-mark-word)
+  (key-chord-mode 1)
+  (key-chord-define-global "jj" 'avy-goto-char-timer))
+#+end_src
+
+**** Casual-avy
+[[https://github.com/kickingvegas/casual-avy][github: kickingvegas/casual-avy]]
+#+begin_src emacs-lisp
+(use-package casual-avy
+  :ensure t)
+#+end_src
+
 **** Blacken
 ***** Use-package
 #+begin_src emacs-lisp
@@ -5220,7 +5661,7 @@ M-x conda-env-activate
   :custom
   (corfu-auto t)               ;; Enable auto completion
   (corfu-auto-prefix 2)        ;; Start completing after typing 2 characters
-  (corfu-auto-delay 2.5)       ;; Delay before suggestions pop up
+  (corfu-auto-delay 1.0)       ;; Delay before suggestions pop up
   :config
   ;; Free up keybindings for `completion-at-point`
   (with-eval-after-load 'flyspell
@@ -5228,6 +5669,29 @@ M-x conda-env-activate
     (define-key flyspell-mode-map (kbd "M-TAB") nil))
   (global-set-key (kbd "M-TAB") #'completion-at-point)) ;; Bind `M-TAB` globally
 #+end_src
+
+#+begin_src emacs-lisp
+;; Hide M-x commands irrelevant to the current mode
+(use-package emacs
+  :custom
+  (read-extended-command-predicate #'command-completion-default-include-p))
+#+end_src
+
+**** Cape
+[[https://github.com/minad/cape][github: minad/cape]]
+#+begin_src emacs-lisp
+(use-package cape
+  :ensure t
+  :after corfu
+  :config
+  (defun my/cape-org-setup ()
+    (add-to-list 'completion-at-point-functions #'cape-dabbrev)
+    (add-to-list 'completion-at-point-functions #'cape-file)
+    (add-to-list 'completion-at-point-functions #'cape-dict)
+    (add-to-list 'completion-at-point-functions #'cape-tex))
+  (add-hook 'org-mode-hook #'my/cape-org-setup))
+#+end_src
+
 **** Dabbrev
 #+begin_src emacs-lisp
 
@@ -5526,6 +5990,24 @@ https://github.com/magnars/expand-region.el
 
 #+end_src
 
+#+begin_src emacs-lisp
+(defun jg/helm-org-nohelm-filter (candidates)
+  "Filter :nohelm: tagged headings and org-id link headings from helm-org."
+  (cl-remove-if
+   (lambda (cand)
+     (let ((marker (get-text-property 0 'helm-realvalue cand)))
+       (when (markerp marker)
+         (with-current-buffer (marker-buffer marker)
+           (save-excursion
+             (goto-char marker)
+             (or (member "nohelm" (org-get-local-tags))
+                 (string-match-p "\\[\\[id:" (org-get-heading t t t t))))))))
+   candidates))
+
+(advice-add 'helm-org--get-candidates-in-file :filter-return
+            'jg/helm-org-nohelm-filter)
+#+end_src
+
 **** helm-org-rifle
 #+begin_src emacs-lisp
 (use-package helm-org-rifle
@@ -5558,6 +6040,16 @@ https://joostkremers.github.io/ebib/
   :diminish)
 #+end_src
 
+**** jupyter
+***** Use-package
+#+begin_src emacs-lisp
+(use-package jupyter
+  :demand t
+  :config
+  (require 'ob-jupyter)
+  (org-babel-jupyter-aliases-from-kernelspecs))
+#+end_src
+
 **** key-chord
 :PROPERTIES:
 :ID:       dab8038b-67bd-413e-88d5-25d168f29e9b
@@ -5584,6 +6076,7 @@ https://joostkremers.github.io/ebib/
 <> <> ,.<sf>
 
 #+begin_src emacs-lisp
+(key-chord-define-global "cc"     'claude-code-ide-menu)
 (key-chord-define-global "xx"      'shell)
 (key-chord-define-global ",,"     'indent-for-comment)
 (key-chord-define-global "vv"     'vterm)
@@ -5674,6 +6167,60 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 
 #+end_src
 
+**** mu4e
+***** Use-package
+#+begin_src emacs-lisp
+(add-to-list 'load-path "/usr/local/share/emacs/site-lisp/mu4e")
+
+(use-package mu4e
+  :ensure nil  ; installed via system package (maildir-utils)
+  :commands mu4e
+  :config
+  ;; Core
+  (setq mu4e-maildir "~/Mail"
+        mu4e-get-mail-command "mbsync -a"
+        mu4e-mu-binary "/usr/local/bin/mu"
+        mu4e-update-interval nil
+        mu4e-index-update-in-background t)
+
+  ;; Identity
+  (setq user-full-name "Jeff Szymanski"
+        user-mail-address "jeszyman@gmail.com"
+        mu4e-compose-reply-to-address "jeszyman@gmail.com")
+
+  ;; Gmail folders
+  (setq mu4e-sent-folder   "/gmail/[Gmail]/Sent Mail"
+        mu4e-drafts-folder "/gmail/[Gmail]/Drafts"
+        mu4e-trash-folder  "/gmail/[Gmail]/Trash"
+        mu4e-refile-folder "/gmail/[Gmail]/All Mail")
+
+  ;; Gmail handles sent via IMAP — don't duplicate
+  (setq mu4e-sent-messages-behavior 'delete)
+
+  ;; Maildir shortcuts
+  (setq mu4e-maildir-shortcuts
+        '((:maildir "/gmail/INBOX"             :key ?i)
+          (:maildir "/gmail/mayo"              :key ?m)
+          (:maildir "/gmail/[Gmail]/Sent Mail" :key ?s)
+          (:maildir "/gmail/[Gmail]/Trash"     :key ?t)))
+
+  ;; Send via msmtp
+  (setq sendmail-program "/usr/bin/msmtp"
+        send-mail-function 'sendmail-send-it
+        message-send-mail-function 'sendmail-send-it
+        message-sendmail-f-is-evil t
+        message-sendmail-extra-arguments '("--read-envelope-from"))
+
+  ;; UI
+  (setq mu4e-view-show-images t
+        mu4e-view-show-addresses t
+        mu4e-headers-date-format "%Y-%m-%d"
+        mu4e-use-fancy-chars t)
+
+  ;; Org integration
+  (require 'org-mu4e))
+#+end_src
+
 **** openwith
 ***** Use-package
 #+begin_src emacs-lisp
@@ -5705,6 +6252,17 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 #+end_src
 
 **** [[id:45e28300-51fd-4ce7-aed1-15dca15022d4][Org-mode]]
+**** org-include-inline
+[[https://github.com/yibie/org-include-inline][github: yibie/org-include-inline]]
+- UUID-based includes work; CUSTOM_ID does not; export from UUID breaks
+- Enable per buffer: ~M-x org-include-inline-mode~
+
+#+begin_src emacs-lisp
+;; Load only — enable per buffer with M-x org-include-inline-mode
+(use-package org-include-inline
+  :vc (:url "https://github.com/yibie/org-include-inline" :vc-backend Git))
+#+end_src
+
 **** org-plus-contrib
 ***** Use-package
 #+begin_src emacs-lisp
@@ -5784,6 +6342,8 @@ https://github.com/LionyxML/ros
 
 #+end_src
 - https://blog.serghei.pl/posts/emacs-python-ide/
+- https://www.reddit.com/r/emacs/comments/17ry3vr/how_to_speed_up_pyright_eglot/
+- https://www.reddit.com/r/emacs/comments/17uyy08/frustrating_python_lsp_experience/
 - python
   - https://realpython.com/emacs-the-best-python-editor/
   - https://www.reddit.com/r/emacs/comments/d2mhx7/nonprogrammer_here_looking_to_learn_python_should/
@@ -5920,35 +6480,31 @@ https://github.com/LionyxML/ros
 
 #+end_src
 **** vterm
-- exit nano w/ Esc Esc X https://stackoverflow.com/questions/66771206/how-do-i-exit-nano-in-emacs-26-3
-- https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute_it/
-
-
+- exit nano w/ Esc Esc X [[https://stackoverflow.com/questions/66771206/how-do-i-exit-nano-in-emacs-26-3][SO: exit nano in emacs]]
+- [[https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute_it/][Reddit: send command to vterm]]
 #+begin_src emacs-lisp
+;; CUA registers in emulation-mode-map-alists (higher priority than
+;; minor-mode-overriding-map-alist), so we override at the same level.
+(defvar my/vterm-keys-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-v") #'vterm-yank)
+    (define-key map (kbd "C-z") #'vterm-undo)
+    map))
+
+(define-minor-mode my/vterm-override-mode
+  "Override CUA keys in vterm."
+  :keymap my/vterm-keys-map)
+
+(add-to-list 'emulation-mode-map-alists
+             `((my/vterm-override-mode . ,my/vterm-keys-map)))
 
 (use-package vterm
-  :bind* (:map vterm-mode-map
-               ("C-z" . vterm-undo)
-               ("C-v" . vterm-yank))
   :init
-  (add-hook 'vterm-mode-hook (lambda () (setq-local cua-mode nil)))
+  (add-hook 'vterm-mode-hook #'my/vterm-override-mode)
   :config
   (setq vterm-max-scrollback 100000)
   (custom-set-faces
    '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC"))))))
-
-
-
-#+end_src
-
-#+begin_src emacs-lisp
-(with-eval-after-load 'vterm
-  ;; Paste with C-v in vterm buffers
-  (define-key vterm-mode-map (kbd "C-v") #'vterm-yank)
-
-  ;; Optionally also support C-S-v like many terminals
-  (define-key vterm-mode-map (kbd "C-S-v") #'vterm-yank))
-
 #+end_src
 
 **** web-mode
@@ -5965,13 +6521,44 @@ https://github.com/LionyxML/ros
          "\\.html?\\'"))
 
 #+end_src
+
+**** whisper
+System setup (ansible-managed): [[file:~/repos/basecamp/basecamp.org][basecamp.org]] apt packages (ffmpeg, build-essential, cmake) and whisper.el clone to [[file:~/.emacs.d/lisp/whisper.el][~/.emacs.d/lisp/whisper.el]].
+Config: [[file:~/repos/emacs/emacs.org::*whisper][Package configuration > whisper]].
+
+[[https://github.com/natrys/whisper.el][whisper.el]] — Emacs speech-to-text via local whisper.cpp model.
+***** Use-package
+#+begin_src emacs-lisp
+(use-package whisper
+  :load-path "~/.emacs.d/lisp/whisper.el"
+  :config
+  (setq whisper-install-directory "~/.emacs.d/.cache/whisper.cpp/"
+        whisper-model "base"
+        whisper-language "en"
+        whisper-translate nil
+        whisper-use-threads (/ (num-processors) 2))
+  ;; Machine-specific mic: Logitech Webcam C925e on jeff-beast
+  (when (string= (system-name) "jeff-beast")
+    (setq whisper--ffmpeg-input-device
+          "alsa_input.usb-046d_Logitech_Webcam_C925e_9891F59F-02.analog-stereo"))
+  (defun my/whisper-run-with-mic ()
+    "Boost mic to 100% before invoking whisper-run."
+    (interactive)
+    (let ((source (if (string= (system-name) "jeff-beast")
+                      "alsa_input.usb-046d_Logitech_Webcam_C925e_9891F59F-02.analog-stereo"
+                    (string-trim (shell-command-to-string "pactl get-default-source")))))
+      (call-process "pactl" nil nil nil "set-source-volume" source "65536"))
+    (whisper-run))
+  (key-chord-define-global "ww" 'my/whisper-run-with-mic))
+#+end_src
+
 **** yaml
 #+begin_src emacs-lisp
 (use-package yaml-mode)
 #+end_src
-
+(knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door)
 **** YASnippets
-- Create sub-choices in the snippet
+(knocking on door)- Create sub-choices in the snippet
   - https://github.com/joaotavora/yasnippet/issues/830
 
 
@@ -6090,6 +6677,441 @@ https://github.com/joaotavora/yasnippet/issues/998
 #+end_src
 - https://github.com/TomoeMami/org-repeat-by-cron.el
 
+
+**** claude-code
+:PROPERTIES:
+:ID:       0e00557e-a0a4-460f-8941-555e11ee2d88
+:END:
+- https://www.reddit.com/r/ClaudeCode/comments/1rohbj0/what_to_include_in_claudemd_and_what_not/
+- idea- moonshot agent
+- https://github.com/TheDecipherist/claude-code-mastery-project-starter-kit/blob/main/docs/screenshots/diagram-architecture.png
+- installed-  https://github.com/nyldn/claude-octopus
+- ideas
+  - batch refactor burn at end of week credits
+  - agents for reformatting / linting
+  - https://github.com/xleddyl/claude-watch
+- [[https://github.com/manzaltu/claude-code-ide.el]]
+- [[file:~/.claude/CLAUDE.md]]
+- parallel sessions: Claude Code enforces one session per directory. To run
+  multiple sessions on the same repo, use git worktrees
+  (=claude --worktree feature-name=). Each worktree gets its own directory and
+  branch. Merge back and remove with =git worktree remove= when done.
+- miscellaneous
+  - comprehensive guides
+    - https://www.reddit.com/r/ClaudeAI/comments/1oivjvm/claude_code_is_a_beast_tips_from_6_months_of/
+    - https://github.com/shanraisshan/claude-code-best-practice
+    - https://github.com/solatis/claude-config/
+***** Use-package
+
+#+begin_src emacs-lisp
+(use-package claude-code-ide
+  :vc (:url "https://github.com/manzaltu/claude-code-ide.el" :rev :newest)
+  :demand t
+  :config
+  (claude-code-ide-emacs-tools-setup)
+  ;; Switch to claude buffer in the current window
+  (add-to-list 'display-buffer-alist
+               '("\\*claude-code\\["
+                 (display-buffer-same-window))))
+#+end_src
+
+#+begin_src emacs-lisp
+(setq claude-code-ide-use-side-window nil)
+(setq claude-code-ide-use-ide-diff nil)
+#+end_src
+
+- TODO integrate across machines — consider symlinking =~/.claude/=
+
+***** Ediff workarounds
+
+# Problem: claude-code-ide diff overrides the claude window in i3.
+# Root cause: claude-code-ide hardcodes ediff-window-setup-function to
+# 'ediff-setup-windows-plain via setq immediately before calling ediff-buffers,
+# so global setq has no effect.
+# Fix: :before advice on ediff-buffers runs after claude-code-ide's setq but
+# before ediff reads it.
+
+#+begin_src emacs-lisp
+(advice-add 'ediff-buffers :before
+            (lambda (&rest _)
+              (setq ediff-window-setup-function 'ediff-setup-windows-multiframe)))
+#+end_src
+
+# To kill a stuck ediff session and clear red highlighting:
+
+#+begin_src emacs-lisp :tangle no
+(progn
+  (when (and (boundp 'ediff-session-registry) ediff-session-registry)
+    (mapc (lambda (buf)
+            (when (buffer-live-p buf)
+              (with-current-buffer buf
+                (condition-case nil (ediff-quit t) (error nil)))))
+          ediff-session-registry))
+  (mapc (lambda (b)
+          (when (string-match-p "\\*ediff\\|\\*Ediff" (buffer-name b))
+            (kill-buffer b)))
+        (buffer-list))
+  (mapc (lambda (b)
+          (with-current-buffer b
+            (remove-overlays (point-min) (point-max) 'face 'ediff-current-diff-A)
+            (remove-overlays (point-min) (point-max) 'face 'ediff-current-diff-B)
+            (remove-overlays (point-min) (point-max) 'face 'ediff-fine-diff-A)
+            (remove-overlays (point-min) (point-max) 'face 'ediff-fine-diff-B)
+            (remove-overlays (point-min) (point-max) 'face 'ediff-odd-diff-A)
+            (remove-overlays (point-min) (point-max) 'face 'ediff-odd-diff-B)))
+        (buffer-list)))
+#+end_src
+
+***** Components
+
+- *CLAUDE.md* — instruction files; loaded in full (no line limit)
+  - Global: [[file:~/.claude/CLAUDE.md]]
+  - Project: =.claude/CLAUDE.md= — committed to repo
+- *Memory* (=MEMORY.md=) — facts Claude accumulates across sessions; first 200 lines loaded; link to topic files for overflow; complements CLAUDE.md (policy vs. learned knowledge)
+  - Project memory: [[file:~/.claude/projects/-home-jeszyman-repos-org/memory/MEMORY.md]]
+- *Settings*
+  - =~/.claude/settings.json= — global; hooks registration, allowedTools, deny rules
+  - =.claude/settings.local.json= — project-local, gitignored; where per-session approved/denied tool permissions are written
+- *Agents* — single =.md= file with YAML frontmatter; isolated context (no conversation awareness); cheaper models supported (Haiku); remove by deleting file
+  - Global dir: [[file:~/.claude/agents/]]
+  - Example: [[file:~/.claude/agents/org-capture.md]]
+- *Hooks* — shell script + entry in =settings.json=; =PreToolUse= can block (exit 2); *removal requires deleting both the script and the settings.json entry*
+  - Global dir: [[file:~/.claude/hooks/]]
+  - [[file:~/.claude/hooks/protect-cal.sh]] =PreToolUse= — blocks =cal.org= edits
+  - [[file:~/.claude/hooks/save-before-edit.sh]] =PreToolUse= — saves open Emacs buffer before Claude edits any =.org= file on disk
+  - [[file:~/.claude/hooks/cheaply.sh]] =UserPromptSubmit= — detects keyword =cheaply= in prompt; injects conciseness instructions into context
+- *Skills* — directory with =SKILL.md= + supporting files; runs in main Claude context (full conversation awareness); remove by deleting directory
+  - Global dir: [[file:~/.claude/skills/]]
+  - Example: [[file:~/.claude/skills/org-edit/]]
+- *MCP* — external service integrations (Gmail, Google Calendar active); add via Anthropic console or =/mcp add=; useful candidates: Context7 (live library docs), Playwright (browser automation)
+- *Plugins* — [[file:~/.claude/plugins/]]
+- *Worktrees* — isolated git branch for risky restructuring; invoke by saying "work in a worktree"
+
+***** Skill vs Agent
+
+|                  | Skill                                   | Agent                            |
+|------------------+-----------------------------------------+----------------------------------|
+| Execution        | Main Claude instance                    | Isolated subprocess              |
+| Conversation ctx | Full access                             | None (only what is passed to it) |
+| Session effect   | Can change behavior for rest of session | One-shot                         |
+| Structure        | Directory (=SKILL.md= + support files)  | Single =.md= file                |
+| Removal          | Delete directory                        | Delete =.md= file                |
+| Best for         | Context-dependent tasks, procedures     | Self-contained tasks             |
+
+***** Skill structure
+
+- =SKILL.md= — required, filename is case-sensitive
+- Supporting files go in subdirs: =references/=, =scripts/=, =assets/=; symlinks OK; use kebab-case
+- Progressive disclosure:
+  - YAML frontmatter always loaded (keep description <1024 chars; include explicit trigger phrases)
+  - Body loaded when Claude determines skill is relevant
+  - Linked files navigated by Claude as needed
+
+#+begin_src yaml
+---
+name: skill-name-kebab-case   # must match folder name; no capitals or spaces
+description: What it does. Use when user asks to [trigger phrases].
+---
+#+end_src
+
+- [[https://github.com/anthropics/skills/tree/main/skills][Anthropic skill examples]]
+- [[https://github.com/obra/superpowers/tree/main/skills][Community skills (obra/superpowers)]]
+- [[https://resources.anthropic.com/hubfs/The-Complete-Guide-to-Building-Skill-for-Claude.pdf][Complete guide to building skills (PDF)]]
+
+***** Settings reference
+
+Two files control permissions and hooks. Both use the same JSON schema; scope
+differs by location.
+
+| File                          | Scope                        | Git        |
+|-------------------------------+------------------------------+------------|
+| =~/.claude/settings.json=     | All projects on this machine | —          |
+| =.claude/settings.json=       | This project (shareable)     | committed  |
+| =.claude/settings.local.json= | This project (local only)    | gitignored |
+
+Project settings merge with global; project-level =allow= adds to global, =deny=
+overrides. =settings.local.json= is where Claude writes runtime approvals.
+
+#+begin_src json
+{
+  // ── allowedTools ──────────────────────────────────────────────────────────
+  // Tools Claude may call without ever prompting. Distinct from permissions
+  // (which control what happens when you're asked). Rarely needed; prefer
+  // permissions.allow for fine-grained control.
+  "allowedTools": [
+    "Skill"              // allow invoking skills without prompt
+  ],
+
+  // ── permissions ───────────────────────────────────────────────────────────
+  "permissions": {
+
+    // allow: auto-approve matching tool calls — no prompt shown
+    "allow": [
+
+      // Bash: match on the command prefix
+      "Bash(head:*)",              // read-only: head
+      "Bash(grep:*)",              // read-only: grep
+      "Bash(emacsclient:*)",       // emacs server calls
+      "Bash(chmod +x:*)",          // make scripts executable
+
+      // WebFetch: match on domain
+      "WebFetch(domain:raw.githubusercontent.com)",
+
+      // WebSearch: no argument — allows all web searches
+      "WebSearch",
+
+      // Edit: match on file_path (exact file or glob)
+      "Edit(file_path:/home/jeszyman/repos/emacs/emacs.org)",  // specific file
+      "Edit(file_path:/home/jeszyman/repos/myproject/*)",      // whole repo
+
+      // Write: same pattern as Edit, for creating new files
+      "Write(file_path:/home/jeszyman/repos/myproject/*)",
+
+      // MCP tools: use the full tool name as shown in /context
+      "mcp__claude_ai_Gmail__gmail_search_messages",
+      "mcp__claude_ai_Google_Calendar__gcal_list_events",
+
+      // Skills: allow specific skill invocations without prompt
+      "Skill(org-edit)"
+    ],
+
+    // deny: block matching tool calls — Claude cannot proceed even if asked
+    // Useful for protecting auto-generated or sensitive files.
+    // Deny takes precedence over allow.
+    "deny": [
+      "Write(file_path:/home/jeszyman/.claude/hooks/*)",       // protect hooks
+      "Edit(file_path:/home/jeszyman/.claude/settings.json)"   // protect global settings
+    ]
+  },
+
+  // ── hooks ─────────────────────────────────────────────────────────────────
+  // Shell commands that fire at lifecycle events.
+  // Removal requires deleting BOTH the script and its entry here.
+  "hooks": {
+
+    // PreToolUse: fires before a tool call; exit 2 blocks the action
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",   // regex matched against tool name
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/jeszyman/.claude/hooks/protect-cal.sh"
+          }
+        ]
+      }
+    ],
+
+    // Other available events (not currently used):
+    // PreCompact  — fires before context compaction; stdout injected into summary
+    // SessionStart — fires on session open/resume; stdout added to context
+    // Stop         — fires when Claude finishes a response
+    // UserPromptSubmit — fires on every user prompt; no matcher support
+    // PostToolUse  — fires after a successful tool call
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Reminder: dry-run Snakemake before executing'"
+          }
+        ]
+      }
+    ]
+  }
+}
+#+end_src
+
+***** Skill ideas
+
+- Refactor and annotate: apply project style guides
+
+***** Org-mode navigation MCP tools
+
+Four tools that give Claude structural org-mode navigation — outline first,
+then drill to a subtree by ID or heading name, or query across files with
+org-ql. Much more token-efficient than reading whole files.
+
+These tools run as elisp inside the live Emacs session via [[https://github.com/stevemolitor/claude-code-ide.el][claude-code-ide.el]]: Claude Code sends JSON-RPC requests over a socket, which dispatch to functions like =claude-code-ide-org-outline= that call native org-mode APIs (=org-map-entries=, =org-id-find=, etc.) directly. This means they operate with full org-mode context — no subprocess overhead, no parsing from scratch.
+
+#+begin_src emacs-lisp
+(defun claude-code-ide-org-outline (file-path &optional depth)
+  "Return heading-only outline of FILE-PATH up to DEPTH levels."
+  (claude-code-ide-mcp-server-with-session-context nil
+    (let ((max-depth (or depth 3)))
+      (with-current-buffer (find-file-noselect file-path)
+        (let (headings)
+          (org-map-entries
+           (lambda ()
+             (when (<= (org-current-level) max-depth)
+               (push (concat (make-string (org-current-level) ?*)
+                             " "
+                             (substring-no-properties (org-get-heading t t t t)))
+                     headings))))
+          (string-join (nreverse headings) "\n"))))))
+#+end_src
+
+#+begin_src emacs-lisp
+(defun claude-code-ide-org-subtree-by-id (org-id)
+  "Return full subtree content for heading with ORG-ID."
+  (claude-code-ide-mcp-server-with-session-context nil
+    (require 'org-id)
+    (let ((marker (org-id-find org-id 'marker)))
+      (if marker
+          (with-current-buffer (marker-buffer marker)
+            (goto-char marker)
+            (substring-no-properties
+             (buffer-substring (point)
+                               (save-excursion (org-end-of-subtree t) (point)))))
+        (format "No heading found with id: %s" org-id)))))
+#+end_src
+
+#+begin_src emacs-lisp
+(defun claude-code-ide-org-subtree-by-heading (file-path heading)
+  "Return subtree content for first heading matching HEADING in FILE-PATH."
+  (claude-code-ide-mcp-server-with-session-context nil
+    (with-current-buffer (find-file-noselect file-path)
+      (goto-char (point-min))
+      (if (re-search-forward (format "^\\*+ %s" (regexp-quote heading)) nil t)
+          (progn
+            (beginning-of-line)
+            (substring-no-properties
+             (buffer-substring (point)
+                               (save-excursion (org-end-of-subtree t) (point)))))
+        (format "No heading matching '%s' found in %s" heading file-path)))))
+#+end_src
+
+#+begin_src emacs-lisp
+(defun claude-code-ide-org-ql-query (files query &optional include-file)
+  "Run org-ql QUERY across FILES (space-separated paths).
+Returns matching heading titles with org-id when present, optionally prefixed with filename."
+  (claude-code-ide-mcp-server-with-session-context nil
+    (require 'org-ql)
+    (let* ((file-list (split-string files " " t))
+           (show-file (if (null include-file) t include-file))
+           (parsed-query (car (read-from-string query))))
+      (mapcar
+       (lambda (e)
+         (let* ((h (org-element-property :raw-value e))
+                (marker (org-element-property :org-hd-marker e))
+                (f (buffer-file-name (marker-buffer marker)))
+                (id (with-current-buffer (marker-buffer marker)
+                      (goto-char marker)
+                      (org-entry-get (point) "ID")))
+                (id-str (if id (concat " [id:" id "]") ""))
+                (file-str (if show-file (concat (file-name-nondirectory f) ": ") "")))
+           (concat file-str h id-str)))
+       (org-ql-select file-list parsed-query
+         :action 'element-with-markers)))))
+#+end_src
+
+#+begin_src emacs-lisp
+(defun claude-code-ide-org-refile-subtree (file-path source-heading target-heading &optional as-sibling)
+  "Move subtree SOURCE-HEADING relative to TARGET-HEADING in FILE-PATH.
+By default pastes as the last child of target. With AS-SIBLING non-nil,
+pastes after the target subtree at the same level instead.
+Verifies both headings exist before cutting, then re-finds target after cut
+to handle position shifts. Saves the buffer on success."
+  (claude-code-ide-mcp-server-with-session-context nil
+    (with-current-buffer (find-file-noselect file-path)
+      (org-with-wide-buffer
+       (goto-char (point-min))
+       (let ((src-pos (re-search-forward
+                       (format "^\\*+ %s" (regexp-quote source-heading)) nil t)))
+         (unless src-pos
+           (error "Source heading '%s' not found" source-heading))
+         (goto-char (point-min))
+         (unless (re-search-forward
+                  (format "^\\*+ %s" (regexp-quote target-heading)) nil t)
+           (error "Target heading '%s' not found" target-heading))
+         (goto-char src-pos)
+         (beginning-of-line)
+         (org-cut-subtree)
+         (goto-char (point-min))
+         (re-search-forward (format "^\\*+ %s" (regexp-quote target-heading)) nil t)
+         (beginning-of-line)
+         (let ((target-level (org-current-level)))
+           (org-end-of-subtree t)
+           (unless (bolp) (newline))
+           (if as-sibling
+               (org-paste-subtree target-level)
+             (org-paste-subtree (1+ target-level))))
+         (save-buffer)
+         (format "Moved '%s' %s '%s'"
+                 source-heading
+                 (if as-sibling "after" "under")
+                 target-heading))))))
+#+end_src
+
+#+begin_src emacs-lisp
+(with-eval-after-load 'claude-code-ide
+  (claude-code-ide-make-tool
+   :function #'claude-code-ide-org-outline
+   :name "org_outline"
+   :description "Get a heading-only outline of an org file at a given depth. Use this FIRST to orient before reading any subtree. Returns just the heading hierarchy, no body text — very token-efficient."
+   :args '((:name "file_path"
+                  :type string
+                  :description "Absolute path to the org file")
+           (:name "depth"
+                  :type number
+                  :description "Maximum heading depth to show (1-6, default 3)"
+                  :optional t)))
+
+  (claude-code-ide-make-tool
+   :function #'claude-code-ide-org-subtree-by-id
+   :name "org_subtree_by_id"
+   :description "Get the full content of an org subtree by its org-id UUID. Use after finding the ID from an outline or prior search."
+   :args '((:name "org_id"
+                  :type string
+                  :description "The org-id UUID of the heading to retrieve")))
+
+  (claude-code-ide-make-tool
+   :function #'claude-code-ide-org-subtree-by-heading
+   :name "org_subtree_by_heading"
+   :description "Get the full content of an org subtree by searching for a heading name. Returns content from the first matching heading."
+   :args '((:name "file_path"
+                  :type string
+                  :description "Absolute path to the org file")
+           (:name "heading"
+                  :type string
+                  :description "Heading text to search for (exact text, not regex)")))
+
+  (claude-code-ide-make-tool
+   :function #'claude-code-ide-org-ql-query
+   :name "org_ql_query"
+   :description "Query org files using org-ql predicates. Returns matching heading titles with their file. Common predicates: (todo \"TODO\"), (tags \"tag\"), (heading \"text\"), (and ...), (or ...)."
+   :args '((:name "files"
+                  :type string
+                  :description "Space-separated list of absolute org file paths to search")
+           (:name "query"
+                  :type string
+                  :description "org-ql query string, e.g. \"(todo \\\"TODO\\\")\" or \"(and (tags \\\"focus\\\") (todo \\\"INPROCESS\\\"))\"")
+           (:name "include_file"
+                  :type boolean
+                  :description "Prefix results with filename (default true)"
+                  :optional t)))
+
+  (claude-code-ide-make-tool
+   :function #'claude-code-ide-org-refile-subtree
+   :name "org_refile_subtree"
+   :description "Move an org subtree (by exact heading title) relative to another heading in the same file. Default: paste as last child of target. With as_sibling=true: paste after target at same level. Much more efficient than text editing for structural reorganization."
+   :args '((:name "file_path"
+                  :type string
+                  :description "Absolute path to the org file")
+           (:name "source_heading"
+                  :type string
+                  :description "Exact heading title of the subtree to move (no stars, no tags)")
+           (:name "target_heading"
+                  :type string
+                  :description "Exact heading title of the destination parent or sibling reference")
+           (:name "as_sibling"
+                  :type boolean
+                  :description "If true, paste after target at same level rather than as a child"
+                  :optional t))))
+#+end_src
+
+- Development: add a =claude-code-ide-org-subtree-by-tag= tool — retrieve full subtree content for all headings matching a given tag, using =org-map-entries= with a tag matcher. Current =org_ql_query= returns heading titles only; this tool would return full content per match. Needed so Claude can do tag-based module lookup without falling back to emacsclient.
 
 *** anki-editor
 :PROPERTIES:
@@ -6311,6 +7333,10 @@ https://claude.ai/chat/1017ebf5-da7e-40fb-b05d-2247281826b9
     (org-babel-eval (format "cat %s" temp-file) "")))
 
 
+;; markdown: no ob-markdown package exists; define no-op execute so tangle works
+(defun org-babel-execute:markdown (body _params) body)
+(add-to-list 'org-babel-load-languages '(markdown . t))
+
 ;; Always use plain yaml-mode for Org src blocks
 (add-to-list 'org-src-lang-modes '("yaml" . yaml))
 
@@ -6371,7 +7397,7 @@ needs an install?
 #+end_src
 
 ** General reference and miscellaneous
-
+- https://www.reddit.com/r/emacs/comments/1rldrb5/emacs_internal_part_02_deconstructing_lisp_object/
 - https://www.reddit.com/r/emacs/comments/1bkw1j6/use_information_theory_to_choose_better/
 - https://www.reddit.com/r/emacs/comments/1bnj5xe/announcing_casual_an_opinionated_porcelain_for/
 - https://karthinks.com/software/batteries-included-with-emacs/
@@ -6379,22 +7405,23 @@ needs an install?
 - Alternative documentation https://www2.lib.uchicago.edu/keith/emacs/#org9f6793b
 - https://arxiv.org/pdf/2008.06030
 *** Tutorials and Challenges
-  - [[https://blog.markhepburn.com/2013/12/07/andrew-hyatts-emacs-calc-tutorials][Andrew Hyatt's emacs calc tutorials]]
-  - [[https://vimeo.com/search/sort:latest?q=vimgolf+in+emacs][golf in emacs]]
-  - http://cestlaz.github.io/stories/emacs/
-  - https://sachachua.com/blog/2019/06/2019-06-10-emacs-news/
-  - guides
-    - https://www.reddit.com/r/emacs/comments/bbb42t/whats_your_job_whats_your_daily_emacs_workflow/
-    - [-] tuhdo
-      - [X] https://tuhdo.github.io/emacs-tutor.html
-      - [ ] https://tuhdo.github.io/emacs-tutor2.html
-    - http://emacslife.com/
-    - http://emacsrocks.com/
-    - [[http://emacs.stackexchange.com/questions?sort=votes][emacs stack exchange questions by vote]]
-    - [[https://pawelbx.github.io/emacs-theme-gallery/][nice emacs theme gallary]]
-    - cite:bingmann2015
-    - not useful
-      - [[http://david.rothlis.net/emacs/howtolearn.html][Rothlisberger How to Learn Emacs]]
+- Emacs from scratch youtube https://www.youtube.com/watch?v=zkfndJuDzsA
+- [[https://blog.markhepburn.com/2013/12/07/andrew-hyatts-emacs-calc-tutorials][Andrew Hyatt's emacs calc tutorials]]
+- [[https://vimeo.com/search/sort:latest?q=vimgolf+in+emacs][golf in emacs]]
+- http://cestlaz.github.io/stories/emacs/
+- https://sachachua.com/blog/2019/06/2019-06-10-emacs-news/
+- guides
+  - https://www.reddit.com/r/emacs/comments/bbb42t/whats_your_job_whats_your_daily_emacs_workflow/
+  - [-] tuhdo
+    - [X] https://tuhdo.github.io/emacs-tutor.html
+    - [ ] https://tuhdo.github.io/emacs-tutor2.html
+  - http://emacslife.com/
+  - http://emacsrocks.com/
+  - [[http://emacs.stackexchange.com/questions?sort=votes][emacs stack exchange questions by vote]]
+  - [[https://pawelbx.github.io/emacs-theme-gallery/][nice emacs theme gallary]]
+  - cite:bingmann2015
+  - not useful
+    - [[http://david.rothlis.net/emacs/howtolearn.html][Rothlisberger How to Learn Emacs]]
 *** config/init file examples
 - https://shreyas.ragavan.co/docs/emacs-config/
 - https://github.com/jzohrab/emacs.d/blob/master/init.el#L31
@@ -6422,6 +7449,21 @@ needs an install?
 - https://lambdaland.org/posts/2025-07-15_bedrock_release/
   - https://lambdaland.org/posts/2024-12-14_emacs_catchup/
 ** Ideas
+#+begin_src emacs-lisp
+(add-hook 'org-babel-after-execute-hook #'org-redisplay-inline-images)
+#+end_src
+
+#+begin_src emacs-lisp
+(setq org-format-latex-options (plist-put org-format-latex-options :scale 3))
+#+end_src
+
+- https://www.reddit.com/r/emacs/comments/1c4yeme/announcing_shannonmax_analyze_your_keybindings/
+*** Indirect buffer absolute line numbers in mode line
+Show true (absolute) line numbers from the parent buffer in the mode line of an indirect buffer, not the narrowed-relative numbers. Approaches tried:
+- =make-indirect-buffer= advice (=:filter-return=, =:after=) — timing conflicts with =org-tree-to-indirect-buffer= which reads =mode-line-format= as a buffer identifier mid-execution; stale =org-last-indirect-buffer= caused persistent breakage after advice removal
+- =setq-default mode-line-format= with conditional =(:eval (when (buffer-base-buffer) ...))= — indirect buffers inherit base buffer's local =mode-line-format= via clone, bypassing the default
+- Deferred timer via =run-at-time 0= after =make-indirect-buffer= — did not apply
+- Simplest fallback available now: =M-x what-line= reports absolute line on demand (ignores narrowing)
 *** dwim
 - https://www.reddit.com/r/emacs/comments/1qpkbv6/post_your_favorite_dwim_commands_packages_or_own/
 - DWIM commands examine context and adapt behavior, reducing cognitive load from multiple bindings. One keybinding handles multiple related actions based on point location, region state, or buffer context.
@@ -6727,34 +7769,6 @@ https://github.com/minad/jinx
 	 ))
 #+end_src
 
-*** Whisper emacs speech to text
-#+begin_src bash
-mkdir -p ~/.emacs.d/lisp
-git clone https://github.com/natrys/whisper.el ~/.emacs.d/lisp/whisper.el
-sudo apt update
-sudo apt install git build-essential cmake ffmpeg
-
-#+end_src
-#+begin_src emacs-lisp
-(use-package whisper
-  :load-path "~/.emacs.d/lisp/whisper.el"
-  :bind ("C-H-r" . whisper-run)
-  :config
-  (setq whisper-install-directory "/tmp/"
-        whisper-model "base"
-        whisper-language "en"
-        whisper-translate nil
-        whisper-use-threads (/ (num-processors) 2)))
-#+end_src
-
-
-#+begin_src emacs-lisp
-(setq whisper--ffmpeg-input-device "alsa_input.usb-046d_Logitech_Webcam_C925e_9891F59F-02.analog-stereo")
-
-(setq whisper-install-directory "~/.emacs.d/.cache/whisper.cpp/")
-
-#+end_src
-
 *** Strip properties on tangle with org comments
 #+begin_src emacs-lisp
 (defun strip-org-properties-comments ()
@@ -6827,42 +7841,6 @@ sudo apt install git build-essential cmake ffmpeg
 
 #+end_src
 
-*** Avy
-  #+begin_src emacs-lisp
-  (defun avy-action-embark (pt)
-    (unwind-protect
-        (save-excursion
-          (goto-char pt)
-          (embark-act))
-      (select-window
-       (cdr (ring-ref avy-ring 0))))
-    t)
-
-  (setf (alist-get ?. avy-dispatch-alist) 'avy-action-embark)
-#+end_src
-  #+begin_src emacs-lisp
-(key-chord-define-global "ac" 'avy-goto-char-timer)
-
-#+end_src
-  #+begin_src emacs-lisp
-;; Custom avy action: mark whole word at target
-(defun avy-action-mark-word (pt)
-  "Mark the whole word at PT."
-  (goto-char pt)
-  (mark-word 1)
-  (activate-mark))
-
-;; Add it to avy dispatch keys, e.g. with key `M`
-(setf (alist-get ?m avy-dispatch-alist) 'avy-action-mark-word)
-
-#+end_src
-https://karthinks.com/software/avy-can-do-anything/#avy-plus-embark-any-action-anywhere
-#+begin_src emacs-lisp
-(use-package casual-avy
-  :ensure t
-)
-#+end_src
-
 *** Dired enhancement
 - https://github.com/alexluigit/dirvish
 
@@ -6871,30 +7849,6 @@ https://karthinks.com/software/avy-can-do-anything/#avy-plus-embark-any-action-a
 - org-supertag table view
   - https://www.reddit.com/r/orgmode/comments/1mim7oe/update_orgsupertag_table_view_now_support/
   - https://github.com/yibie/org-supertag
-*** Org-include inline
-- Testing notes
-  - Works with UUID but not CUSTOM_ID, and export does not work from UUID
-  - Slows down emacs noticeably
-
-#+begin_src emacs-lisp
-
-(use-package org-include-inline
-  :vc (:fetcher github :repo "yibie/org-include-inline")
-  :hook (org-mode . org-include-inline-mode))
-
-(setq org-include-inline-auto-enable-in-org-mode t) ;; Auto-enable in all Org buffers
-
-(setq org-include-inline-max-lines-to-display 1000) ;; Customize maximum lines to display
-
-(set-face-attribute 'org-include-inline-face nil :background "black" :foreground "white") ;; Customize maximum lines to display
-
-(setq org-include-inline-export-behavior 'process)
-#+end_src
-TEST
-#+INCLUDE: "../org/career.org::cecd75ee-a9a4-4233-8a41-366720b60ad6" :only-contents t
-
-
-
 *** prog-mode
 #+begin_src emacs-lisp
 
@@ -7166,163 +8120,161 @@ https://www.reddit.com/r/emacs/comments/1qnqgto/alternative_transient_documentat
 
 #+end_src
 
-*** Corfu test
-- https://github.com/minad/corfu
+*** can't see a use for this: kirigami.el
 #+begin_src emacs-lisp
-(use-package corfu
-  ;; Optional customizations
-  ;; :custom
-  ;; (corfu-cycle t)                ;; Enable cycling for `corfu-next/previous'
-  ;; (corfu-quit-at-boundary nil)   ;; Never quit at completion boundary
-  ;; (corfu-quit-no-match nil)      ;; Never quit, even if there is no match
-  ;; (corfu-preview-current nil)    ;; Disable current candidate preview
-  ;; (corfu-preselect 'prompt)      ;; Preselect the prompt
-  ;; (corfu-on-exact-match nil)     ;; Configure handling of exact matches
-
-  ;; Enable Corfu only for certain modes. See also `global-corfu-modes'.
-  ;; :hook ((prog-mode . corfu-mode)
-  ;;        (shell-mode . corfu-mode)
-  ;;        (eshell-mode . corfu-mode))
-
-  ;; Recommended: Enable Corfu globally.  This is recommended since Dabbrev can
-  ;; be used globally (M-/).  See also the customization variable
-  ;; `global-corfu-modes' to exclude certain modes.
-  :init
-  (global-corfu-mode)
-  (setq corfu-auto-delay 0.2) ;; Set delay for popup
-  (define-key corfu-map (kbd "C-n") #'corfu-next)
-  (define-key corfu-map (kbd "C-p") #'corfu-previous))
-
-
-;; A few more useful configurations...
-(use-package emacs
-  :custom
-  ;; TAB cycle if there are only few candidates
-  ;; (completion-cycle-threshold 3)
-
-  ;; Enable indentation+completion using the TAB key.
-  ;; `completion-at-point' is often bound to M-TAB.
-  (tab-always-indent 'complete)
-
-  ;; Emacs 30 and newer: Disable Ispell completion function.
-  ;; Try `cape-dict' as an alternative.
-  (text-mode-ispell-word-completion nil)
-
-  ;; Hide commands in M-x which do not apply to the current mode.  Corfu
-  ;; commands are hidden, since they are not used via M-x. This setting is
-  ;; useful beyond Corfu.
-  (read-extended-command-predicate #'command-completion-default-include-p))
-#+end_src
-printers
-[[cite:&ottolenghi2012jerusalem]]
-
-#+begin_src emacs-lisp
-(use-package cape
-  :ensure t
-  :after corfu
-  :config
-  (defun my-cape-setup ()
-    ;; Here you can define specific completion functions you want to use.
-    (add-to-list 'completion-at-point-functions
-                 (list #'cape-dabbrev
-                       #'cape-file
-		       #'cape-dict
-                       #'cape-tex
-		       )))  ;; include other functions as needed
-
-  ;; Enable the setup for Org mode.
-  (add-hook 'org-mode-hook 'my-cape-setup))
-
+(use-package kirigami
+  :ensure t)
 #+end_src
 
-#+begin_src R
-librar
-#+end_src
-prin
-printer
-#+begin_src emacs-lisp
-   (setq completion-styles '(orderless Partial-completion emacs))
-   (use-package company
-     :ensure t
-     :hook (after-init . global-company-mode)
-     :config
-     (setq company-idle-delay 0.2)  ;; Adjust delay as needed
-     (setq company-minimum-prefix-length 1))  ;; Minimal prefix length for suggestions
+*** SessionStart hooks for cross-project context injection
+The =cheaply.sh= hook pattern (UserPromptSubmit) works well for injecting context at
+prompt time. Explore more hooks — especially =SessionStart= — for injecting compact
+architecture context automatically on session open without relying on MEMORY.md token
+budget. Candidates:
+- Inject repo architecture card (public/private emacs, ansible layers, module system)
+- Inject machine identity (hostname → which ansible playbooks apply)
+- Conditionally load private org context summary when in a relevant project
+See: =~/.claude/hooks/= for existing examples; =~/.claude/settings.json= for registration.
+*** Moonshot skill
+:PROPERTIES:
+:ID:       94690B7F-FA4D-4E35-B8E5-C19DC83E5D7A
+:END:
 
-#+end_src
-printer-driver-foo2zjs-common
-print(text)
-cfDNA-based
-#+begin_src emacs-lisp
-   (defun my-cape-setup ()
-     "Set up cape completions for Org mode."
-     (message "Cape setup for Org mode activated")  ;; Message for debugging
-     (setq-local completion-at-point-functions
-                 (list #'cape-dabbrev
-                       #'cape-file
-                       #'cape-tex
-		       #'cape-dict
-		       )))
+Autonomous implementation skill — runs full brainstorm + plan interactively,
+then dispatches a background agent in a worktree.
 
-#+end_src
-#+begin_src emacs-lisp
+See [[file:docs/superpowers/specs/2026-03-11-moonshot-design.md][design spec]].
 
+**** Claude skill                                                    :nohelm:
 
-#+end_src
-#+begin_src emacs-lisp
-(defun my-cape-setup ()
-  (setq-local completion-at-point-functions
-                 (list #'cape-dabbrev
-                       #'cape-file
-                       #'cape-tex
-                       #'cape-dict)))  ;; Add dictionary completion
-(my-cape-setup)
-#+end_src
-prin
-#+begin_src emacs-lisp
-   (use-package cape
-     :ensure t
-     :after corfu
-     :config
-     (defun my-cape-setup ()
-       "Set up cape completions for Org mode."
-       (setq-local completion-at-point-functions
-                   (list #'cape-dabbrev
-                         #'cape-file
-                         #'cape-tex
-                         #'cape-dict)))  ;; Add other completion sources as needed
+#+begin_src markdown :tangle ~/.claude/skills/moonshot/SKILL.md :mkdirp yes :comments no
+---
+name: moonshot
+description: >
+  Autonomous agent workflow for ambitious implementation attempts. Runs the full
+  brainstorming + write-plans flow, then dispatches a background agent in an
+  isolated git worktree with full permissions. User reviews the result after.
+  Trigger on: "moonshot", "let it rip", "autonomous implementation", or when
+  the user wants to hand off a feature build to run unattended.
+---
 
-     ;; Activate setup for Org mode
-     (add-hook 'org-mode-hook 'my-cape-setup))
+# Moonshot: Autonomous Implementation Skill
 
-#+end_src
-prin
-#+begin_src emacs-lisp
-   (defun my-cape-setup ()
-     "Set up cape completions for Org mode."
-     (setq-local completion-at-point-functions
-                 (list #'cape-dabbrev
-                       #'cape-file
-                       #'cape-tex
-                       #'cape-dict))  ;; Add other completion sources
-     (message "Cape setup executed: %s" completion-at-point-functions))  ;; Debug message
+You orchestrate a three-phase workflow: design → plan → autonomous execution.
 
-#+end_src
-prin
-prin
+## Phase 1: Design (Interactive)
 
-[[cite:&wallis2021cnf]]
-*** claude-code
-[[file:~/.claude/CLAUDE.md]]
-#+begin_src emacs-lisp
-(use-package claude-code-ide
-  :vc (:url "https://github.com/manzaltu/claude-code-ide.el" :rev :newest)
-  :config
-  (claude-code-ide-emacs-tools-setup)
-  ;; Open claude buffers in a dedicated frame, reusing it if already visible
-  (add-to-list 'display-buffer-alist
-               '("\\*claude-code\\["
-                 (display-buffer-reuse-window display-buffer-pop-up-frame)
-                 (reusable-frames . t))))
+Invoke the `superpowers:brainstorming` skill. Run the full brainstorming flow:
+- Explore project context
+- Ask clarifying questions (one at a time)
+- Propose 2-3 approaches with recommendation
+- Present design section by section, get approval
+- Write spec doc to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
+- Run spec review loop
+- User reviews spec
+
+Do NOT skip or abbreviate any brainstorming steps. Same rigor as a normal design.
+
+## Phase 2: Plan (Interactive)
+
+Invoke the `superpowers:writing-plans` skill. Run the full planning flow:
+- Write implementation plan with bite-sized tasks
+- Save to `docs/superpowers/plans/YYYY-MM-DD-<topic>-plan.md`
+- Run plan review loop
+- User approves plan
+
+## Phase 3: Dispatch (Autonomous)
+
+Once the plan is approved, transition to autonomous execution:
+
+### Step 3a: Confirm budget and timeout
+
+Ask the user:
+> "Ready to launch the moonshot. Defaults: **$5 budget**, **30 min timeout**. Change these or hit enter to proceed."
+
+Record the user's choices (or defaults).
+
+### Step 3b: Read the spec and plan docs
+
+Read the spec doc and plan doc that were written in Phases 1 and 2.
+Store their full content for inclusion in the agent prompt.
+
+### Step 3c: Assemble the agent prompt
+
+Construct the prompt from three parts:
+
+**Part 1 — System preamble:**
+
+```
+You are executing a moonshot implementation autonomously. Rules:
+
+1. Work best-effort through the plan below. Complete as many steps as you can.
+2. Commit after each major plan task (not every sub-step — after each ### Task).
+3. If a step fails, note what went wrong in a commit message and continue to the next task.
+4. Do not stop to ask questions — make reasonable decisions and document choices in commits.
+5. Only modify files in your current working directory (the worktree). You may read files anywhere on disk for reference.
+6. BUDGET: Do not exceed approximately $<BUDGET> in token usage. If you estimate you are approaching the limit, commit your progress and stop.
+7. TIMEOUT: You have approximately <TIMEOUT> minutes. If you are running long, prioritize committing progress over completing all steps.
+8. After completing the plan (or as much as you can):
+   - Attempt a build/compile if the repo has one (make, npm build, cargo build, etc.)
+   - Run any test suite present in the repo if one exists (make test, npm test, pytest, etc.)
+   - Include build and test results in your final commit message
+9. Your final output message must be a results summary in this format:
+
+## Moonshot Results
+- **Steps completed:** X/Y
+- **Steps skipped/failed:** [list with brief reasons]
+- **Build results:** [pass/fail/N/A]
+- **Test results:** [pass/fail/no tests found]
+- **Key decisions made:** [any judgment calls you made autonomously]
+```
+
+**Part 2 — Spec document** (full content)
+
+**Part 3 — Plan document** (full content)
+
+### Step 3d: Check for branch collision
+
+Before dispatching, check if the target branch name already exists:
+
+```bash
+git branch --list "moonshot/<topic>-<date>"
+```
+
+If it exists, append a counter: `-2`, `-3`, etc. until an unused name is found.
+
+### Step 3e: Dispatch the background agent
+
+Use the Agent tool with these parameters:
+- `description`: "moonshot: <topic>"
+- `prompt`: the assembled prompt from Step 3c
+- `isolation`: "worktree"
+- `run_in_background`: true
+
+After dispatch, capture the agent ID from the tool response.
+
+Print to the user:
+> "Moonshot launched in background. You'll be notified when it completes.
+> Branch: `moonshot/<topic>-<date>`
+> Budget: $X | Timeout: Y min
+> Agent ID: `<id>` (use TaskStop to abort if needed)"
+
+### Step 3f: Handle completion
+
+When the background agent completes and you receive the notification:
+
+1. Print the agent's results summary to the user
+2. Run `git diff --stat` against the base branch in the worktree to show files changed
+3. Print cleanup options:
+   > **Next steps:**
+   > - Review: `git log moonshot/<branch>` / `git diff main...moonshot/<branch>`
+   > - Merge: `git merge moonshot/<branch>`
+   > - Discard: `git worktree remove <path> && git branch -D moonshot/<branch>`
+
+## Notes
+
+- The brainstorming and write-plans phases are fully interactive — the user is in the loop
+- Only Phase 3 (execution) runs autonomously in the background
+- If the user wants to abort mid-run, they can use TaskStop with the agent ID
+- The worktree isolates git working directory state but does NOT sandbox shell commands — this is an accepted risk
 #+end_src
-- Need to integrate across machines- maybe symlink
