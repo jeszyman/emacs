@@ -1,3 +1,12 @@
+;; ============================================================
+;; AUTO-GENERATED — DO NOT EDIT DIRECTLY
+;; Edits will be overwritten on next org-babel tangle.
+;; 
+;; Source:  /home/jeszyman/repos/emacs/emacs.org
+;; Author:  Jeffrey Szymanski
+;; Tangled: 2026-03-12 12:41:51
+;; ============================================================
+
 (defun jg--parse-org-enums (file tag)
   "Parse recipe enums from a heading tagged with TAG in FILE.
 Expects a nested list structure where top-level items are field names
@@ -75,6 +84,10 @@ and sub-items are the values. Returns an alist of (FIELD . (value1 value2 ...)).
       (insert body))
     (org-babel-eval (format "cat %s" temp-file) "")))
 
+
+;; markdown: no ob-markdown package exists; define no-op execute so tangle works
+(defun org-babel-execute:markdown (body _params) body)
+(add-to-list 'org-babel-load-languages '(markdown . t))
 
 ;; Always use plain yaml-mode for Org src blocks
 (add-to-list 'org-src-lang-modes '("yaml" . yaml))

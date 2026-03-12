@@ -1,3 +1,12 @@
+;; ============================================================
+;; AUTO-GENERATED — DO NOT EDIT DIRECTLY
+;; Edits will be overwritten on next org-babel tangle.
+;;
+;; Source:  /home/jeszyman/repos/emacs/emacs.org
+;; Author:  Jeffrey Szymanski
+;; Tangled: 2026-03-12 12:41:51
+;; ============================================================
+
 ;;-*- mode: elisp -*-
 
 ;; Package Management Setup
@@ -71,6 +80,9 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 
 ;; Load late configuration
 (safe-load-file-if-exists "load-last.el")
+(setq server-socket-dir (expand-file-name "server" user-emacs-directory))
+(require 'server)
+(unless (server-running-p) (server-start))
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
@@ -83,44 +95,14 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
      (ess-fl-keyword:numbers . t) (ess-fl-keyword:operators . t)
      (ess-fl-keyword:delimiters . t) (ess-fl-keyword:= . t)
      (ess-R-fl-keyword:F&T . t) (ess-R-fl-keyword:%op% . t)))
- '(package-selected-packages
-   '(anki-editor auctex blacken casual citar-embark claude-code-ide conda
-		 corfu elpy embark-consult ess esup
-		 exec-path-from-shell expand-region flycheck-eglot
-		 gptel helm-bibtex helm-org helm-org-rifle ivy-bibtex
-		 jinx key-chord magit marginalia markdown-mode
-		 mermaid-mode multi-vterm native-complete ob-async
-		 ob-mermaid openwith orderless org-alert org-contrib
-		 org-edna org-ql org-ref org-repeat-by-cron org-ros
-		 pdf-tools rainbow-delimiters snakemake-mode
-		 tree-sitter-langs vc-use-package vertico web-mode
-		 yaml yaml-mode))
  '(safe-local-variable-values
-   '((eval progn
-	   (save-excursion
-	     (org-babel-goto-named-src-block "setup-gastronomy")
-	     (org-babel-execute-src-block))
-	   (jg-recipes-sync-all))
-     (eval add-hook 'after-save-hook
-	   (lambda nil
-	     (save-excursion
-	       (goto-char (point-min))
-	       (while
-		   (re-search-forward "^#\\+name: grants-setup$" nil t)
-		 (org-babel-execute-src-block))))
-	   nil t)
-     (eval save-excursion (goto-char (point-min))
-	   (while (re-search-forward "^#\\+name: grants-setup$" nil t)
-	     (org-babel-execute-src-block)))
-     (eval org-babel-load-languages 'org-babel-load-languages
-	   '((emacs-lisp . t)))
+   '((eval setq inferior-ess-r-program
+	   "/home/jeszyman/miniconda3/envs/biotools/bin/R")
      (org-confirm-elisp-link-function))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(default ((t (:family "Hack" :height 114 :weight light)))))
-(setq server-socket-dir (expand-file-name "server" user-emacs-directory))
-(require 'server)
-(unless (server-running-p) (server-start))
+ '(default ((t (:family "Hack" :height 114 :weight light))))
+ '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC")))))

@@ -2,10 +2,14 @@
 :PROPERTIES:
 :ID:       a49abc44-8e71-4a1a-bd35-a77849427c94
 :END:
+
 pkill -USR2 emacs for frozen emacs
+
 ** README                                                          :noexport:
 *** Change log
-- [2026-03-11 Wed] org-sleeper: autonomous background org-mode linter. Cron-triggered (5 min), gates on Emacs idle + token budget, picks random heading, applies approved fixes. Agent definition tangled from =**** Approved fix set= block. 12 rules (2 auto, 10 propose). Gate script at =~/repos/org/scripts/org-sleeper.sh=, TSV log at =~/repos/org/logs/org-sleeper.tsv=.
+- [2026-03-11 Wed] moonshot skill: three-phase autonomous implementation (interactive design → interactive plan → background worktree agent). Tested on scopus-search skill build. Worktree sandbox blocks git commits and env vars — accepted; changes applied from diff manually. Skill defined in emacs.org, tangles to =~/.claude/skills/moonshot/SKILL.md=.
+- [2026-03-12 Thu] org-sleeper: migrated docs + agent definition to =work.org= (source of truth now there)
+- [2026-03-11 Wed] org-sleeper: autonomous background org-mode linter (initial build). Migrated to =work.org= on [2026-03-12 Thu].
 - [2026-03-10 Tue] emacs-jupyter: added =use-package jupyter= with =ob-jupyter= + =aliases-from-kernelspecs=; registered R/Python kernels for biotools/basecamp conda envs; converted frag.org bioinfo-dev section from =#+begin_src R= to =jupyter-R= with per-heading =:header-args:jupyter-R:= for per-block conda env selection
 - [2026-03-09 Mon] Added =my/extract-pdf-annotations= + =my/pdf-from-cite-at-point= (pdfannots + citar) to =**** PDF annotation= under Base Emacs; tangles to public_config.el
 - [2026-03-08 Sun] corfu: delay→1.0, cape+read-extended-command-predicate added; avy+casual-avy integrated (jj chord, embark/mark-word dispatch); org-include-inline per-buffer toggle
@@ -1808,236 +1812,6 @@ https://www.reddit.com/r/emacs/comments/1fw7jbb/karthink_emacs_latex/
 - :diminish: keep off mod line
 - https://jwiegley.github.io/use-package/keywords/
 - https://www.reddit.com/r/emacs/comments/j2xezg/usepackage_best_practices/
-*** org-sleeper
-
-Autonomous background linter for org-mode files. Runs on cron every 5 minutes during Emacs idle time. Picks a random agenda file (weighted by size) and a random heading (up to depth 6), applies approved syntax fixes, commits, and logs.
-
-**** How it works
-
-1. Cron fires =org-sleeper.sh= every 5 minutes
-2. Gate script checks Emacs idle time (>= 10 min) via =(current-idle-time)=
-3. Checks monthly token budget from TSV log
-4. Saves all Emacs buffers, re-checks idle
-5. Picks random agenda file (weighted by byte size), random heading (depth 1-6)
-6. Invokes =claude -p --agent org-sleeper= headless (Haiku model, $0.05/run cap)
-7. Post-run: re-checks idle (aborts if user returned), validates diff scope, reverts org buffers in Emacs, warns on conflicts
-
-**** Components
-
-| Component        | Location                                                               |
-|------------------+------------------------------------------------------------------------|
-| Gate script      | [[file:~/repos/org/scripts/org-sleeper.sh][~/repos/org/scripts/org-sleeper.sh]]                                     |
-| Agent definition | [[file:~/.claude/agents/org-sleeper.md][~/.claude/agents/org-sleeper.md]]                                        |
-| TSV log          | [[file:~/repos/org/logs/org-sleeper.tsv][~/repos/org/logs/org-sleeper.tsv]]                                       |
-| Design spec      | [[file:docs/superpowers/specs/2026-03-11-org-sleeper-design.md][org-sleeper design spec]]                                                |
-| Impl plan        | [[file:docs/superpowers/plans/2026-03-11-org-sleeper.md][org-sleeper impl plan]]                                                  |
-| Cron entry       | =*/5 * * * * /bin/bash ~/repos/org/scripts/org-sleeper.sh 2>/dev/null= |
-
-**** Approved fix set
-:PROPERTIES:
-:header-args:markdown: :tangle ~/.claude/agents/org-sleeper.md :comments no
-:END:
-
-These rules define what the agent is allowed to change. Each rule has a mode: =auto= (apply and commit) or =propose= (log only, awaiting promotion). New rules start as =propose= and are promoted to =auto= after manual review of logged proposals.
-
-The block below tangles to [[file:~/.claude/agents/org-sleeper.md][the agent definition]]. Edit the rules here, then tangle.
-
-#+begin_src markdown
----
-name: org-sleeper
-description: Autonomous background org-mode linter. Reads a target subtree, applies approved fixes, commits, and outputs TSV log rows. Invoked headless by cron via org-sleeper.sh.
-model: claude-haiku-4-5-20251001
-tools:
-  - Bash
-  - Read
-  - Edit
----
-
-You are the org-sleeper agent — an autonomous background linter for org-mode files. You run headless via cron during Emacs idle time.
-
-## Input
-
-You receive a prompt like: `Fix: /home/jeszyman/repos/org/work.org heading: Modules/Flat/breast`
-
-The file path is absolute. The heading is the exact text of the org heading (without stars or tags).
-
-## Behavior
-
-1. Read the target file. Find the heading matching the provided heading text.
-2. Identify the line range of the target subtree (from the heading line to the line before the next heading at same or higher level).
-3. Scan the subtree for fixable issues from the **Approved Fix Set** below.
-4. For each issue found:
-   - If the fix type mode is `auto`: apply the fix using the Edit tool.
-   - If the fix type mode is `propose`: do NOT apply. Just note it for logging.
-5. After all fixes are applied, if any `auto` fixes were made:
-   - Stage the changed file: `git -C <repo-root> add <file>`
-   - Count the applied fixes. Commit: `git -C <repo-root> commit -m "org-sleeper: N fixes in <basename>::<heading>"`
-6. Output TSV rows to stdout — one row per fix (both applied and proposed). Format:
-   ```
-   <timestamp>\t<commit_hash>\t<basename>\t<heading>\t<fix_type>\t<status>\t<description>\t<tokens_used>
-   ```
-   - `timestamp`: ISO 8601 (e.g., `2026-03-11T03:22:14`)
-   - `commit_hash`: short hash from the commit, or `NONE` if proposed/no commit
-   - `basename`: filename only (e.g., `work.org`)
-   - `heading`: the heading text as received
-   - `fix_type`: identifier from the fix set (e.g., `trailing-ws`)
-   - `status`: `applied` or `proposed`
-   - `description`: brief human-readable note
-   - `tokens_used`: put total token count on the first row, `0` on subsequent rows
-7. If nothing to fix, output nothing. No TSV rows, no commit.
-8. Output ONLY TSV rows. No other text, no explanations, no markdown.
-
-## Boundaries
-
-- NEVER make structural changes (move/delete/add headings, change hierarchy).
-- NEVER touch content outside the target subtree's line range.
-- NEVER apply fix types not listed in the Approved Fix Set.
-- ONE commit per run, or no commit if nothing was auto-fixed.
-- Do NOT output anything except TSV rows.
-
-## Approved Fix Set
-
-### trailing-ws (mode: auto)
-Remove trailing whitespace from any line in the subtree.
-- Match: lines ending with one or more spaces or tabs before the newline
-- Fix: remove the trailing whitespace
-- Do NOT modify lines inside `#+begin_src` / `#+end_src` blocks (code blocks are exempt)
-
-### blank-after-heading (mode: auto)
-Ensure exactly one blank line between a heading line (or its PROPERTIES drawer / planning line) and the first content line.
-- Match: heading (or PROPERTIES `:END:` / `DEADLINE` / `SCHEDULED` line) immediately followed by a non-blank content line (not another heading, not a blank line)
-- Fix: insert one blank line
-- Do NOT insert blank lines between a heading and its PROPERTIES drawer
-- Do NOT insert between `:END:` and `DEADLINE`/`SCHEDULED` lines
-- Do NOT insert between a heading and the next sub-heading
-
-### lowercase-directives (mode: propose)
-Convert uppercase or mixed-case `#+` directives to lowercase.
-- Match: any line starting with `#+` followed by an uppercase keyword — `#+BEGIN_SRC`, `#+END_SRC`, `#+RESULTS:`, `#+NAME:`, `#+PROPERTY:`, `#+INCLUDE:`, `#+STARTUP:`, `#+CAPTION:`, `#+ATTR_ORG:`, `#+TODO:`, and any other `#+KEYWORD` variant
-- Fix: lowercase the directive keyword only (e.g., `#+BEGIN_SRC emacs-lisp` → `#+begin_src emacs-lisp`)
-- Preserve the rest of the line (language, header args, values) exactly as-is
-- Do NOT modify lines inside `#+begin_src` / `#+end_src` blocks (template variables like `#+BEGIN_${...}` in yasnippets are exempt)
-
-### blank-around-blocks (mode: propose)
-Ensure one blank line before and after each `#+begin_src`/`#+end_src` block pair.
-- Match: `#+begin_src` line not preceded by a blank line, or `#+end_src` line not followed by a blank line
-- Fix: insert one blank line where missing
-- Exception: do NOT add a trailing blank after the last block in a section (i.e., if `#+end_src` is immediately followed by a heading)
-- Exception: do NOT add a leading blank if `#+begin_src` is immediately after a heading line or `:END:` line
-
-### no-double-blanks (mode: propose)
-Collapse runs of 3 or more consecutive blank lines to exactly 2.
-- Match: 3+ consecutive blank lines
-- Fix: reduce to exactly 2 blank lines
-- Do NOT modify blank lines inside `#+begin_src` / `#+end_src` blocks
-
-### properties-adjacent (mode: propose)
-Remove blank lines between a heading and its PROPERTIES drawer.
-- Match: heading line followed by one or more blank lines, then `:PROPERTIES:`
-- Fix: remove the blank lines so `:PROPERTIES:` is immediately after the heading
-- Only fix when the line after the blank(s) is literally `:PROPERTIES:` — do not move other content
-
-### trailing-blank-in-block (mode: propose)
-Remove trailing blank lines inside src blocks.
-- Match: one or more blank lines immediately before `#+end_src`
-- Fix: remove the trailing blank lines so the last code line is immediately followed by `#+end_src`
-
-### missing-nohelm (mode: propose)
-Add `:nohelm:` tag to standard structural subheadings under `:mod:` tagged headings.
-- Match: heading whose title exactly matches (case-insensitive) one of: `Reference`, `Agent`, `Claude skill`, `Emacs functions`, `Notes`, `Test` — AND whose parent has a `:mod:` tag — AND which does not already have `:nohelm:` tag
-- Fix: append `:nohelm:` to the heading's tag list
-- Do NOT match partial titles (e.g., "General reference" does NOT match "Reference")
-
-### missing-id (mode: propose)
-Add `:ID:` property to module instance headings that lack one.
-- Match: heading that has a tag matching a known module identifier tag (any tag found on `:mod:` headings in the same file) — AND is not itself a `:mod:` definition — AND does not have an `:ID:` property in its PROPERTIES drawer
-- Fix: add `:ID:` property with a new UUID (generated via `uuidgen`)
-- If the heading has no PROPERTIES drawer, create one
-
-### org-id-link-ordering (mode: propose)
-Ensure org-id link headings appear first among their siblings, sorted alphabetically.
-- Match: a group of sibling headings where some titles are org-id links (`[[id:UUID][text]]`) and some are not — AND any non-linked heading precedes a linked heading, or linked headings are not in alphabetical order by display text
-- Fix: reorder only the linked headings to appear first among siblings, sorted alphabetically by display text
-- Do NOT reorder non-linked headings relative to each other
-
-### no-empty-properties (mode: propose)
-Remove empty PROPERTIES drawers.
-- Match: `:PROPERTIES:` immediately followed by `:END:` with no properties between (possibly with blank lines)
-- Fix: remove the entire empty drawer (`:PROPERTIES:` line through `:END:` line)
-
-### uppercase-property-names (mode: propose)
-Ensure drawer property names are uppercase.
-- Match: property lines inside `:PROPERTIES:` / `:END:` where the property name is lowercase or mixed case (e.g., `:id:`, `:Created:`)
-- Fix: uppercase the property name (e.g., `:id:` → `:ID:`, `:created:` → `:CREATED:`)
-- Preserve the property value exactly as-is
-#+end_src
-
-***** Rule summary
-
-| Rule                       | Mode    | Description                                            |
-|----------------------------+---------+--------------------------------------------------------|
-| =trailing-ws=              | auto    | Remove trailing whitespace (exempt code blocks)        |
-| =blank-after-heading=      | auto    | Blank line between heading metadata and content        |
-| =lowercase-directives=     | propose | =#+BEGIN_SRC= → =#+begin_src= (all =#+= directives)    |
-| =blank-around-blocks=      | propose | Blank line before/after src block pairs                |
-| =no-double-blanks=         | propose | Collapse 3+ blank lines to 2                           |
-| =properties-adjacent=      | propose | No blank between heading and PROPERTIES drawer         |
-| =trailing-blank-in-block=  | propose | Remove trailing blanks inside src blocks               |
-| =missing-nohelm=           | propose | Add =:nohelm:= to structural subheadings under =:mod:= |
-| =missing-id=               | propose | Add =:ID:= to module instances missing one             |
-| =org-id-link-ordering=     | propose | ID-link headings first among siblings, sorted alpha    |
-| =no-empty-properties=      | propose | Remove empty PROPERTIES drawers                        |
-| =uppercase-property-names= | propose | =:id:= → =:ID:= in PROPERTIES drawers                  |
-
-**** TSV log format
-
-#+begin_example
-timestamp	commit_hash	file	heading	fix_type	status	description	tokens_used
-#+end_example
-
-Status values: =applied=, =proposed=, =aborted=, =boundary-violation=.
-
-**** Concurrency safety
-
-The gate script brackets the agent run with Emacs coordination:
-1. Pre-run: =(save-some-buffers t)= flushes buffers to disk
-2. Pre-run: re-check idle to catch user returning during save
-3. Post-run: re-check idle — if user returned, =git checkout= to discard changes
-4. Post-run: validate diff is within target file — revert commit if boundary violated
-5. Post-run: revert unmodified org buffers so Emacs picks up changes
-6. Post-run: warn on modified buffers where disk is now newer (conflict detection)
-
-**** Expanding the fix set
-
-***** How =propose= mode works
-
-Rules with =mode: propose= are logged but not applied. When the agent encounters an issue matching a =propose= rule, it:
-1. Does NOT edit the file
-2. Outputs a TSV row with =status=proposed= and a description of what it would fix
-3. Makes no commit for proposed fixes
-
-Over time, =proposed= rows accumulate in [[file:~/repos/org/logs/org-sleeper.tsv][the TSV log]]. Review them with:
-
-#+begin_example
-awk -F'\t' '$6 == "proposed"' ~/repos/org/logs/org-sleeper.tsv
-#+end_example
-
-***** Promoting a rule to =auto=
-
-Once you're satisfied the proposals for a rule are consistently correct:
-1. Change =mode: propose= to =mode: auto= in the code block under "Approved fix set"
-2. Tangle to update [[file:~/.claude/agents/org-sleeper.md][the agent definition]]
-
-From that point on, the agent applies those fixes and commits them.
-
-***** Adding a new rule
-
-1. Add the rule to the code block in "Approved fix set" with =mode: propose=
-2. Add a row to the summary table
-3. Tangle to update the agent definition
-4. Monitor the TSV log for =proposed= entries, review them
-5. When confident, promote to =auto= as above
-
 *** Plain text diagraming
 - see mermaid
 - https://github.com/skuro/plantuml-mode
@@ -3889,6 +3663,13 @@ Code that needs to be tangled both here and into custom inits for batch export
 ; y or n instead of yes or no
 (setopt use-short-answers t)
 
+;; Minibuffer prompts follow the selected frame, so any frame can answer
+;; a blocking y/n prompt instead of hunting for the originating frame
+(setq minibuffer-follows-selected-frame t)
+
+;; Don't prompt about active processes on exit
+(setq confirm-kill-processes nil)
+
 ;; don't check package signatures
 ;;  https://emacs.stackexchange.com/questions/233/how-to-proceed-on-package-el-signature-check-failure
 (setq package-check-signature nil)
@@ -4283,17 +4064,14 @@ When set as a list as below, 300 pixels will be the default, but another width c
 #+begin_src emacs-lisp
 (setq org-image-actual-width '(300))
 #+end_src
-***** shk-fix-inline-images, reload inline images after code eval
-If you have code blocks in Org mode that produce images (such as R or Python plots), this setup refreshes the images right after code execution without requiring manual intervention.
-
+***** Reload inline images after code eval
 #+begin_src emacs-lisp
-(defun shk-fix-inline-images ()
-  (when org-inline-image-overlays
-    (org-redisplay-inline-images)))
+(add-hook 'org-babel-after-execute-hook #'org-redisplay-inline-images)
+#+end_src
 
-(with-eval-after-load 'org
-  (add-hook 'org-babel-after-execute-hook 'shk-fix-inline-images))
-
+***** LaTeX preview
+#+begin_src emacs-lisp
+(setq org-format-latex-options (plist-put org-format-latex-options :scale 3))
 #+end_src
 
 ***** Source code and tangle
@@ -6929,6 +6707,11 @@ overrides. =settings.local.json= is where Claude writes runtime approvals.
 
 ***** Org-mode navigation MCP tools
 
+MCP tools use deferred (lazy) loading in Claude Code — they appear as
+"available deferred tools" at session start and are fetched on first use via
+=ToolSearch=. Warnings about unavailable MCP tools on startup are expected
+and do not indicate a failure.
+
 Four tools that give Claude structural org-mode navigation — outline first,
 then drill to a subtree by ID or heading name, or query across files with
 org-ql. Much more token-efficient than reading whole files.
@@ -7449,14 +7232,6 @@ needs an install?
 - https://lambdaland.org/posts/2025-07-15_bedrock_release/
   - https://lambdaland.org/posts/2024-12-14_emacs_catchup/
 ** Ideas
-#+begin_src emacs-lisp
-(add-hook 'org-babel-after-execute-hook #'org-redisplay-inline-images)
-#+end_src
-
-#+begin_src emacs-lisp
-(setq org-format-latex-options (plist-put org-format-latex-options :scale 3))
-#+end_src
-
 - https://www.reddit.com/r/emacs/comments/1c4yeme/announcing_shannonmax_analyze_your_keybindings/
 *** Indirect buffer absolute line numbers in mode line
 Show true (absolute) line numbers from the parent buffer in the mode line of an indirect buffer, not the narrowed-relative numbers. Approaches tried:
@@ -7488,53 +7263,7 @@ https://www.nongnu.org/org-edna-el/
 
 
 
-*** abbrev mod
-#+NAME: abbrevs_table
-| abbrev | expansion     |
-|--------+---------------|
-| btw    | by the way    |
-| idk    | I don't know  |
-| brb    | be right back |
-
-#+begin_src emacs-lisp
-
-(defun define-abbrevs-from-org-table (table-name)
-  "Define global abbrevs from a named Org table in the current buffer."
-  (interactive "sTable name: ")
-  (save-excursion
-    (goto-char (point-min))
-    (when (re-search-forward (format "#\\+NAME: *%s" (regexp-quote table-name)) nil t)
-      (forward-line 1) ; move to the table
-      (let ((table (org-table-to-lisp)))
-        ;; Skip header row
-        (dolist (row (cdr table))
-          (let ((abbrev (string-trim (nth 0 row)))
-                (expansion (string-trim (nth 1 row))))
-            (define-abbrev global-abbrev-table abbrev expansion)))))))
-
-#+end_src
-
-#+begin_src emacs-lisp
-(defun define-abbrevs-from-org-table (table-name)
-  "Define global abbrevs from a named Org table in the current buffer."
-  (interactive "sTable name: ")
-  (save-excursion
-    (goto-char (point-min))
-    (when (re-search-forward (format "#\\+NAME: *%s" (regexp-quote table-name)) nil t)
-      (forward-line 1) ; move to the table
-      (let ((table (org-table-to-lisp)))
-        (dolist (row (cdr table)) ; skip header
-          (when (and (listp row) (= (length row) 2))
-            (let ((abbrev (string-trim (nth 0 row)))
-                  (expansion (string-trim (nth 1 row))))
-              (define-abbrev global-abbrev-table abbrev expansion))))))))
-
-#+end_src
-#+begin_src emacs-lisp
-(define-abbrevs-from-org-table "abbrevs_table")
-
-#+end_src
-by the way
+*** [[file:~/repos/org/private.org::*Abbreviations][abbrev mode — in private.org]]
 *** Display inline pdf image in orgmode
 :PROPERTIES:
 :ID:       14ea79f5-5ffe-4ced-ba91-e84c2d5bcb84
@@ -8145,6 +7874,9 @@ then dispatches a background agent in a worktree.
 
 See [[file:docs/superpowers/specs/2026-03-11-moonshot-design.md][design spec]].
 
+**** TODO [#B] Smoke test moonshot skill with a real feature
+Test in frag repo or another project. Verify full flow: brainstorm → plan → dispatch → results summary.
+
 **** Claude skill                                                    :nohelm:
 
 #+begin_src markdown :tangle ~/.claude/skills/moonshot/SKILL.md :mkdirp yes :comments no
@@ -8190,7 +7922,7 @@ Once the plan is approved, transition to autonomous execution:
 ### Step 3a: Confirm budget and timeout
 
 Ask the user:
-> "Ready to launch the moonshot. Defaults: **$5 budget**, **30 min timeout**. Change these or hit enter to proceed."
+> "Ready to launch the moonshot. Defaults: **$5 budget**, **30 min timeout**. You can change either value or hit enter to use defaults."
 
 Record the user's choices (or defaults).
 
@@ -8264,8 +7996,13 @@ Print to the user:
 When the background agent completes and you receive the notification:
 
 1. Print the agent's results summary to the user
-2. Run `git diff --stat` against the base branch in the worktree to show files changed
-3. Print cleanup options:
+2. **Verify deliverables** — for each file the plan expected to create or modify:
+   - Confirm it exists (Glob/Read in the worktree)
+   - Spot-check that it's non-empty and structurally valid (e.g., YAML frontmatter parses, code isn't truncated mid-function)
+   - If the agent reported failures, check whether partial output is usable
+   - Report verification results: `X/Y deliverables verified, Z issues found`
+3. Run `git diff --stat` against the base branch in the worktree to show files changed
+4. Print cleanup options:
    > **Next steps:**
    > - Review: `git log moonshot/<branch>` / `git diff main...moonshot/<branch>`
    > - Merge: `git merge moonshot/<branch>`

@@ -1,3 +1,23 @@
+;; ============================================================
+;; AUTO-GENERATED — DO NOT EDIT DIRECTLY
+;; Edits will be overwritten on next org-babel tangle.
+;; 
+;; Source:  /home/jeszyman/repos/emacs/emacs.org
+;; Author:  Jeffrey Szymanski
+;; Tangled: 2026-03-12 12:41:51
+;; ============================================================
+
+;; Base Emacs
+
+(remove-hook 'before-save-hook #'org-table-recalculate-buffer-tables)
+(advice-add 'revert-buffer :around
+  (lambda (orig &rest args)
+  (advice-mapc (lambda (f props) (message "%s %s" (car props) f)) 'revert-buffer)
+    (if (derived-mode-p 'org-mode)
+        (org-fold-save-outline-visibility t
+          (apply orig args))
+      (apply orig args)))
+  '((name . org/preserve-outline-visibility)))
 ;; Dired
 ;; - whenever you open a new directory in Dired, the old Dired buffer is automatically killed
 
@@ -235,6 +255,13 @@
 ; y or n instead of yes or no
 (setopt use-short-answers t)
 
+;; Minibuffer prompts follow the selected frame, so any frame can answer
+;; a blocking y/n prompt instead of hunting for the originating frame
+(setq minibuffer-follows-selected-frame t)
+
+;; Don't prompt about active processes on exit
+(setq confirm-kill-processes nil)
+
 ;; don't check package signatures
 ;;  https://emacs.stackexchange.com/questions/233/how-to-proceed-on-package-el-signature-check-failure
 (setq package-check-signature nil)
@@ -297,6 +324,40 @@
                    (string= signal "exited\n"))
            (kill-buffer (process-buffer process)))))
       (bury-buffer))))
+;; PDF annotation
+;; Extract highlights and comments from a PDF into a temporary org buffer.
+;; When point is on an org-cite reference, resolves the PDF automatically via =citar=.
+;; Requires =pdfannots= on PATH (=pip install pdfannots=).
+
+
+(defun my/pdf-from-cite-at-point ()
+  "Return the PDF path for the org-cite key at point, or nil if not on a citation.
+citar-get-files returns a hash-table keyed by citekey; extract the list with gethash."
+  (when-let* ((elem (org-element-context))
+              (_ (eq (org-element-type elem) 'citation-reference))
+              (key (org-element-property :key elem))
+              (files-hash (let ((inhibit-message t) (message-log-max nil))
+                            (citar-get-files (list key))))
+              (files (gethash key files-hash))
+              (pdf (seq-find (lambda (f) (string-match-p "\\.pdf\\'" f)) files)))
+    pdf))
+(defun my/extract-pdf-annotations (pdf-file)
+  "Extract highlights and comments from PDF-FILE into a temporary org buffer.
+When point is on an org-cite reference, resolves the PDF automatically via citar.
+Requires pdfannots to be installed and on PATH."
+  (interactive
+   (list (or (my/pdf-from-cite-at-point)
+             (read-file-name "PDF file: " nil nil t nil
+                             (lambda (f) (string-match-p "\\.pdf\\'" f))))))
+  (let* ((output (shell-command-to-string
+                  (concat "pdfannots " (shell-quote-argument (expand-file-name pdf-file)))))
+         (buf (get-buffer-create "*pdf-annotations*")))
+    (with-current-buffer buf
+      (erase-buffer)
+      (org-mode)
+      (insert (format "#+title: Annotations: %s\n\n" (file-name-nondirectory pdf-file)))
+      (insert output))
+    (switch-to-buffer buf)))
 ;; Make header regions read-only via tag
 
 (defun org-mark-readonly ()
@@ -360,6 +421,20 @@
   (save-excursion
     (goto-char (point-min))
     (flush-lines "^[[:space:]]*$")))
+;; Window navigation
+
+;; Focus on another split in one step: switch to next window, then make it the
+;; only visible window. Replaces the two-step C-x o then C-x 1 sequence.
+(defun my/other-window-only ()
+  "Switch to the next window and delete all others."
+  (interactive)
+  (other-window 1)
+  (delete-other-windows))
+
+;; C-x O (capital O) — distinct from the built-in C-x o (other-window)
+(global-set-key (kbd "C-x O") #'my/other-window-only)
+;; key-chord "oo" for fast single-handed access
+(key-chord-define-global "OO" #'my/other-window-only)
 ;; Startup
 
 (require 'org)
@@ -464,6 +539,7 @@
         ("\\.xlsx\\'" . "setsid -w xdg-open \"%s\"")
         ("\\.org\\'" . emacs)
         ("\\.sty\\'" . emacs)
+        ("\\.sh\\'" . emacs)
         ("\\.tex\\'" . emacs)
         ("\\.\\(yaml\\|yml\\|txt\\|md\\|conf\\|list\\|tex\\)\\'" .
          (lambda (file path)
@@ -473,6 +549,15 @@
                           "--socket-name" "/home/jeszyman/.emacs.d/server/server"
                           "-c" (expand-file-name file))))
         (t . "setsid -w xdg-open \"%s\"")))
+;; ssh: link type
+
+;; Opens a gnome-terminal SSH session. Usage: =[[ssh:jeff-beast][label]]=
+
+
+(org-link-set-parameters "ssh"
+  :follow (lambda (path)
+    (start-process "gnome-terminal-ssh" nil
+                   "/usr/bin/gnome-terminal" "--" "ssh" path)))
 ;; Lists
 
 (setq org-cycle-include-plain-lists 'integrate)
@@ -492,16 +577,12 @@
 ;; When set as a list as below, 300 pixels will be the default, but another width can be specified through ATTR, e.g. #+ATTR_ORG: :width 800px
 
 (setq org-image-actual-width '(300))
-;; shk-fix-inline-images, reload inline images after code eval
-;; If you have code blocks in Org mode that produce images (such as R or Python plots), this setup refreshes the images right after code execution without requiring manual intervention.
+;; Reload inline images after code eval
 
+(add-hook 'org-babel-after-execute-hook #'org-redisplay-inline-images)
+;; LaTeX preview
 
-(defun shk-fix-inline-images ()
-  (when org-inline-image-overlays
-    (org-redisplay-inline-images)))
-
-(with-eval-after-load 'org
-  (add-hook 'org-babel-after-execute-hook 'shk-fix-inline-images))
+(setq org-format-latex-options (plist-put org-format-latex-options :scale 3))
 ;; Source code and tangle
 
 ; For org 9.7
@@ -707,7 +788,10 @@ When called with two prefix arguments, ARG, run the original function without pr
   (if (equal arg '(16)) ; 'C-u C-u' produces (16)
       (org-tree-to-indirect-buffer nil) ; original behavior
     (org-tree-to-indirect-buffer t)) ; one prefix argument
-  (my-collapse-all-drawers))
+  ;; Defer drawer collapse: org-tree-to-indirect-buffer calls org-show-entry
+  ;; internally, which re-opens drawers after the buffer is created. Running
+  ;; after the current command cycle ensures we collapse last.
+  (run-with-idle-timer 0 nil #'my-collapse-all-drawers))
 (define-key org-mode-map (kbd "C-c C-x b") 'my-org-tree-to-indirect-buffer)
 ;; Export
 ;; #+name: orgmode_export_general
@@ -1383,6 +1467,34 @@ skipped and nothing is inserted for it."
      (setq TeX-view-program-selection '((output-pdf "Okular")))
      (setq TeX-view-program-list
            '(("Okular" ("okular --unique %o"))))))
+;; Avy
+;; [[https://github.com/abo-abo/avy][github: abo-abo/avy]] | [[https://karthinks.com/software/avy-can-do-anything/][Avy can do anything (karthinks)]]
+
+(use-package avy
+  :ensure t
+  :config
+  (defun avy-action-embark (pt)
+    (unwind-protect
+        (save-excursion
+          (goto-char pt)
+          (embark-act))
+      (select-window
+       (cdr (ring-ref avy-ring 0))))
+    t)
+  (setf (alist-get ?. avy-dispatch-alist) 'avy-action-embark)
+  (defun avy-action-mark-word (pt)
+    "Mark the whole word at PT."
+    (goto-char pt)
+    (mark-word 1)
+    (activate-mark))
+  (setf (alist-get ?m avy-dispatch-alist) 'avy-action-mark-word)
+  (key-chord-mode 1)
+  (key-chord-define-global "jj" 'avy-goto-char-timer))
+;; Casual-avy
+;; [[https://github.com/kickingvegas/casual-avy][github: kickingvegas/casual-avy]]
+
+(use-package casual-avy
+  :ensure t)
 ;; Use-package
 
 (use-package blacken
@@ -1505,13 +1617,30 @@ skipped and nothing is inserted for it."
   :custom
   (corfu-auto t)               ;; Enable auto completion
   (corfu-auto-prefix 2)        ;; Start completing after typing 2 characters
-  (corfu-auto-delay 2.5)       ;; Delay before suggestions pop up
+  (corfu-auto-delay 1.0)       ;; Delay before suggestions pop up
   :config
   ;; Free up keybindings for `completion-at-point`
   (with-eval-after-load 'flyspell
     (define-key flyspell-mode-map (kbd "C-M-i") nil)
     (define-key flyspell-mode-map (kbd "M-TAB") nil))
   (global-set-key (kbd "M-TAB") #'completion-at-point)) ;; Bind `M-TAB` globally
+;; Hide M-x commands irrelevant to the current mode
+(use-package emacs
+  :custom
+  (read-extended-command-predicate #'command-completion-default-include-p))
+;; Cape
+;; [[https://github.com/minad/cape][github: minad/cape]]
+
+(use-package cape
+  :ensure t
+  :after corfu
+  :config
+  (defun my/cape-org-setup ()
+    (add-to-list 'completion-at-point-functions #'cape-dabbrev)
+    (add-to-list 'completion-at-point-functions #'cape-file)
+    (add-to-list 'completion-at-point-functions #'cape-dict)
+    (add-to-list 'completion-at-point-functions #'cape-tex))
+  (add-hook 'org-mode-hook #'my/cape-org-setup))
 ;; Dabbrev
 
 ;; Dynamic abbreviation completion
@@ -1610,6 +1739,11 @@ skipped and nothing is inserted for it."
     (add-hook 'elpy-mode-hook #'flycheck-mode)))
 ;; ESS
 
+;; - Session prompt behavior: ESS only asks "which R session?" once per interactive REPL
+;;   window (zero times if the session was launched directly via e.g. =R= or =julia=).
+;;   Subsequent evals in the same ESS window reuse that session silently. Potentially
+;;   replicable for =ESSshell= (shell REPL) — investigate whether the same
+;;   =ess-ask-for-ess-directory= / process-association mechanism applies there.
 ;; - no python support- https://github.com/emacs-ess/ESS/issues/910
 ;; - ess-remote to docker R
 ;; https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute_it/
@@ -1761,6 +1895,21 @@ skipped and nothing is inserted for it."
 
 ;; Suggested keys (optional)
 ;; C-c C-w is org’s default refile; bind jump to C-c j
+(defun jg/helm-org-nohelm-filter (candidates)
+  "Filter :nohelm: tagged headings and org-id link headings from helm-org."
+  (cl-remove-if
+   (lambda (cand)
+     (let ((marker (get-text-property 0 'helm-realvalue cand)))
+       (when (markerp marker)
+         (with-current-buffer (marker-buffer marker)
+           (save-excursion
+             (goto-char marker)
+             (or (member "nohelm" (org-get-local-tags))
+                 (string-match-p "\\[\\[id:" (org-get-heading t t t t))))))))
+   candidates))
+
+(advice-add 'helm-org--get-candidates-in-file :filter-return
+            'jg/helm-org-nohelm-filter)
 ;; helm-org-rifle
 
 (use-package helm-org-rifle
@@ -1776,6 +1925,13 @@ skipped and nothing is inserted for it."
 
 (use-package ivy
   :diminish)
+;; Use-package
+
+(use-package jupyter
+  :demand t
+  :config
+  (require 'ob-jupyter)
+  (org-babel-jupyter-aliases-from-kernelspecs))
 ;; key-chord
 
 ;;Exit insert mode by pressing j and then j quickly
@@ -1796,6 +1952,7 @@ skipped and nothing is inserted for it."
 ;; <> <> ,.<sf>
 
 
+(key-chord-define-global "cc"     'claude-code-ide-menu)
 (key-chord-define-global "xx"      'shell)
 (key-chord-define-global ",,"     'indent-for-comment)
 (key-chord-define-global "vv"     'vterm)
@@ -1872,6 +2029,64 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
     (start-process "brave-browser" nil "brave-browser" "--new-window" url)))
 
 (global-set-key (kbd "C-c C-g") 'open-chatgpt-query-in-new-browser-window)
+;; Use-package
+
+(add-to-list 'load-path "/usr/local/share/emacs/site-lisp/mu4e")
+
+(use-package mu4e
+  :ensure nil  ; installed via system package (maildir-utils)
+  :commands mu4e
+  :config
+  ;; Core
+  (setq mu4e-maildir "~/Mail"
+        mu4e-get-mail-command "mbsync -a"
+        mu4e-mu-binary "/usr/local/bin/mu"
+        mu4e-update-interval nil
+        mu4e-index-update-in-background t)
+
+  ;; Identity
+  (setq user-full-name "Jeff Szymanski"
+        user-mail-address "jeszyman@gmail.com"
+        mu4e-compose-reply-to-address "jeszyman@gmail.com")
+
+  ;; Gmail folders
+  (setq mu4e-sent-folder   "/gmail/[Gmail]/Sent Mail"
+        mu4e-drafts-folder "/gmail/[Gmail]/Drafts"
+        mu4e-trash-folder  "/gmail/[Gmail]/Trash"
+        mu4e-refile-folder "/gmail/[Gmail]/All Mail")
+
+  ;; Gmail handles sent via IMAP — don't duplicate
+  (setq mu4e-sent-messages-behavior 'delete)
+
+  ;; Maildir shortcuts
+  (setq mu4e-maildir-shortcuts
+        '((:maildir "/gmail/INBOX"             :key ?i)
+          (:maildir "/gmail/mayo"              :key ?m)
+          (:maildir "/gmail/[Gmail]/Sent Mail" :key ?s)
+          (:maildir "/gmail/[Gmail]/Trash"     :key ?t)))
+
+  ;; Send via msmtp
+  (setq sendmail-program "/usr/bin/msmtp"
+        send-mail-function 'sendmail-send-it
+        message-send-mail-function 'sendmail-send-it
+        message-sendmail-f-is-evil t
+        message-sendmail-extra-arguments '("--read-envelope-from"))
+
+  ;; UI
+  (setq mu4e-view-show-images t
+        mu4e-view-show-addresses t
+        mu4e-headers-date-format "%Y-%m-%d"
+        mu4e-use-fancy-chars t)
+
+  ;; Org integration
+  (require 'org-mu4e))
+;; Use-package
+
+(use-package openwith
+  :config
+  (setq openwith-associations
+        '(("\\.\\(pdf\\|docx\\|xlsx\\|pptx\\|svg\\|png\\|jpg\\|mp4\\)\\'" "xdg-open" (file))))
+  (openwith-mode t))
 ;; orderless
 
 (use-package orderless
@@ -1888,6 +2103,15 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   :ensure t
   :config
   (org-edna-mode 1))
+;; org-include-inline
+;; [[https://github.com/yibie/org-include-inline][github: yibie/org-include-inline]]
+;; - UUID-based includes work; CUSTOM_ID does not; export from UUID breaks
+;; - Enable per buffer: ~M-x org-include-inline-mode~
+
+
+;; Load only — enable per buffer with M-x org-include-inline-mode
+(use-package org-include-inline
+  :vc (:url "https://github.com/yibie/org-include-inline" :vc-backend Git))
 ;; Use-package
 
 (use-package org-contrib
@@ -2065,27 +2289,31 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 (define-key vertico-map (kbd "C-n") #'vertico-next)
 (define-key vertico-map (kbd "C-p") #'vertico-previous)
 ;; vterm
-;; - exit nano w/ Esc Esc X https://stackoverflow.com/questions/66771206/how-do-i-exit-nano-in-emacs-26-3
-;; - https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute_it/
+;; - exit nano w/ Esc Esc X [[https://stackoverflow.com/questions/66771206/how-do-i-exit-nano-in-emacs-26-3][SO: exit nano in emacs]]
+;; - [[https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute_it/][Reddit: send command to vterm]]
 
+;; CUA registers in emulation-mode-map-alists (higher priority than
+;; minor-mode-overriding-map-alist), so we override at the same level.
+(defvar my/vterm-keys-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-v") #'vterm-yank)
+    (define-key map (kbd "C-z") #'vterm-undo)
+    map))
 
+(define-minor-mode my/vterm-override-mode
+  "Override CUA keys in vterm."
+  :keymap my/vterm-keys-map)
+
+(add-to-list 'emulation-mode-map-alists
+             `((my/vterm-override-mode . ,my/vterm-keys-map)))
 
 (use-package vterm
-  :bind* (:map vterm-mode-map
-               ("C-z" . vterm-undo)
-               ("C-v" . vterm-yank))
   :init
-  (add-hook 'vterm-mode-hook (lambda () (setq-local cua-mode nil)))
+  (add-hook 'vterm-mode-hook #'my/vterm-override-mode)
   :config
   (setq vterm-max-scrollback 100000)
   (custom-set-faces
    '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC"))))))
-(with-eval-after-load 'vterm
-  ;; Paste with C-v in vterm buffers
-  (define-key vterm-mode-map (kbd "C-v") #'vterm-yank)
-
-  ;; Optionally also support C-S-v like many terminals
-  (define-key vterm-mode-map (kbd "C-S-v") #'vterm-yank))
 ;; Use-package
 
 (use-package web-mode
@@ -2097,6 +2325,29 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
          "\\.mustache\\'"
          "\\.djhtml\\'"
          "\\.html?\\'"))
+;; Use-package
+
+(use-package whisper
+  :load-path "~/.emacs.d/lisp/whisper.el"
+  :config
+  (setq whisper-install-directory "~/.emacs.d/.cache/whisper.cpp/"
+        whisper-model "base"
+        whisper-language "en"
+        whisper-translate nil
+        whisper-use-threads (/ (num-processors) 2))
+  ;; Machine-specific mic: Logitech Webcam C925e on jeff-beast
+  (when (string= (system-name) "jeff-beast")
+    (setq whisper--ffmpeg-input-device
+          "alsa_input.usb-046d_Logitech_Webcam_C925e_9891F59F-02.analog-stereo"))
+  (defun my/whisper-run-with-mic ()
+    "Boost mic to 100% before invoking whisper-run."
+    (interactive)
+    (let ((source (if (string= (system-name) "jeff-beast")
+                      "alsa_input.usb-046d_Logitech_Webcam_C925e_9891F59F-02.analog-stereo"
+                    (string-trim (shell-command-to-string "pactl get-default-source")))))
+      (call-process "pactl" nil nil nil "set-source-volume" source "65536"))
+    (whisper-run))
+  (key-chord-define-global "ww" 'my/whisper-run-with-mic))
 ;; yaml
 
 (use-package yaml-mode)
@@ -2153,3 +2404,202 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   :ensure t  ; If the file is already in your load-path
   :config
   (global-org-repeat-by-cron-mode))
+;; Use-package
+
+
+(use-package claude-code-ide
+  :vc (:url "https://github.com/manzaltu/claude-code-ide.el" :rev :newest)
+  :demand t
+  :config
+  (claude-code-ide-emacs-tools-setup)
+  ;; Switch to claude buffer in the current window
+  (add-to-list 'display-buffer-alist
+               '("\\*claude-code\\["
+                 (display-buffer-same-window))))
+(setq claude-code-ide-use-side-window nil)
+(setq claude-code-ide-use-ide-diff nil)
+;; Ediff workarounds
+
+;; # Problem: claude-code-ide diff overrides the claude window in i3.
+;; # Root cause: claude-code-ide hardcodes ediff-window-setup-function to
+;; # 'ediff-setup-windows-plain via setq immediately before calling ediff-buffers,
+;; # so global setq has no effect.
+;; # Fix: :before advice on ediff-buffers runs after claude-code-ide's setq but
+;; # before ediff reads it.
+
+
+(advice-add 'ediff-buffers :before
+            (lambda (&rest _)
+              (setq ediff-window-setup-function 'ediff-setup-windows-multiframe)))
+;; Org-mode navigation MCP tools
+
+;; MCP tools use deferred (lazy) loading in Claude Code — they appear as
+;; "available deferred tools" at session start and are fetched on first use via
+;; =ToolSearch=. Warnings about unavailable MCP tools on startup are expected
+;; and do not indicate a failure.
+
+;; Four tools that give Claude structural org-mode navigation — outline first,
+;; then drill to a subtree by ID or heading name, or query across files with
+;; org-ql. Much more token-efficient than reading whole files.
+
+;; These tools run as elisp inside the live Emacs session via [[https://github.com/stevemolitor/claude-code-ide.el][claude-code-ide.el]]: Claude Code sends JSON-RPC requests over a socket, which dispatch to functions like =claude-code-ide-org-outline= that call native org-mode APIs (=org-map-entries=, =org-id-find=, etc.) directly. This means they operate with full org-mode context — no subprocess overhead, no parsing from scratch.
+
+
+(defun claude-code-ide-org-outline (file-path &optional depth)
+  "Return heading-only outline of FILE-PATH up to DEPTH levels."
+  (claude-code-ide-mcp-server-with-session-context nil
+    (let ((max-depth (or depth 3)))
+      (with-current-buffer (find-file-noselect file-path)
+        (let (headings)
+          (org-map-entries
+           (lambda ()
+             (when (<= (org-current-level) max-depth)
+               (push (concat (make-string (org-current-level) ?*)
+                             " "
+                             (substring-no-properties (org-get-heading t t t t)))
+                     headings))))
+          (string-join (nreverse headings) "\n"))))))
+(defun claude-code-ide-org-subtree-by-id (org-id)
+  "Return full subtree content for heading with ORG-ID."
+  (claude-code-ide-mcp-server-with-session-context nil
+    (require 'org-id)
+    (let ((marker (org-id-find org-id 'marker)))
+      (if marker
+          (with-current-buffer (marker-buffer marker)
+            (goto-char marker)
+            (substring-no-properties
+             (buffer-substring (point)
+                               (save-excursion (org-end-of-subtree t) (point)))))
+        (format "No heading found with id: %s" org-id)))))
+(defun claude-code-ide-org-subtree-by-heading (file-path heading)
+  "Return subtree content for first heading matching HEADING in FILE-PATH."
+  (claude-code-ide-mcp-server-with-session-context nil
+    (with-current-buffer (find-file-noselect file-path)
+      (goto-char (point-min))
+      (if (re-search-forward (format "^\\*+ %s" (regexp-quote heading)) nil t)
+          (progn
+            (beginning-of-line)
+            (substring-no-properties
+             (buffer-substring (point)
+                               (save-excursion (org-end-of-subtree t) (point)))))
+        (format "No heading matching '%s' found in %s" heading file-path)))))
+(defun claude-code-ide-org-ql-query (files query &optional include-file)
+  "Run org-ql QUERY across FILES (space-separated paths).
+Returns matching heading titles with org-id when present, optionally prefixed with filename."
+  (claude-code-ide-mcp-server-with-session-context nil
+    (require 'org-ql)
+    (let* ((file-list (split-string files " " t))
+           (show-file (if (null include-file) t include-file))
+           (parsed-query (car (read-from-string query))))
+      (mapcar
+       (lambda (e)
+         (let* ((h (org-element-property :raw-value e))
+                (marker (org-element-property :org-hd-marker e))
+                (f (buffer-file-name (marker-buffer marker)))
+                (id (with-current-buffer (marker-buffer marker)
+                      (goto-char marker)
+                      (org-entry-get (point) "ID")))
+                (id-str (if id (concat " [id:" id "]") ""))
+                (file-str (if show-file (concat (file-name-nondirectory f) ": ") "")))
+           (concat file-str h id-str)))
+       (org-ql-select file-list parsed-query
+         :action 'element-with-markers)))))
+(defun claude-code-ide-org-refile-subtree (file-path source-heading target-heading &optional as-sibling)
+  "Move subtree SOURCE-HEADING relative to TARGET-HEADING in FILE-PATH.
+By default pastes as the last child of target. With AS-SIBLING non-nil,
+pastes after the target subtree at the same level instead.
+Verifies both headings exist before cutting, then re-finds target after cut
+to handle position shifts. Saves the buffer on success."
+  (claude-code-ide-mcp-server-with-session-context nil
+    (with-current-buffer (find-file-noselect file-path)
+      (org-with-wide-buffer
+       (goto-char (point-min))
+       (let ((src-pos (re-search-forward
+                       (format "^\\*+ %s" (regexp-quote source-heading)) nil t)))
+         (unless src-pos
+           (error "Source heading '%s' not found" source-heading))
+         (goto-char (point-min))
+         (unless (re-search-forward
+                  (format "^\\*+ %s" (regexp-quote target-heading)) nil t)
+           (error "Target heading '%s' not found" target-heading))
+         (goto-char src-pos)
+         (beginning-of-line)
+         (org-cut-subtree)
+         (goto-char (point-min))
+         (re-search-forward (format "^\\*+ %s" (regexp-quote target-heading)) nil t)
+         (beginning-of-line)
+         (let ((target-level (org-current-level)))
+           (org-end-of-subtree t)
+           (unless (bolp) (newline))
+           (if as-sibling
+               (org-paste-subtree target-level)
+             (org-paste-subtree (1+ target-level))))
+         (save-buffer)
+         (format "Moved '%s' %s '%s'"
+                 source-heading
+                 (if as-sibling "after" "under")
+                 target-heading))))))
+(with-eval-after-load 'claude-code-ide
+  (claude-code-ide-make-tool
+   :function #'claude-code-ide-org-outline
+   :name "org_outline"
+   :description "Get a heading-only outline of an org file at a given depth. Use this FIRST to orient before reading any subtree. Returns just the heading hierarchy, no body text — very token-efficient."
+   :args '((:name "file_path"
+                  :type string
+                  :description "Absolute path to the org file")
+           (:name "depth"
+                  :type number
+                  :description "Maximum heading depth to show (1-6, default 3)"
+                  :optional t)))
+
+  (claude-code-ide-make-tool
+   :function #'claude-code-ide-org-subtree-by-id
+   :name "org_subtree_by_id"
+   :description "Get the full content of an org subtree by its org-id UUID. Use after finding the ID from an outline or prior search."
+   :args '((:name "org_id"
+                  :type string
+                  :description "The org-id UUID of the heading to retrieve")))
+
+  (claude-code-ide-make-tool
+   :function #'claude-code-ide-org-subtree-by-heading
+   :name "org_subtree_by_heading"
+   :description "Get the full content of an org subtree by searching for a heading name. Returns content from the first matching heading."
+   :args '((:name "file_path"
+                  :type string
+                  :description "Absolute path to the org file")
+           (:name "heading"
+                  :type string
+                  :description "Heading text to search for (exact text, not regex)")))
+
+  (claude-code-ide-make-tool
+   :function #'claude-code-ide-org-ql-query
+   :name "org_ql_query"
+   :description "Query org files using org-ql predicates. Returns matching heading titles with their file. Common predicates: (todo \"TODO\"), (tags \"tag\"), (heading \"text\"), (and ...), (or ...)."
+   :args '((:name "files"
+                  :type string
+                  :description "Space-separated list of absolute org file paths to search")
+           (:name "query"
+                  :type string
+                  :description "org-ql query string, e.g. \"(todo \\\"TODO\\\")\" or \"(and (tags \\\"focus\\\") (todo \\\"INPROCESS\\\"))\"")
+           (:name "include_file"
+                  :type boolean
+                  :description "Prefix results with filename (default true)"
+                  :optional t)))
+
+  (claude-code-ide-make-tool
+   :function #'claude-code-ide-org-refile-subtree
+   :name "org_refile_subtree"
+   :description "Move an org subtree (by exact heading title) relative to another heading in the same file. Default: paste as last child of target. With as_sibling=true: paste after target at same level. Much more efficient than text editing for structural reorganization."
+   :args '((:name "file_path"
+                  :type string
+                  :description "Absolute path to the org file")
+           (:name "source_heading"
+                  :type string
+                  :description "Exact heading title of the subtree to move (no stars, no tags)")
+           (:name "target_heading"
+                  :type string
+                  :description "Exact heading title of the destination parent or sibling reference")
+           (:name "as_sibling"
+                  :type boolean
+                  :description "If true, paste after target at same level rather than as a child"
+                  :optional t))))
