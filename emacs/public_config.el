@@ -4,7 +4,7 @@
 ;; 
 ;; Source:  /home/jeszyman/repos/emacs/emacs.org
 ;; Author:  Jeffrey Szymanski
-;; Tangled: 2026-03-12 12:41:51
+;; Tangled: 2026-03-13 13:26:56
 ;; ============================================================
 
 ;; Base Emacs
@@ -175,7 +175,17 @@
 (global-set-key (kbd "C-S-p")
 		(lambda () (interactive) (next-line -10)))
 ;; On-save hooks and backup
-;; - Visited files are backed up to =~/.emacs.d/backup-save-list=.
+;; Three backup mechanisms are active, each covering a different failure mode:
+
+;; | Mechanism      | Location                       | Trigger                        | Naming                           | Recovery use                                |
+;; |----------------+--------------------------------+--------------------------------+----------------------------------+---------------------------------------------|
+;; | Backup files   | =~/.emacs.d/backup-save-list/= | Each =save-buffer=             | =!path!to!file~= (up to 20 kept) | Recover from bad saves or destructive edits |
+;; | Auto-save      | =~/.emacs.d/auto-save-list/=   | Periodic (idle timer / crash)  | =#!path!to!file#=                | Recover from crashes or unsaved work        |
+;; | Version backup | =~/.emacs.d/backup-save-list/= | First save of VC-tracked files | =!path!to!file.~N~= (numbered)   | Recover older revisions                     |
+
+;; - *Backup files* (`backup-directory-alist`): on every save, Emacs copies the previous version to =~/.emacs.d/backup-save-list/= with =!=-delimited path encoding. Keeps 20 old versions (`delete-old-versions`). Also covers VC-tracked files (`vc-make-backup-files t`).
+;; - *Auto-save files* (`auto-save-file-name-transforms`): Emacs periodically writes unsaved buffer state to =~/.emacs.d/auto-save-list/= using =#=-delimited naming. These are deleted on normal save but survive crashes. Recover with =M-x recover-file=.
+;; - *Stale dirs*: =~/repos/org/auto-save-list/= and =~/repos/org/backups/= exist from an older config but are no longer written to. All active backups go to =~/.emacs.d/=.
 
 
 ;; Shorthand for save all buffers
@@ -193,10 +203,13 @@
           'delete-trailing-whitespace)
 
 ;; Backup process upon save
-
-(setq vc-make-backup-files t) ; Allow old versions to be saved
-(setq delete-old-versions 20) ; Save 20
-(setq backup-directory-alist '(("." . "~/.emacs.d/backup-save-list"))) ; Save them here
+(setq backup-by-copying t)         ; Copy, don't rename — preserves the original inode
+(setq version-control t)           ; Use numbered backups (file.~1~, file.~2~, etc.)
+(setq kept-new-versions 20)        ; Keep 20 newest numbered backups
+(setq kept-old-versions 5)         ; Keep 5 oldest numbered backups
+(setq delete-old-versions t)       ; Auto-delete excess backups without prompting
+(setq vc-make-backup-files t)      ; Also back up version-controlled files
+(setq backup-directory-alist '(("." . "~/.emacs.d/backup-save-list")))
 
 (setq auto-save-visited-mode t) ; Visited files will be auto-saved
 
@@ -1323,6 +1336,21 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 ;; 2. C-u C-c C-c on checkbox: cycles through [ ] -> [-] -> [X] -> [ ]
 ;; 3. C-c C-x c: always cycles through all three states
 ;; 4. C-c C-c on non-checkbox: normal org-ctrl-c-ctrl-c behavior
+;; org-sleeper
+
+;; Emacs idle timer trigger for the org-sleeper autonomous linter. Fires after 10 minutes of idle time, launches the gate script asynchronously, then re-arms the timer after the process exits.
+
+
+(defun my/org-sleeper-trigger ()
+  "Launch org-sleeper gate script, then re-arm idle timer."
+  (let ((proc (start-process "org-sleeper" nil
+               "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh"))))
+    (set-process-sentinel proc
+      (lambda (_proc _event)
+        (run-with-idle-timer 600 nil #'my/org-sleeper-trigger)))))
+
+(when (string= (system-name) "jeff-beast")
+  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
 ;; Editing text
 
 ;;https://emacs.stackexchange.com/questions/12701/kill-a-line-deletes-the-line-but-leaves-a-blank-newline-character
@@ -1929,6 +1957,15 @@ skipped and nothing is inserted for it."
 
 (use-package jupyter
   :demand t
+  :init
+  ;; jupyter lives in the basecamp conda env — add to exec-path so
+  ;; ob-jupyter can find the binary at init time.
+  ;; Preferred over system jupyter: avoids version conflicts with conda,
+  ;; preserves env isolation. See [[file:~/repos/basecamp/basecamp.org][basecamp.org]] for jupyter/ipykernel install.
+  (let ((jupyter-dir (expand-file-name "~/miniconda3/envs/basecamp/bin")))
+    (unless (member jupyter-dir exec-path)
+      (add-to-list 'exec-path jupyter-dir)
+      (setenv "PATH" (concat jupyter-dir ":" (getenv "PATH")))))
   :config
   (require 'ob-jupyter)
   (org-babel-jupyter-aliases-from-kernelspecs))
@@ -2404,7 +2441,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   :ensure t  ; If the file is already in your load-path
   :config
   (global-org-repeat-by-cron-mode))
-;; Use-package
+;; Use-package                                                    :nohelm:
 
 
 (use-package claude-code-ide
@@ -2418,7 +2455,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
                  (display-buffer-same-window))))
 (setq claude-code-ide-use-side-window nil)
 (setq claude-code-ide-use-ide-diff nil)
-;; Ediff workarounds
+;; Ediff workarounds                                              :nohelm:
 
 ;; # Problem: claude-code-ide diff overrides the claude window in i3.
 ;; # Root cause: claude-code-ide hardcodes ediff-window-setup-function to
@@ -2431,7 +2468,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 (advice-add 'ediff-buffers :before
             (lambda (&rest _)
               (setq ediff-window-setup-function 'ediff-setup-windows-multiframe)))
-;; Org-mode navigation MCP tools
+;; Org-mode navigation MCP tools                                  :nohelm:
 
 ;; MCP tools use deferred (lazy) loading in Claude Code — they appear as
 ;; "available deferred tools" at session start and are fetched on first use via

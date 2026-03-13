@@ -3,11 +3,15 @@
 :ID:       a49abc44-8e71-4a1a-bd35-a77849427c94
 :END:
 
+
 pkill -USR2 emacs for frozen emacs
 
 ** README                                                          :noexport:
 *** Change log
+- [2026-03-13 Fri] Closeout skill: AskUserQuestion phase gates, TaskCreate/TaskUpdate checkboxes, actionable proposal menus, terminal gate. Skill UI primitives section added to claude-code heading. jupyter use-package: added basecamp conda exec-path fix (preferred over system jupyter). Cross-linked emacs.org ↔ basecamp.org for jupyter install.
+- [2026-03-12 Thu] claude-code heading refactored (sibling ordering, =:nohelm:= tags, bare URLs → org links). Backup system hardened: =backup-by-copying=, =version-control=, numbered backups. Backup documentation table added to =On-save hooks and backup=. Jupyter kernel registration docs added to Conda section. System-level =jupyter_client= / =ipykernel= added to [[file:~/repos/basecamp/basecamp.org][basecamp.org]] pip task. Re-registered conda R/Python kernels.
 - [2026-03-11 Wed] moonshot skill: three-phase autonomous implementation (interactive design → interactive plan → background worktree agent). Tested on scopus-search skill build. Worktree sandbox blocks git commits and env vars — accepted; changes applied from diff manually. Skill defined in emacs.org, tangles to =~/.claude/skills/moonshot/SKILL.md=.
+- [2026-03-13 Fri] org-sleeper v2: replaced cron with Emacs =run-with-idle-timer= (600s) + process sentinel re-arm; added 4 new lint rules (header-args-on-properties, comments-link-to-org, no-tangle-no-redundancy, test-block-naming); expanded missing-nohelm scope; gate script: stripped idle gates, added =timeout 300=
 - [2026-03-12 Thu] org-sleeper: migrated docs + agent definition to =work.org= (source of truth now there)
 - [2026-03-11 Wed] org-sleeper: autonomous background org-mode linter (initial build). Migrated to =work.org= on [2026-03-12 Thu].
 - [2026-03-10 Tue] emacs-jupyter: added =use-package jupyter= with =ob-jupyter= + =aliases-from-kernelspecs=; registered R/Python kernels for biotools/basecamp conda envs; converted frag.org bioinfo-dev section from =#+begin_src R= to =jupyter-R= with per-heading =:header-args:jupyter-R:= for per-block conda env selection
@@ -3578,7 +3582,17 @@ Code that needs to be tangled both here and into custom inits for batch export
 
 #+end_src
 **** On-save hooks and backup
-- Visited files are backed up to =~/.emacs.d/backup-save-list=.
+Three backup mechanisms are active, each covering a different failure mode:
+
+| Mechanism      | Location                       | Trigger                        | Naming                           | Recovery use                                |
+|----------------+--------------------------------+--------------------------------+----------------------------------+---------------------------------------------|
+| Backup files   | =~/.emacs.d/backup-save-list/= | Each =save-buffer=             | =!path!to!file~= (up to 20 kept) | Recover from bad saves or destructive edits |
+| Auto-save      | =~/.emacs.d/auto-save-list/=   | Periodic (idle timer / crash)  | =#!path!to!file#=                | Recover from crashes or unsaved work        |
+| Version backup | =~/.emacs.d/backup-save-list/= | First save of VC-tracked files | =!path!to!file.~N~= (numbered)   | Recover older revisions                     |
+
+- *Backup files* (`backup-directory-alist`): on every save, Emacs copies the previous version to =~/.emacs.d/backup-save-list/= with =!=-delimited path encoding. Keeps 20 old versions (`delete-old-versions`). Also covers VC-tracked files (`vc-make-backup-files t`).
+- *Auto-save files* (`auto-save-file-name-transforms`): Emacs periodically writes unsaved buffer state to =~/.emacs.d/auto-save-list/= using =#=-delimited naming. These are deleted on normal save but survive crashes. Recover with =M-x recover-file=.
+- *Stale dirs*: =~/repos/org/auto-save-list/= and =~/repos/org/backups/= exist from an older config but are no longer written to. All active backups go to =~/.emacs.d/=.
 
 #+begin_src emacs-lisp
 ;; Shorthand for save all buffers
@@ -3596,10 +3610,13 @@ Code that needs to be tangled both here and into custom inits for batch export
           'delete-trailing-whitespace)
 
 ;; Backup process upon save
-
-(setq vc-make-backup-files t) ; Allow old versions to be saved
-(setq delete-old-versions 20) ; Save 20
-(setq backup-directory-alist '(("." . "~/.emacs.d/backup-save-list"))) ; Save them here
+(setq backup-by-copying t)         ; Copy, don't rename — preserves the original inode
+(setq version-control t)           ; Use numbered backups (file.~1~, file.~2~, etc.)
+(setq kept-new-versions 20)        ; Keep 20 newest numbered backups
+(setq kept-old-versions 5)         ; Keep 5 oldest numbered backups
+(setq delete-old-versions t)       ; Auto-delete excess backups without prompting
+(setq vc-make-backup-files t)      ; Also back up version-controlled files
+(setq backup-directory-alist '(("." . "~/.emacs.d/backup-save-list")))
 
 (setq auto-save-visited-mode t) ; Visited files will be auto-saved
 
@@ -4928,6 +4945,23 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 https://chatgpt.com/c/67069939-5e04-8005-80b3-7865981a8843
 - currently an edit at point for all properties- NO!
 
+***** org-sleeper
+
+Emacs idle timer trigger for the org-sleeper autonomous linter. Fires after 10 minutes of idle time, launches the gate script asynchronously, then re-arms the timer after the process exits.
+
+#+begin_src emacs-lisp
+(defun my/org-sleeper-trigger ()
+  "Launch org-sleeper gate script, then re-arm idle timer."
+  (let ((proc (start-process "org-sleeper" nil
+               "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh"))))
+    (set-process-sentinel proc
+      (lambda (_proc _event)
+        (run-with-idle-timer 600 nil #'my/org-sleeper-trigger)))))
+
+(when (string= (system-name) "jeff-beast")
+  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
+#+end_src
+
 **** Editing text
   #+begin_src emacs-lisp
 ;;https://emacs.stackexchange.com/questions/12701/kill-a-line-deletes-the-line-but-leaves-a-blank-newline-character
@@ -5429,6 +5463,28 @@ M-x conda-env-activate
 
 #+end_src
 
+***** Jupyter kernel registration
+Jupyter kernels link conda environments to =emacs-jupyter= org-babel blocks. System-level =jupyter_client= and =ipykernel= are installed via pip in [[file:~/repos/basecamp/basecamp.org][basecamp.org]] (public-common-playbook). Each conda env that needs org-babel support must register a kernelspec.
+
+Register R kernels (requires =IRkernel= R package in the env):
+#+begin_src bash :tangle no
+conda run -n <env> R -e "install.packages('IRkernel', repos='https://cloud.r-project.org')"
+conda run -n <env> R -e "IRkernel::installspec(name='<env>', displayname='R <env>')"
+#+end_src
+
+Register Python kernels (requires =ipykernel= in the env):
+#+begin_src bash :tangle no
+conda run -n <env> pip install ipykernel
+conda run -n <env> python -m ipykernel install --user --name=<env>-python --display-name="Python <env>"
+#+end_src
+
+Verify:
+#+begin_src bash :tangle no
+jupyter kernelspec list
+#+end_src
+
+Kernelspecs live at =~/.local/share/jupyter/kernels/<name>/kernel.json=. They store absolute paths to the conda env's R or Python binary — stable as long as the env name doesn't change. If you recreate a conda env, re-register its kernel.
+
 **** Corfu
 #+begin_src emacs-lisp
 ;; Corfu for completion UI
@@ -5823,6 +5879,15 @@ https://joostkremers.github.io/ebib/
 #+begin_src emacs-lisp
 (use-package jupyter
   :demand t
+  :init
+  ;; jupyter lives in the basecamp conda env — add to exec-path so
+  ;; ob-jupyter can find the binary at init time.
+  ;; Preferred over system jupyter: avoids version conflicts with conda,
+  ;; preserves env isolation. See [[file:~/repos/basecamp/basecamp.org][basecamp.org]] for jupyter/ipykernel install.
+  (let ((jupyter-dir (expand-file-name "~/miniconda3/envs/basecamp/bin")))
+    (unless (member jupyter-dir exec-path)
+      (add-to-list 'exec-path jupyter-dir)
+      (setenv "PATH" (concat jupyter-dir ":" (getenv "PATH")))))
   :config
   (require 'ob-jupyter)
   (org-babel-jupyter-aliases-from-kernelspecs))
@@ -6460,26 +6525,21 @@ https://github.com/joaotavora/yasnippet/issues/998
 :PROPERTIES:
 :ID:       0e00557e-a0a4-460f-8941-555e11ee2d88
 :END:
-- https://www.reddit.com/r/ClaudeCode/comments/1rohbj0/what_to_include_in_claudemd_and_what_not/
-- idea- moonshot agent
-- https://github.com/TheDecipherist/claude-code-mastery-project-starter-kit/blob/main/docs/screenshots/diagram-architecture.png
-- installed-  https://github.com/nyldn/claude-octopus
-- ideas
-  - batch refactor burn at end of week credits
-  - agents for reformatting / linting
-  - https://github.com/xleddyl/claude-watch
-- [[https://github.com/manzaltu/claude-code-ide.el]]
-- [[file:~/.claude/CLAUDE.md]]
-- parallel sessions: Claude Code enforces one session per directory. To run
-  multiple sessions on the same repo, use git worktrees
-  (=claude --worktree feature-name=). Each worktree gets its own directory and
-  branch. Merge back and remove with =git worktree remove= when done.
-- miscellaneous
-  - comprehensive guides
-    - https://www.reddit.com/r/ClaudeAI/comments/1oivjvm/claude_code_is_a_beast_tips_from_6_months_of/
-    - https://github.com/shanraisshan/claude-code-best-practice
-    - https://github.com/solatis/claude-config/
-***** Use-package
+- In CLAUDE.md / MEMORY.md, reference org positions by heading name (e.g. "Org Item Structures"), not line number or level stars. Heading names are stable across edits and level changes; line numbers go stale instantly.
+***** Protocol: parallel Claude Code session via worktree [/]
+Claude Code enforces one session per directory. To run a second session on the same repo, create a git worktree so each session has its own directory and branch.
+- [ ] Create the worktree and branch: =git worktree add -b <branch-name> <directory-path>=
+  - =-b= creates a new branch; omit it only if the branch already exists
+  - =<directory-path>= is where the checkout lives on disk (e.g. =../myrepo-feature=)
+  - =<branch-name>= is the git branch checked out in that worktree
+- [ ] Start a Claude Code session in the worktree: =cd <directory-path> && claude=
+  - For the IDE, see [[https://github.com/manzaltu/claude-code-ide.el?tab=readme-ov-file#multiple-claude-code-instances-on-one-project][claude-code-ide multiple instances]]
+- [ ] Do work, commit as needed
+- [ ] When done, merge or cherry-pick changes back to the original branch
+- [ ] Remove the worktree: =git worktree remove <directory-path>=
+Do not check out the same branch in both the main repo and a worktree simultaneously.
+- Agents: =--max-turns= vs time limit
+***** Use-package                                                    :nohelm:
 
 #+begin_src emacs-lisp
 (use-package claude-code-ide
@@ -6498,9 +6558,9 @@ https://github.com/joaotavora/yasnippet/issues/998
 (setq claude-code-ide-use-ide-diff nil)
 #+end_src
 
-- TODO integrate across machines — consider symlinking =~/.claude/=
+- [ ] Integrate across machines — consider symlinking =~/.claude/=
 
-***** Ediff workarounds
+***** Ediff workarounds                                              :nohelm:
 
 # Problem: claude-code-ide diff overrides the claude window in i3.
 # Root cause: claude-code-ide hardcodes ediff-window-setup-function to
@@ -6540,7 +6600,7 @@ https://github.com/joaotavora/yasnippet/issues/998
         (buffer-list)))
 #+end_src
 
-***** Components
+***** Local components                                               :nohelm:
 
 - *CLAUDE.md* — instruction files; loaded in full (no line limit)
   - Global: [[file:~/.claude/CLAUDE.md]]
@@ -6564,8 +6624,8 @@ https://github.com/joaotavora/yasnippet/issues/998
 - *MCP* — external service integrations (Gmail, Google Calendar active); add via Anthropic console or =/mcp add=; useful candidates: Context7 (live library docs), Playwright (browser automation)
 - *Plugins* — [[file:~/.claude/plugins/]]
 - *Worktrees* — isolated git branch for risky restructuring; invoke by saying "work in a worktree"
-
-***** Skill vs Agent
+***** Skills                                                         :nohelm:
+****** Skill vs Agent
 
 |                  | Skill                                   | Agent                            |
 |------------------+-----------------------------------------+----------------------------------|
@@ -6576,7 +6636,7 @@ https://github.com/joaotavora/yasnippet/issues/998
 | Removal          | Delete directory                        | Delete =.md= file                |
 | Best for         | Context-dependent tasks, procedures     | Self-contained tasks             |
 
-***** Skill structure
+****** Skill structure
 
 - =SKILL.md= — required, filename is case-sensitive
 - Supporting files go in subdirs: =references/=, =scripts/=, =assets/=; symlinks OK; use kebab-case
@@ -6592,11 +6652,48 @@ description: What it does. Use when user asks to [trigger phrases].
 ---
 #+end_src
 
+- When writing skills with phase gates, decisions, or checklists, use the UI primitives below rather than plain text prompts — see [[*Skill UI primitives][Skill UI primitives]]
 - [[https://github.com/anthropics/skills/tree/main/skills][Anthropic skill examples]]
 - [[https://github.com/obra/superpowers/tree/main/skills][Community skills (obra/superpowers)]]
 - [[https://resources.anthropic.com/hubfs/The-Complete-Guide-to-Building-Skill-for-Claude.pdf][Complete guide to building skills (PDF)]]
 
-***** Settings reference
+****** Skill UI primitives
+
+Interactive UI tools available inside skills (deferred — fetched via =ToolSearch= on first use). *When building skills, prefer these over plain text prompts.*
+
+******* AskUserQuestion — clickable menus
+- 2–4 options per question, user always gets an automatic "Other" for free text
+- =header= — short chip/tag label (max 12 chars)
+- =description= — explanation text per option
+- =preview= — side-by-side comparison pane; renders markdown in monospace box. Use for code snippets, ASCII mockups, config examples. Single-select only.
+- =multiSelect: true= — checkboxes instead of radio buttons; multiple selections allowed
+- Batch: up to 4 questions in a single call, each with its own header and options
+- Users can attach free-text notes to any selection
+
+******* TaskCreate / TaskUpdate — checkbox progress
+- Create tasks upfront; set =in_progress= when starting (shows spinner), =completed= when done
+- =activeForm= — controls spinner text (e.g. "Running tests...")
+- =metadata= — arbitrary key-value pairs attached to tasks
+- =addBlocks= / =addBlockedBy= — dependency chains between tasks (task B can't start until task A completes)
+- Status workflow: =pending= → =in_progress= → =completed= (or =deleted=)
+
+******* EnterWorktree / ExitWorktree — isolated git worktree
+- Creates worktree inside =.claude/worktrees/= with a new branch based on HEAD
+- Session working directory switches to the worktree
+- ExitWorktree: =keep= (preserve for later) or =remove= (clean delete)
+- Useful for risky restructuring or parallel feature work
+
+******* Other interfaces
+- *EnterPlanMode / ExitPlanMode* — dedicated plan review UI with approval flow
+- *CronCreate* — scheduled recurring prompts (session-only, 3-day auto-expire)
+- *NotebookEdit* — Jupyter notebook cell editing (code/markdown)
+- *skill-creator* plugin skill — create, modify, and eval-test skills. Invoke with =Skill("skill-creator:skill-creator")=.
+
+****** Skill ideas
+
+- Refactor and annotate: apply project style guides
+
+***** Settings reference                                             :nohelm:
 
 Two files control permissions and hooks. Both use the same JSON schema; scope
 differs by location.
@@ -6701,11 +6798,7 @@ overrides. =settings.local.json= is where Claude writes runtime approvals.
 }
 #+end_src
 
-***** Skill ideas
-
-- Refactor and annotate: apply project style guides
-
-***** Org-mode navigation MCP tools
+***** Org-mode navigation MCP tools                                  :nohelm:
 
 MCP tools use deferred (lazy) loading in Claude Code — they appear as
 "available deferred tools" at session start and are fetched on first use via
@@ -6895,6 +6988,17 @@ to handle position shifts. Saves the buffer on success."
 #+end_src
 
 - Development: add a =claude-code-ide-org-subtree-by-tag= tool — retrieve full subtree content for all headings matching a given tag, using =org-map-entries= with a tag matcher. Current =org_ql_query= returns heading titles only; this tool would return full content per match. Needed so Claude can do tag-based module lookup without falling back to emacsclient.
+***** Ideas                                                          :nohelm:
+- Batch refactor burn at end of week credits
+- Agents for reformatting / linting
+- [[https://github.com/xleddyl/claude-watch][claude-watch]]
+***** Reference                                                      :nohelm:
+- [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]
+- Comprehensive guides
+  - [[https://www.reddit.com/r/ClaudeCode/comments/1rohbj0/what_to_include_in_claudemd_and_what_not/][CLAUDE.md coding standards (Reddit)]]
+  - [[https://www.reddit.com/r/ClaudeAI/comments/1oivjvm/claude_code_is_a_beast_tips_from_6_months_of/][Tips from 6 months of use (Reddit)]]
+  - [[https://github.com/shanraisshan/claude-code-best-practice][claude-code-best-practice]]
+  - [[https://github.com/solatis/claude-config/][solatis/claude-config]]
 
 *** anki-editor
 :PROPERTIES:
