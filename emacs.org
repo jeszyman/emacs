@@ -6,7 +6,7 @@
 
 ** README                                                          :noexport:
 *** Change log
-- [2026-03-14 Sat] mindjack skill: interactive Socratic knowledge integration tutor. Teaches concepts from builds one at a time, checks understanding, scans org KB per turn, proposes inserts. Smoke-tested on self (same-session) and org-sleeper (fresh target). Feedback-driven refinements: dropped forced science analogies, added skip-tracking (skips = user already knows this). Skill defined in emacs.org under =*** Mindjack skill=, tangles to =~/.claude/skills/mindjack/SKILL.md=.
+- [2026-03-14 Sat] mindjack skill: interactive Socratic knowledge integration tutor. Teaches concepts from builds one at a time, checks understanding, scans org KB per turn, proposes inserts. Smoke-tested on self (same-session) and org-sleeper (fresh target). Feedback-driven refinements: dropped forced science analogies, added skip-tracking (skips = user already knows this), reordered core loop to SCAN → TEACH → CHECK → INTEGRATE → STEER (KB scan before teaching so explanations target gaps). Skill defined in emacs.org under =*** Mindjack skill=, tangles to =~/.claude/skills/mindjack/SKILL.md=.
 - [2026-03-13 Fri] Closeout skill: AskUserQuestion phase gates, TaskCreate/TaskUpdate checkboxes, actionable proposal menus, terminal gate. Skill UI primitives section added to claude-code heading. jupyter use-package: added basecamp conda exec-path fix (preferred over system jupyter). Cross-linked emacs.org ↔ basecamp.org for jupyter install.
 - [2026-03-12 Thu] claude-code heading refactored (sibling ordering, =:nohelm:= tags, bare URLs → org links). Backup system hardened: =backup-by-copying=, =version-control=, numbered backups. Backup documentation table added to =On-save hooks and backup=. Jupyter kernel registration docs added to Conda section. System-level =jupyter_client= / =ipykernel= added to [[file:~/repos/basecamp/basecamp.org][basecamp.org]] pip task. Re-registered conda R/Python kernels.
 - [2026-03-11 Wed] moonshot skill: three-phase autonomous implementation (interactive design → interactive plan → background worktree agent). Tested on scopus-search skill build. Worktree sandbox blocks git commits and env vars — accepted; changes applied from diff manually. Skill defined in emacs.org, tangles to =~/.claude/skills/moonshot/SKILL.md=.
@@ -3385,6 +3385,13 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 
 ;; Puts bib.bib into loaded buffers
 (find-file-noselect "~/repos/org/bib.bib")
+
+#+end_src
+
+#+begin_src emacs-lisp
+(setq server-socket-dir (expand-file-name "server" user-emacs-directory))
+(require 'server)
+(unless (server-running-p) (server-start))
 
 #+end_src
 *** Base Emacs
@@ -8229,13 +8236,29 @@ Use **AskUserQuestion** to present this menu with the concepts as options.
 
 **Fallback:** If you can't extract clear concepts (code is too opaque, not enough context), say so directly: "I can't auto-detect the key concepts here — what should we focus on?"
 
-## Step 3: Core Loop — TEACH → CHECK → INTEGRATE → STEER
+## Step 3: Core Loop — SCAN → TEACH → CHECK → INTEGRATE → STEER
 
 Run this loop for each concept, one at a time.
 
+### SCAN
+
+**Before teaching, scan the knowledgebase for existing coverage of this concept.** This determines what the user already has and what gaps remain — so teaching targets only the gaps.
+
+1. **Search:** `org_ql_query` across org-agenda-files for headings related to the concept (use 2-3 keyword variations)
+2. **Surface existing:** If related entries exist, fetch them with `org_subtree_by_heading` and review their content
+3. **Assess coverage:** Determine what the user already has documented vs. what's missing or stale
+
+Use this scan to calibrate the TEACH phase:
+- If KB coverage is comprehensive: teach only what's *not* there (nuances, failure modes, connections to the current build)
+- If KB coverage is partial: teach the gaps, referencing what they already have as foundation
+- If KB has nothing: teach from scratch
+- If KB content is stale or inaccurate: flag it and teach the corrected version
+
+**Do not present scan results as a separate step to the user.** Weave the findings naturally into the TEACH phase — e.g., "You already have [X] documented; what's missing is [Y]..." or simply skip well-covered ground and focus on what's new.
+
 ### TEACH
 
-Explain the concept clearly, bridging from knowledge the user already has.
+Explain the concept clearly, **targeting gaps identified by the SCAN**. Bridge from knowledge the user already has — both from the KB and from their background.
 
 **Calibration — the user is a scientist:**
 - Molecular biology, bioinformatics background
@@ -8249,7 +8272,9 @@ Explain the concept clearly, bridging from knowledge the user already has.
 
 ### CHECK
 
-Verify understanding with a Socratic question. Mix these techniques based on what fits the concept:
+Verify understanding with a Socratic question. **Calibrate difficulty to the gap** — if the SCAN showed the user already has partial coverage, ask about the new material, not the basics.
+
+Mix these techniques based on what fits the concept:
 
 - **"Explain back"** — "In your own words, what does [concept] do in this code?"
 - **"Why X not Y"** — "Why did we use [approach A] here instead of [approach B]?"
@@ -8263,14 +8288,11 @@ Use **AskUserQuestion** to pose the check. Provide 2-3 response options plus a f
 
 ### INTEGRATE
 
-After understanding is confirmed, scan the knowledgebase.
+After understanding is confirmed, propose KB updates based on what SCAN found.
 
-1. **Search:** `org_ql_query` across org-agenda-files for headings related to the concept (use 2-3 keyword variations)
-2. **Surface existing:** If related entries exist, fetch them with `org_subtree_by_heading` and show the user:
-   > "You already have [summary] under [heading path]. Still accurate after what we just covered?"
-3. **Propose new:** If no coverage exists:
-   > "You don't have anything on [concept]. Want to add it under [suggested heading]?"
-4. **Flag stale:** If existing entries are incomplete or outdated in light of what was just taught, say so.
+- **New entries:** If SCAN found no coverage, propose adding the concept under a suggested heading.
+- **Updates to stale entries:** If SCAN found outdated content, propose corrections.
+- **No action needed:** If KB already covers this concept well, say so and move on — don't force an insert.
 
 Present proposals via **AskUserQuestion** with options: Approve / Edit (let me rephrase) / Skip.
 
@@ -8304,7 +8326,7 @@ When all concepts are covered or the user says done:
 - **One concept at a time.** Never teach two concepts in one message.
 - **Always confirm the concept list** before starting the loop.
 - **Inline foundations** — never defer prerequisite knowledge.
-- **Per-turn integration** — scan KB after every concept, not batched at the end.
+- **Scan-first** — always check KB coverage before teaching, so you target gaps not redundancy.
 - **User steers** — they can redirect, skip, go deeper, or stop at any point.
 - **Anchor in the code** — abstract concepts always tie back to the specific artifact.
 - **Scoped to work** — teach things from the user's work context, not arbitrary topics.
