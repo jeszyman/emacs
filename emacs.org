@@ -6,6 +6,7 @@
 
 ** README                                                          :noexport:
 *** Change log
+- [2026-03-14 Sat] Claude hygiene: added =allowed-tools= to mindjack/moonshot org source blocks, sharpened mindjack trigger description, clarified devils-advocate agent role description, added pre-mortem idea to claude-code Ideas.
 - [2026-03-14 Sat] mindjack skill: interactive Socratic knowledge integration tutor. Teaches concepts from builds one at a time, checks understanding, scans org KB per turn, proposes inserts. Smoke-tested on self (same-session) and org-sleeper (fresh target). Feedback-driven refinements: dropped forced science analogies, added skip-tracking (skips = user already knows this), reordered core loop to SCAN → TEACH → CHECK → INTEGRATE → STEER (KB scan before teaching so explanations target gaps). Skill defined in emacs.org under =*** Mindjack skill=, tangles to =~/.claude/skills/mindjack/SKILL.md=.
 - [2026-03-13 Fri] Closeout skill: AskUserQuestion phase gates, TaskCreate/TaskUpdate checkboxes, actionable proposal menus, terminal gate. Skill UI primitives section added to claude-code heading. jupyter use-package: added basecamp conda exec-path fix (preferred over system jupyter). Cross-linked emacs.org ↔ basecamp.org for jupyter install.
 - [2026-03-12 Thu] claude-code heading refactored (sibling ordering, =:nohelm:= tags, bare URLs → org links). Backup system hardened: =backup-by-copying=, =version-control=, numbered backups. Backup documentation table added to =On-save hooks and backup=. Jupyter kernel registration docs added to Conda section. System-level =jupyter_client= / =ipykernel= added to [[file:~/repos/basecamp/basecamp.org][basecamp.org]] pip task. Re-registered conda R/Python kernels.
@@ -4954,19 +4955,16 @@ https://chatgpt.com/c/67069939-5e04-8005-80b3-7865981a8843
 
 ***** org-sleeper
 
-Emacs idle timer trigger for the org-sleeper autonomous linter. Fires after 10 minutes of idle time, launches the gate script asynchronously, then re-arms the timer after the process exits.
+Emacs idle timer trigger for the org-sleeper autonomous linter. Repeating idle timer fires every 600s of idle. The gate script uses flock to prevent concurrent runs.
 
 #+begin_src emacs-lisp
 (defun my/org-sleeper-trigger ()
-  "Launch org-sleeper gate script, then re-arm idle timer."
-  (let ((proc (start-process "org-sleeper" nil
-               "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh"))))
-    (set-process-sentinel proc
-      (lambda (_proc _event)
-        (run-with-idle-timer 600 nil #'my/org-sleeper-trigger)))))
+  "Launch org-sleeper gate script."
+  (start-process "org-sleeper" nil
+    "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))
 
 (when (string= (system-name) "jeff-beast")
-  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
+  (run-with-idle-timer 600 t #'my/org-sleeper-trigger))
 #+end_src
 
 **** Editing text
@@ -7037,6 +7035,7 @@ to handle position shifts. Saves the buffer on success."
 - Batch refactor burn at end of week credits
 - Agents for reformatting / linting
 - [[https://github.com/xleddyl/claude-watch][claude-watch]]
+- Pre-mortem mode for devils-advocate: blind agent assumes the proposition already failed and explains why (Gary Klein). Flag on =/devils-advocate= or separate =/pre-mortem= skill.
 ***** Reference                                                      :nohelm:
 - [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]
 - Comprehensive guides
@@ -8037,6 +8036,7 @@ description: >
   isolated git worktree with full permissions. User reviews the result after.
   Trigger on: "moonshot", "let it rip", "autonomous implementation", or when
   the user wants to hand off a feature build to run unattended.
+allowed-tools: Read, Bash, Skill, Agent
 ---
 
 # Moonshot: Autonomous Implementation Skill
@@ -8184,7 +8184,9 @@ description: >
   scanning and integration. Trigger on: "mindjack", "teach me what we built",
   "walk me through this", "help me understand this code/build/system". Works for
   code, tools, protocols — anything encountered in the context of work. Do NOT
-  trigger for simple questions about code behavior or quick explanations.
+  trigger for single-answer questions about code behavior — only for multi-turn
+  learning where the user wants to understand a system or build across several concepts.
+allowed-tools: Read, Bash, Edit, Skill, AskUserQuestion
 ---
 
 # Mindjack: Interactive Knowledge Integration Tutor

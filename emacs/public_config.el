@@ -4,7 +4,7 @@
 ;; 
 ;; Source:  /home/jeszyman/repos/emacs/emacs.org
 ;; Author:  Jeffrey Szymanski
-;; Tangled: 2026-03-14 15:15:34
+;; Tangled: 2026-03-14 16:35:44
 ;; ============================================================
 
 ;; Base Emacs
@@ -1339,19 +1339,16 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 ;; 4. C-c C-c on non-checkbox: normal org-ctrl-c-ctrl-c behavior
 ;; org-sleeper
 
-;; Emacs idle timer trigger for the org-sleeper autonomous linter. Fires after 10 minutes of idle time, launches the gate script asynchronously, then re-arms the timer after the process exits.
+;; Emacs idle timer trigger for the org-sleeper autonomous linter. Repeating idle timer fires every 600s of idle. The gate script uses flock to prevent concurrent runs.
 
 
 (defun my/org-sleeper-trigger ()
-  "Launch org-sleeper gate script, then re-arm idle timer."
-  (let ((proc (start-process "org-sleeper" nil
-               "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh"))))
-    (set-process-sentinel proc
-      (lambda (_proc _event)
-        (run-with-idle-timer 600 nil #'my/org-sleeper-trigger)))))
+  "Launch org-sleeper gate script."
+  (start-process "org-sleeper" nil
+    "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))
 
 (when (string= (system-name) "jeff-beast")
-  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
+  (run-with-idle-timer 600 t #'my/org-sleeper-trigger))
 ;; Editing text
 
 ;;https://emacs.stackexchange.com/questions/12701/kill-a-line-deletes-the-line-but-leaves-a-blank-newline-character
