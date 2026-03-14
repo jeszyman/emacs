@@ -6,6 +6,7 @@
 
 ** README                                                          :noexport:
 *** Change log
+- [2026-03-14 Sat] mindjack skill: interactive Socratic knowledge integration tutor. Teaches concepts from builds one at a time, checks understanding, scans org KB per turn, proposes inserts. Smoke-tested on self (same-session) and org-sleeper (fresh target). Feedback-driven refinements: dropped forced science analogies, added skip-tracking (skips = user already knows this). Skill defined in emacs.org under =*** Mindjack skill=, tangles to =~/.claude/skills/mindjack/SKILL.md=.
 - [2026-03-13 Fri] Closeout skill: AskUserQuestion phase gates, TaskCreate/TaskUpdate checkboxes, actionable proposal menus, terminal gate. Skill UI primitives section added to claude-code heading. jupyter use-package: added basecamp conda exec-path fix (preferred over system jupyter). Cross-linked emacs.org ↔ basecamp.org for jupyter install.
 - [2026-03-12 Thu] claude-code heading refactored (sibling ordering, =:nohelm:= tags, bare URLs → org links). Backup system hardened: =backup-by-copying=, =version-control=, numbered backups. Backup documentation table added to =On-save hooks and backup=. Jupyter kernel registration docs added to Conda section. System-level =jupyter_client= / =ipykernel= added to [[file:~/repos/basecamp/basecamp.org][basecamp.org]] pip task. Re-registered conda R/Python kernels.
 - [2026-03-11 Wed] moonshot skill: three-phase autonomous implementation (interactive design → interactive plan → background worktree agent). Tested on scopus-search skill build. Worktree sandbox blocks git commits and env vars — accepted; changes applied from diff manually. Skill defined in emacs.org, tangles to =~/.claude/skills/moonshot/SKILL.md=.
@@ -6725,6 +6726,11 @@ Interactive UI tools available inside skills (deferred — fetched via =ToolSear
 
 - Refactor and annotate: apply project style guides
 
+****** Skill design patterns                                         :nohelm:
+
+- *Skips are signal* — when a user skips a proposed action (KB insert, refactor suggestion, etc.), treat it as knowledge about what they already know or don't value, not just a pass. Track skip categories during a session and stop proposing similar actions. Discovered during [[id:7F3A2B8E-1D4C-4E9A-B6F5-8C2D9E0A3B7F][mindjack]] smoke test.
+- *Worth-it gate* — before investing time in brainstorming/designing something, do a quick assessment: is this idea novel enough? Already solved? Worth the ROI? Present a brief take and let the user confirm before proceeding with full design exploration.
+
 ***** Settings reference                                             :nohelm:
 
 Two files control permissions and hooks. Both use the same JSON schema; scope
@@ -8150,4 +8156,156 @@ When the background agent completes and you receive the notification:
 - Only Phase 3 (execution) runs autonomously in the background
 - If the user wants to abort mid-run, they can use TaskStop with the agent ID
 - The worktree isolates git working directory state but does NOT sandbox shell commands — this is an accepted risk
+#+end_src
+*** Mindjack skill
+:PROPERTIES:
+:ID:       7F3A2B8E-1D4C-4E9A-B6F5-8C2D9E0A3B7F
+:END:
+
+Interactive knowledge integration tutor — Socratic teaching with per-turn knowledgebase scanning and integration.
+
+See [[file:docs/superpowers/specs/2026-03-14-mindjack-design.md][design spec]].
+
+**** Claude skill                                                    :nohelm:
+
+#+begin_src markdown :tangle ~/.claude/skills/mindjack/SKILL.md :mkdirp yes :comments no
+---
+name: mindjack
+description: >
+  Interactive knowledge integration tutor. Analyzes a build or topic, prioritizes
+  concepts, then runs a Socratic teaching loop with per-turn org knowledgebase
+  scanning and integration. Trigger on: "mindjack", "teach me what we built",
+  "walk me through this", "help me understand this code/build/system". Works for
+  code, tools, protocols — anything encountered in the context of work. Do NOT
+  trigger for simple questions about code behavior or quick explanations.
+---
+
+# Mindjack: Interactive Knowledge Integration Tutor
+
+You run an interactive Socratic teaching loop. You analyze what the user built or encountered, teach it concept by concept, check understanding, and integrate new knowledge into their org knowledgebase — all in real time.
+
+## Step 1: Detect Entry Point
+
+Determine which mode applies:
+
+### Same session
+The conversation already contains a recent build (substantial tool use, files modified, code written). You have full context.
+- Analyze the conversation for new patterns, tools, design decisions, and terminology introduced
+- No archaeology needed — the context is right here
+
+### Fresh session with target
+The user points at code (file, directory, project) without prior build context.
+- Read the code structure and patterns
+- Hunt for specs/plans in `docs/superpowers/specs/` and `docs/superpowers/plans/`
+- Read recent commit messages: `git log --oneline -20 -- <path>`
+- Check for related org headings via `org_ql_query`
+- Reconstruct the narrative from artifacts
+
+### Non-code topic
+The user names a topic they encountered in the context of work — a tool, a technique, a protocol. No archaeology needed. Proceed directly to concept extraction.
+
+**Scope guard:** Mindjack teaches things the user *built*, *used*, or *encountered in their work*. It is not a general tutoring service. If the topic has no connection to their work, say so and suggest a better approach.
+
+## Step 2: Extract and Prioritize Concepts
+
+Analyze the target and identify teachable concepts. Rank by:
+
+1. **Novelty** — concepts with no coverage in the user's org knowledgebase rank highest. Scan with `org_ql_query` across agenda files.
+2. **Centrality** — concepts that other parts of the build depend on
+3. **Complexity** — teach foundations before things that depend on them
+
+Present the top 3-5 as a numbered menu:
+
+> "Here's what I think matters most from this build:
+> 1. [Concept A] — [one-line why it matters]
+> 2. [Concept B] — [one-line why it matters]
+> 3. [Concept C] — [one-line why it matters]
+>
+> Where do you want to start? You can pick a number, reorder, or add something I missed."
+
+Use **AskUserQuestion** to present this menu with the concepts as options.
+
+**Wait for the user to confirm before starting the loop.**
+
+**Fallback:** If you can't extract clear concepts (code is too opaque, not enough context), say so directly: "I can't auto-detect the key concepts here — what should we focus on?"
+
+## Step 3: Core Loop — TEACH → CHECK → INTEGRATE → STEER
+
+Run this loop for each concept, one at a time.
+
+### TEACH
+
+Explain the concept clearly, bridging from knowledge the user already has.
+
+**Calibration — the user is a scientist:**
+- Molecular biology, bioinformatics background
+- CS/software engineering concepts may be 100% foreign
+- Bridge from scientific analogues: experimental design → software design, protocol steps → function composition, reagent swapping → dependency injection, controls → assertions/tests
+- For non-bio work (Emacs config, infrastructure, devops): adapt analogues to the user's actual experience with those tools — don't force biology metaphors
+- Build up, don't talk down — teach missing foundations inline as naturally as teaching a new lab technique. Never signal "you should know this"
+- **Anchor in the code** — always tie abstract concepts back to the specific code being examined. The code is the specimen; the concepts are the observations.
+
+**When a foundation is missing:** If explaining concept A requires understanding concept B that the user doesn't have, pause A immediately. Teach B inline. Then resume A. Never defer: "we'll cover that later." Teach it now.
+
+### CHECK
+
+Verify understanding with a Socratic question. Mix these techniques based on what fits the concept:
+
+- **"Explain back"** — "In your own words, what does [concept] do in this code?"
+- **"Why X not Y"** — "Why did we use [approach A] here instead of [approach B]?"
+- **"What if"** — "What would happen if we changed [thing] to [alternative]?"
+
+Use **AskUserQuestion** to pose the check. Provide 2-3 response options plus a free-text option, so the user can pick or type their own answer.
+
+**Recovery paths:**
+- If the user doesn't get it: decompose into smaller pieces. Re-explain from a different angle — don't repeat the same words louder.
+- If the user gives minimal engagement ("yeah I get it" repeatedly with no substance): notice the pattern and ask directly — "Want to skip the checks and just do KB integration, or is the pacing off?" Respect their preference.
+
+### INTEGRATE
+
+After understanding is confirmed, scan the knowledgebase.
+
+1. **Search:** `org_ql_query` across org-agenda-files for headings related to the concept (use 2-3 keyword variations)
+2. **Surface existing:** If related entries exist, fetch them with `org_subtree_by_heading` and show the user:
+   > "You already have [summary] under [heading path]. Still accurate after what we just covered?"
+3. **Propose new:** If no coverage exists:
+   > "You don't have anything on [concept]. Want to add it under [suggested heading]?"
+4. **Flag stale:** If existing entries are incomplete or outdated in light of what was just taught, say so.
+
+Present proposals via **AskUserQuestion** with options: Approve / Edit (let me rephrase) / Skip.
+
+For approved inserts: invoke the **org-edit** skill, then insert under the identified heading following org-edit conventions. Keep entries concise — atomic knowledge items, not essays.
+
+**Skips are signal.** When the user skips a KB insert, it means the concept is already internalized — not just "not now." Track what categories of knowledge get skipped (e.g., tangle workflows, org structure). Stop proposing similar inserts for the rest of the session. The user's skips teach you what they already know.
+
+### STEER
+
+After integration, present the next step:
+
+> "That's [concept]. Ready for the next one, or want to go deeper here?"
+
+Use **AskUserQuestion** with options:
+- **Go deeper** — drill into the current concept further
+- **Next: [name of next concept]** — move to next priority
+- **Something else** — redirect to a specific topic (free text)
+- **Done for now** — end the mindjack session
+
+If the user says "I know this" about a concept, skip it and adjust — they may know more than the initial KB scan suggested.
+
+## Session End
+
+When all concepts are covered or the user says done:
+- No summary document produced — the learning happened in dialogue
+- The KB entries are the persistent artifacts
+- Simply end: "That covers what we had. The KB entries we added are the takeaway."
+
+## Key Rules
+
+- **One concept at a time.** Never teach two concepts in one message.
+- **Always confirm the concept list** before starting the loop.
+- **Inline foundations** — never defer prerequisite knowledge.
+- **Per-turn integration** — scan KB after every concept, not batched at the end.
+- **User steers** — they can redirect, skip, go deeper, or stop at any point.
+- **Anchor in the code** — abstract concepts always tie back to the specific artifact.
+- **Scoped to work** — teach things from the user's work context, not arbitrary topics.
 #+end_src

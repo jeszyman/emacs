@@ -1,10 +1,10 @@
 ;; ============================================================
 ;; AUTO-GENERATED — DO NOT EDIT DIRECTLY
 ;; Edits will be overwritten on next org-babel tangle.
-;;
+;; 
 ;; Source:  /home/jeszyman/repos/emacs/emacs.org
 ;; Author:  Jeffrey Szymanski
-;; Tangled: 2026-03-12 12:41:51
+;; Tangled: 2026-03-14 14:18:19
 ;; ============================================================
 
 ;;-*- mode: elisp -*-
@@ -80,29 +80,3 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 
 ;; Load late configuration
 (safe-load-file-if-exists "load-last.el")
-(setq server-socket-dir (expand-file-name "server" user-emacs-directory))
-(require 'server)
-(unless (server-running-p) (server-start))
-(custom-set-variables
- ;; custom-set-variables was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- '(ess-R-font-lock-keywords
-   '((ess-R-fl-keyword:modifiers . t) (ess-R-fl-keyword:fun-defs . t)
-     (ess-R-fl-keyword:keywords . t) (ess-R-fl-keyword:assign-ops . t)
-     (ess-R-fl-keyword:constants . t) (ess-fl-keyword:fun-calls . t)
-     (ess-fl-keyword:numbers . t) (ess-fl-keyword:operators . t)
-     (ess-fl-keyword:delimiters . t) (ess-fl-keyword:= . t)
-     (ess-R-fl-keyword:F&T . t) (ess-R-fl-keyword:%op% . t)))
- '(safe-local-variable-values
-   '((eval setq inferior-ess-r-program
-	   "/home/jeszyman/miniconda3/envs/biotools/bin/R")
-     (org-confirm-elisp-link-function))))
-(custom-set-faces
- ;; custom-set-faces was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- '(default ((t (:family "Hack" :height 114 :weight light))))
- '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC")))))
