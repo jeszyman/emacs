@@ -684,6 +684,7 @@ EOF
 :PROPERTIES:
 :ID:       ecb54a80-b177-4c9e-a3c9-47d1f680c7ac
 :END:
+
 - Code indentation
   - https://stackoverflow.com/questions/18778894/emacs-24-3-python-cant-guess-python-indent-offset-using-defaults-4/51966682
 **** Create global keybinding
@@ -3426,6 +3427,7 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 - whenever you open a new directory in Dired, the old Dired buffer is automatically killed
   #+begin_src emacs-lisp
 (setq dired-kill-when-opening-new-dired-buffer t)
+(setq dired-dwim-target t)
 
 #+end_src
 - when listing files:
@@ -3469,6 +3471,7 @@ Code that needs to be tangled both here and into custom inits for batch export
 
 (setq frame-background-mode 'dark)
 (setq inhibit-splash-screen t)
+(setq redisplay-skip-fontification-on-input t)
 
 ; ---   Windows   --- ;
 ; ------------------- ;
@@ -3682,6 +3685,7 @@ Three backup mechanisms are active, each covering a different failure mode:
 ; Follow symlinks in dired
 ;;https://emacs.stackexchange.com/questions/41286/follow-symlinked-directories-in-dired
 (setq find-file-visit-truename t)
+(setq vc-follow-symlinks t)
 
 (setq browse-url-browser-function 'browse-url-generic
       browse-url-generic-program "/usr/bin/brave-browser")
@@ -4956,22 +4960,30 @@ https://chatgpt.com/c/67069939-5e04-8005-80b3-7865981a8843
 
 ***** org-sleeper
 
-Emacs idle timer trigger for the org-sleeper autonomous linter. Repeating idle timer fires every 600s of idle. The guard in the trigger function prevents spawning a new run if the previous one is still alive, avoiding process pile-up during long idle periods.
+Emacs idle timer trigger for the org-sleeper autonomous linter. One-shot idle timer fires after 600s of idle, launches the gate script, and a process sentinel re-arms a new timer when the run finishes. The =process-live-p= guard prevents pile-up if the timer fires while a run is active.
 
 #+begin_src emacs-lisp
 (defvar my/org-sleeper-process nil
   "Process object for the current org-sleeper run.")
 
+(defun my/org-sleeper-rearm ()
+  "Schedule next org-sleeper run after 600s idle."
+  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
+
 (defun my/org-sleeper-trigger ()
-  "Launch org-sleeper gate script if no run is active."
-  (unless (and my/org-sleeper-process
-               (process-live-p my/org-sleeper-process))
+  "Launch org-sleeper gate script if no run is active, re-arm on exit."
+  (if (and my/org-sleeper-process
+           (process-live-p my/org-sleeper-process))
+      ;; Previous run still active — re-arm to try again later
+      (my/org-sleeper-rearm)
     (setq my/org-sleeper-process
           (start-process "org-sleeper" nil
-            "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))))
+            "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))
+    (set-process-sentinel my/org-sleeper-process
+      (lambda (_proc _event) (my/org-sleeper-rearm)))))
 
 (when (string= (system-name) "jeff-beast")
-  (run-with-idle-timer 600 t #'my/org-sleeper-trigger))
+  (my/org-sleeper-rearm))
 #+end_src
 
 **** Editing text
@@ -5559,6 +5571,8 @@ Kernelspecs live at =~/.local/share/jupyter/kernels/<name>/kernel.json=. They st
   (add-hook 'ess-r-mode-hook 'eglot-ensure)
   (add-hook 'python-mode-hook 'eglot-ensure)
   :config
+  (setq eglot-autoshutdown t)
+  (setq eglot-sync-connect 0)
   (add-to-list 'eglot-server-programs '(sh-mode . ("bash-language-server" "start")))
   (add-to-list 'eglot-server-programs '(python-mode . ("pylsp")))
   (add-to-list 'eglot-server-programs '(ess-r-mode . ("R" "--slave" "-e" "languageserver::run()"))))
@@ -7387,6 +7401,7 @@ needs an install?
 - https://lambdaland.org/posts/2025-07-15_bedrock_release/
   - https://lambdaland.org/posts/2024-12-14_emacs_catchup/
 ** Ideas
+- TODO Establish commenting conventions for Claude code output — when to comment, how verbose, especially for tangled .el files read independently of org source. Initial discussion in 2026-03-14 session (minimal-emacs.d review). Feedback memory saved.
 - https://www.reddit.com/r/emacs/comments/1c4yeme/announcing_shannonmax_analyze_your_keybindings/
 *** Indirect buffer absolute line numbers in mode line
 Show true (absolute) line numbers from the parent buffer in the mode line of an indirect buffer, not the narrowed-relative numbers. Approaches tried:
