@@ -6,6 +6,7 @@
 
 ** README                                                          :noexport:
 *** Change log
+- [2026-03-14 Sat] org-sleeper process management: fixed 3 bugs — =setsid= + =< /dev/null= for SIGTSTP, =timeout -k 10= for hard kill, =process-live-p= guard for pile-up prevention. Gate script TSV logging: 8-column validation filter, no-fix/no-output fallback rows. Server socket: moved =server-socket-dir= + =server-start= from ansible =lineinfile= to =load-first.el= (tangling overwrote ansible-added lines in =init.el=). Removed redundant ansible tasks from both emacs29/emacs30 playbooks in =basecamp.org=.
 - [2026-03-14 Sat] Claude hygiene: added =allowed-tools= to mindjack/moonshot org source blocks, sharpened mindjack trigger description, clarified devils-advocate agent role description, added pre-mortem idea to claude-code Ideas.
 - [2026-03-14 Sat] mindjack skill: interactive Socratic knowledge integration tutor. Teaches concepts from builds one at a time, checks understanding, scans org KB per turn, proposes inserts. Smoke-tested on self (same-session) and org-sleeper (fresh target). Feedback-driven refinements: dropped forced science analogies, added skip-tracking (skips = user already knows this), reordered core loop to SCAN → TEACH → CHECK → INTEGRATE → STEER (KB scan before teaching so explanations target gaps). Skill defined in emacs.org under =*** Mindjack skill=, tangles to =~/.claude/skills/mindjack/SKILL.md=.
 - [2026-03-13 Fri] Closeout skill: AskUserQuestion phase gates, TaskCreate/TaskUpdate checkboxes, actionable proposal menus, terminal gate. Skill UI primitives section added to claude-code heading. jupyter use-package: added basecamp conda exec-path fix (preferred over system jupyter). Cross-linked emacs.org ↔ basecamp.org for jupyter install.
@@ -683,6 +684,7 @@ EOF
 :PROPERTIES:
 :ID:       ecb54a80-b177-4c9e-a3c9-47d1f680c7ac
 :END:
+
 - Code indentation
   - https://stackoverflow.com/questions/18778894/emacs-24-3-python-cant-guess-python-indent-offset-using-defaults-4/51966682
 **** Create global keybinding
@@ -1157,6 +1159,19 @@ active process."
 
 #+end_src
 - https://www.youtube.com/watch?app=desktop&v=D3FzMPZm7vY&ab_channel=DistroTube
+
+**** Tangle convention: =emacs/= subdirectory per repo
+
+Project-specific elisp lives in org-babel blocks in the project's =.org= file and tangles to an =emacs/= subdirectory within that repo. This keeps literate source in =.org= and runnable output in a predictable location. Examples:
+
+| Repo  | Org source    | Tangle target                                 |
+|-------+---------------+-----------------------------------------------|
+| org   | =work.org=    | =./emacs/work.el=                             |
+| org   | =private.org= | =./emacs/private_config.el=                   |
+| emacs | =emacs.org=   | =./emacs/init.el=, =./emacs/public_config.el= |
+
+When a project has elisp that should load on buffer open or provides helper functions, tangle it to =<repo>/emacs/<name>.el= rather than embedding it inline in the org file's local variables.
+
 *** Completion frameworks
 :PROPERTIES:
 :ID:       b67dea45-0f1c-44b7-a76d-efc6dd1f2a75
@@ -1903,6 +1918,7 @@ https://www.emacswiki.org/emacs/PosTip
 - http://xahlee.info/emacs/emacs/emacs_string-rectangle_ascii-art.html
 
 *** Ricing
+
 - ricing
   #+begin_src emacs-lisp
 ;(setq-default left-margin-width 2)
@@ -3300,6 +3316,9 @@ graph TD
 :header-args: :tangle ./emacs/init.el
 :END:
 [[file:emacs/init.el]]
+
+At startup, =init.el= auto-loads every =.el= file in =~/.emacs.d/config/=. Config files from multiple repos are symlinked into that directory by Ansible (see =private_symlinks= in [[id:63588E4D-5517-4E75-950C-2E444F65D4AD][private.org]]). To add a new config file, tangle it into its repo's =emacs/= directory and ensure Ansible creates the symlink — no changes to =init.el= needed.
+
 #+begin_src emacs-lisp
 ;;-*- mode: elisp -*-
 
@@ -3425,6 +3444,7 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 - whenever you open a new directory in Dired, the old Dired buffer is automatically killed
   #+begin_src emacs-lisp
 (setq dired-kill-when-opening-new-dired-buffer t)
+(setq dired-dwim-target t)
 
 #+end_src
 - when listing files:
@@ -3468,6 +3488,7 @@ Code that needs to be tangled both here and into custom inits for batch export
 
 (setq frame-background-mode 'dark)
 (setq inhibit-splash-screen t)
+(setq redisplay-skip-fontification-on-input t)
 
 ; ---   Windows   --- ;
 ; ------------------- ;
@@ -3481,7 +3502,7 @@ Code that needs to be tangled both here and into custom inits for batch export
 ;
 ; Fringe- Set finge color to background
 ;https://emacs.stackexchange.com/a/31944/11502
-(set-face-attribute 'fringe nil :background nil)
+(set-face-attribute 'fringe nil :background 'unspecified)
 
 ; ---   Lines   --- ;
 ; ----------------- ;
@@ -3681,6 +3702,7 @@ Three backup mechanisms are active, each covering a different failure mode:
 ; Follow symlinks in dired
 ;;https://emacs.stackexchange.com/questions/41286/follow-symlinked-directories-in-dired
 (setq find-file-visit-truename t)
+(setq vc-follow-symlinks t)
 
 (setq browse-url-browser-function 'browse-url-generic
       browse-url-generic-program "/usr/bin/brave-browser")
@@ -4955,16 +4977,30 @@ https://chatgpt.com/c/67069939-5e04-8005-80b3-7865981a8843
 
 ***** org-sleeper
 
-Emacs idle timer trigger for the org-sleeper autonomous linter. Repeating idle timer fires every 600s of idle. The gate script uses flock to prevent concurrent runs.
+Emacs idle timer trigger for the org-sleeper autonomous linter. One-shot idle timer fires after 600s of idle, launches the gate script, and a process sentinel re-arms a new timer when the run finishes. The =process-live-p= guard prevents pile-up if the timer fires while a run is active.
 
 #+begin_src emacs-lisp
+(defvar my/org-sleeper-process nil
+  "Process object for the current org-sleeper run.")
+
+(defun my/org-sleeper-rearm ()
+  "Schedule next org-sleeper run after 600s idle."
+  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
+
 (defun my/org-sleeper-trigger ()
-  "Launch org-sleeper gate script."
-  (start-process "org-sleeper" nil
-    "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))
+  "Launch org-sleeper gate script if no run is active, re-arm on exit."
+  (if (and my/org-sleeper-process
+           (process-live-p my/org-sleeper-process))
+      ;; Previous run still active — re-arm to try again later
+      (my/org-sleeper-rearm)
+    (setq my/org-sleeper-process
+          (start-process "org-sleeper" nil
+            "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))
+    (set-process-sentinel my/org-sleeper-process
+      (lambda (_proc _event) (my/org-sleeper-rearm)))))
 
 (when (string= (system-name) "jeff-beast")
-  (run-with-idle-timer 600 t #'my/org-sleeper-trigger))
+  (my/org-sleeper-rearm))
 #+end_src
 
 **** Editing text
@@ -5552,6 +5588,8 @@ Kernelspecs live at =~/.local/share/jupyter/kernels/<name>/kernel.json=. They st
   (add-hook 'ess-r-mode-hook 'eglot-ensure)
   (add-hook 'python-mode-hook 'eglot-ensure)
   :config
+  (setq eglot-autoshutdown t)
+  (setq eglot-sync-connect 0)
   (add-to-list 'eglot-server-programs '(sh-mode . ("bash-language-server" "start")))
   (add-to-list 'eglot-server-programs '(python-mode . ("pylsp")))
   (add-to-list 'eglot-server-programs '(ess-r-mode . ("R" "--slave" "-e" "languageserver::run()"))))
@@ -5999,11 +6037,12 @@ https://www.reddit.com/r/emacs/comments/1mq2hww/why_do_i_find_magit_so_hard_to_u
 Suppress zenuml/core stderr popup on every mermaid eval.
 #+begin_src emacs-lisp
 (defun my/ob-mermaid-suppress-zenuml (orig-fn body params)
-  (cl-letf (((symbol-function 'org-babel-eval)
-             (lambda (cmd &rest args)
-               (apply (symbol-function 'org-babel-eval)
-                      (concat cmd " 2>/dev/null") args))))
-    (funcall orig-fn body params)))
+  (let ((orig-eval (symbol-function 'org-babel-eval)))
+    (cl-letf (((symbol-function 'org-babel-eval)
+               (lambda (cmd &rest args)
+                 (apply orig-eval
+                        (concat cmd " 2>/dev/null") args))))
+      (funcall orig-fn body params))))
 (advice-add 'org-babel-execute:mermaid :around #'my/ob-mermaid-suppress-zenuml)
 ;; (advice-remove 'org-babel-execute:mermaid #'my/ob-mermaid-suppress-zenuml)
 #+end_src
@@ -6550,6 +6589,7 @@ https://github.com/joaotavora/yasnippet/issues/998
 :PROPERTIES:
 :ID:       0e00557e-a0a4-460f-8941-555e11ee2d88
 :END:
+[[id:d536d279-9088-4ade-ba9d-7bd5b516f668][Claude build ideas]]
 - In CLAUDE.md / MEMORY.md, reference org positions by heading name (e.g. "Org Item Structures"), not line number or level stars. Heading names are stable across edits and level changes; line numbers go stale instantly.
 - Do not pre-build static directory trees or file maps for Claude's benefit — CLAUDE.md + MEMORY.md already cover the files needed for ~90% of tasks, and =ls= / =org_outline= resolve the rest in seconds. Static maps go stale and duplicate discoverable state. Instead, invest in feedback memories for workflow patterns, gotchas, and preferences that can't be derived from the codebase.
 - Keep CLAUDE.md and MEMORY.md lean — all content loads every turn, so bloat costs tokens, speed, and instruction-following quality. Prune stale rules, avoid duplicating guidance across both files, and push detail into linked topic files that are fetched on demand.
@@ -6935,32 +6975,32 @@ to handle position shifts. Saves the buffer on success."
   (claude-code-ide-mcp-server-with-session-context nil
     (with-current-buffer (find-file-noselect file-path)
       (org-with-wide-buffer
-       (goto-char (point-min))
-       (let ((src-pos (re-search-forward
-                       (format "^\\*+ %s" (regexp-quote source-heading)) nil t)))
-         (unless src-pos
-           (error "Source heading '%s' not found" source-heading))
+       (let ((case-fold-search nil)
+             (heading-re (lambda (h) (format "^\\*+ %s\\([ \t]\\|$\\)" (regexp-quote h)))))
          (goto-char (point-min))
-         (unless (re-search-forward
-                  (format "^\\*+ %s" (regexp-quote target-heading)) nil t)
-           (error "Target heading '%s' not found" target-heading))
-         (goto-char src-pos)
-         (beginning-of-line)
-         (org-cut-subtree)
-         (goto-char (point-min))
-         (re-search-forward (format "^\\*+ %s" (regexp-quote target-heading)) nil t)
-         (beginning-of-line)
-         (let ((target-level (org-current-level)))
-           (org-end-of-subtree t)
-           (unless (bolp) (newline))
-           (if as-sibling
-               (org-paste-subtree target-level)
-             (org-paste-subtree (1+ target-level))))
-         (save-buffer)
-         (format "Moved '%s' %s '%s'"
-                 source-heading
-                 (if as-sibling "after" "under")
-                 target-heading))))))
+         (let ((src-pos (re-search-forward (funcall heading-re source-heading) nil t)))
+           (unless src-pos
+             (error "Source heading '%s' not found" source-heading))
+           (goto-char (point-min))
+           (unless (re-search-forward (funcall heading-re target-heading) nil t)
+             (error "Target heading '%s' not found" target-heading))
+           (goto-char src-pos)
+           (beginning-of-line)
+           (org-cut-subtree)
+           (goto-char (point-min))
+           (re-search-forward (funcall heading-re target-heading) nil t)
+           (beginning-of-line)
+           (let ((target-level (org-current-level)))
+             (org-end-of-subtree t)
+             (unless (bolp) (newline))
+             (if as-sibling
+                 (org-paste-subtree target-level)
+               (org-paste-subtree (1+ target-level))))
+           (save-buffer)
+           (format "Moved '%s' %s '%s'"
+                   source-heading
+                   (if as-sibling "after" "under")
+                   target-heading)))))))
 #+end_src
 
 #+begin_src emacs-lisp
@@ -7380,6 +7420,7 @@ needs an install?
 - https://lambdaland.org/posts/2025-07-15_bedrock_release/
   - https://lambdaland.org/posts/2024-12-14_emacs_catchup/
 ** Ideas
+- TODO Establish commenting conventions for Claude code output — when to comment, how verbose, especially for tangled .el files read independently of org source. Initial discussion in 2026-03-14 session (minimal-emacs.d review). Feedback memory saved.
 - https://www.reddit.com/r/emacs/comments/1c4yeme/announcing_shannonmax_analyze_your_keybindings/
 *** Indirect buffer absolute line numbers in mode line
 Show true (absolute) line numbers from the parent buffer in the mode line of an indirect buffer, not the narrowed-relative numbers. Approaches tried:
