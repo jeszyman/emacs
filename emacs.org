@@ -1905,6 +1905,7 @@ https://www.emacswiki.org/emacs/PosTip
 - http://xahlee.info/emacs/emacs/emacs_string-rectangle_ascii-art.html
 
 *** Ricing
+
 - ricing
   #+begin_src emacs-lisp
 ;(setq-default left-margin-width 2)
