@@ -4,10 +4,11 @@
 ;; 
 ;; Source:  /home/jeszyman/repos/emacs/emacs.org
 ;; Author:  Jeffrey Szymanski
-;; Tangled: 2026-03-13 13:26:56
+;; Tangled: 2026-03-14 19:08:16
 ;; ============================================================
 
 ;; Base Emacs
+;; - Frozen Emacs: =pkill -USR2 emacs=
 
 (remove-hook 'before-save-hook #'org-table-recalculate-buffer-tables)
 (advice-add 'revert-buffer :around
@@ -1338,19 +1339,22 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 ;; 4. C-c C-c on non-checkbox: normal org-ctrl-c-ctrl-c behavior
 ;; org-sleeper
 
-;; Emacs idle timer trigger for the org-sleeper autonomous linter. Fires after 10 minutes of idle time, launches the gate script asynchronously, then re-arms the timer after the process exits.
+;; Emacs idle timer trigger for the org-sleeper autonomous linter. Repeating idle timer fires every 600s of idle. The guard in the trigger function prevents spawning a new run if the previous one is still alive, avoiding process pile-up during long idle periods.
 
+
+(defvar my/org-sleeper-process nil
+  "Process object for the current org-sleeper run.")
 
 (defun my/org-sleeper-trigger ()
-  "Launch org-sleeper gate script, then re-arm idle timer."
-  (let ((proc (start-process "org-sleeper" nil
-               "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh"))))
-    (set-process-sentinel proc
-      (lambda (_proc _event)
-        (run-with-idle-timer 600 nil #'my/org-sleeper-trigger)))))
+  "Launch org-sleeper gate script if no run is active."
+  (unless (and my/org-sleeper-process
+               (process-live-p my/org-sleeper-process))
+    (setq my/org-sleeper-process
+          (start-process "org-sleeper" nil
+            "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))))
 
 (when (string= (system-name) "jeff-beast")
-  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
+  (run-with-idle-timer 600 t #'my/org-sleeper-trigger))
 ;; Editing text
 
 ;;https://emacs.stackexchange.com/questions/12701/kill-a-line-deletes-the-line-but-leaves-a-blank-newline-character
@@ -2050,6 +2054,17 @@ skipped and nothing is inserted for it."
 ;; Use-package
 
 (use-package native-complete)
+;; ob-mermaid
+;; Suppress zenuml/core stderr popup on every mermaid eval.
+
+(defun my/ob-mermaid-suppress-zenuml (orig-fn body params)
+  (cl-letf (((symbol-function 'org-babel-eval)
+             (lambda (cmd &rest args)
+               (apply (symbol-function 'org-babel-eval)
+                      (concat cmd " 2>/dev/null") args))))
+    (funcall orig-fn body params)))
+(advice-add 'org-babel-execute:mermaid :around #'my/ob-mermaid-suppress-zenuml)
+;; (advice-remove 'org-babel-execute:mermaid #'my/ob-mermaid-suppress-zenuml)
 ;; open-chatgtp-query-in-new-browser-window
 
 ;; - Make a ChatGPT query from emacs
@@ -2344,11 +2359,20 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 (add-to-list 'emulation-mode-map-alists
              `((my/vterm-override-mode . ,my/vterm-keys-map)))
 
+(defun my/vterm-insert-file-path ()
+  "Insert a file path into vterm using Emacs completion."
+  (interactive)
+  (let ((path (read-file-name "Path: ")))
+    (vterm-insert path)))
+
 (use-package vterm
   :init
   (add-hook 'vterm-mode-hook #'my/vterm-override-mode)
   :config
   (setq vterm-max-scrollback 100000)
+  ;; TAB: Emacs path completion in vterm (useful for claude-code-ide prompts)
+  (define-key vterm-mode-map [tab] #'my/vterm-insert-file-path)
+  (define-key vterm-mode-map (kbd "TAB") #'my/vterm-insert-file-path)
   (custom-set-faces
    '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC"))))))
 ;; Use-package
@@ -2365,7 +2389,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 ;; Use-package
 
 (use-package whisper
-  :load-path "~/.emacs.d/lisp/whisper.el"
+  :load-path "~/.emacs.d/lisp/whisper"
   :config
   (setq whisper-install-directory "~/.emacs.d/.cache/whisper.cpp/"
         whisper-model "base"
@@ -2550,21 +2574,21 @@ to handle position shifts. Saves the buffer on success."
   (claude-code-ide-mcp-server-with-session-context nil
     (with-current-buffer (find-file-noselect file-path)
       (org-with-wide-buffer
-       (goto-char (point-min))
-       (let ((src-pos (re-search-forward
-                       (format "^\\*+ %s" (regexp-quote source-heading)) nil t)))
-         (unless src-pos
-           (error "Source heading '%s' not found" source-heading))
+       (let ((case-fold-search nil)
+             (heading-re (lambda (h) (format "^\\*+ %s\\([ \t]\\|$\\)" (regexp-quote h)))))
          (goto-char (point-min))
-         (unless (re-search-forward
-                  (format "^\\*+ %s" (regexp-quote target-heading)) nil t)
-           (error "Target heading '%s' not found" target-heading))
-         (goto-char src-pos)
-         (beginning-of-line)
-         (org-cut-subtree)
-         (goto-char (point-min))
-         (re-search-forward (format "^\\*+ %s" (regexp-quote target-heading)) nil t)
-         (beginning-of-line)
+         (let ((src-pos (re-search-forward (funcall heading-re source-heading) nil t)))
+           (unless src-pos
+             (error "Source heading '%s' not found" source-heading))
+           (goto-char (point-min))
+           (unless (re-search-forward (funcall heading-re target-heading) nil t)
+             (error "Target heading '%s' not found" target-heading))
+           (goto-char src-pos)
+           (beginning-of-line)
+           (org-cut-subtree)
+           (goto-char (point-min))
+           (re-search-forward (funcall heading-re target-heading) nil t)
+           (beginning-of-line)
          (let ((target-level (org-current-level)))
            (org-end-of-subtree t)
            (unless (bolp) (newline))

@@ -4,10 +4,11 @@
 :END:
 
 
-pkill -USR2 emacs for frozen emacs
-
 ** README                                                          :noexport:
 *** Change log
+- [2026-03-14 Sat] org-sleeper process management: fixed 3 bugs — =setsid= + =< /dev/null= for SIGTSTP, =timeout -k 10= for hard kill, =process-live-p= guard for pile-up prevention. Gate script TSV logging: 8-column validation filter, no-fix/no-output fallback rows. Server socket: moved =server-socket-dir= + =server-start= from ansible =lineinfile= to =load-first.el= (tangling overwrote ansible-added lines in =init.el=). Removed redundant ansible tasks from both emacs29/emacs30 playbooks in =basecamp.org=.
+- [2026-03-14 Sat] Claude hygiene: added =allowed-tools= to mindjack/moonshot org source blocks, sharpened mindjack trigger description, clarified devils-advocate agent role description, added pre-mortem idea to claude-code Ideas.
+- [2026-03-14 Sat] mindjack skill: interactive Socratic knowledge integration tutor. Teaches concepts from builds one at a time, checks understanding, scans org KB per turn, proposes inserts. Smoke-tested on self (same-session) and org-sleeper (fresh target). Feedback-driven refinements: dropped forced science analogies, added skip-tracking (skips = user already knows this), reordered core loop to SCAN → TEACH → CHECK → INTEGRATE → STEER (KB scan before teaching so explanations target gaps). Skill defined in emacs.org under =*** Mindjack skill=, tangles to =~/.claude/skills/mindjack/SKILL.md=.
 - [2026-03-13 Fri] Closeout skill: AskUserQuestion phase gates, TaskCreate/TaskUpdate checkboxes, actionable proposal menus, terminal gate. Skill UI primitives section added to claude-code heading. jupyter use-package: added basecamp conda exec-path fix (preferred over system jupyter). Cross-linked emacs.org ↔ basecamp.org for jupyter install.
 - [2026-03-12 Thu] claude-code heading refactored (sibling ordering, =:nohelm:= tags, bare URLs → org links). Backup system hardened: =backup-by-copying=, =version-control=, numbered backups. Backup documentation table added to =On-save hooks and backup=. Jupyter kernel registration docs added to Conda section. System-level =jupyter_client= / =ipykernel= added to [[file:~/repos/basecamp/basecamp.org][basecamp.org]] pip task. Re-registered conda R/Python kernels.
 - [2026-03-11 Wed] moonshot skill: three-phase autonomous implementation (interactive design → interactive plan → background worktree agent). Tested on scopus-search skill build. Worktree sandbox blocks git commits and env vars — accepted; changes applied from diff manually. Skill defined in emacs.org, tangles to =~/.claude/skills/moonshot/SKILL.md=.
@@ -3388,11 +3389,19 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 (find-file-noselect "~/repos/org/bib.bib")
 
 #+end_src
+
+#+begin_src emacs-lisp
+(setq server-socket-dir (expand-file-name "server" user-emacs-directory))
+(require 'server)
+(unless (server-running-p) (server-start))
+
+#+end_src
 *** Base Emacs
 :PROPERTIES:
 :ID:       d0bcde8b-8e88-4f37-8a4a-3942507a8f10
 :header-args:emacs-lisp: :tangle ./emacs/public_config.el :comments org
 :END:
+- Frozen Emacs: =pkill -USR2 emacs=
 #+begin_src emacs-lisp
 (remove-hook 'before-save-hook #'org-table-recalculate-buffer-tables)
 
@@ -4947,19 +4956,22 @@ https://chatgpt.com/c/67069939-5e04-8005-80b3-7865981a8843
 
 ***** org-sleeper
 
-Emacs idle timer trigger for the org-sleeper autonomous linter. Fires after 10 minutes of idle time, launches the gate script asynchronously, then re-arms the timer after the process exits.
+Emacs idle timer trigger for the org-sleeper autonomous linter. Repeating idle timer fires every 600s of idle. The guard in the trigger function prevents spawning a new run if the previous one is still alive, avoiding process pile-up during long idle periods.
 
 #+begin_src emacs-lisp
+(defvar my/org-sleeper-process nil
+  "Process object for the current org-sleeper run.")
+
 (defun my/org-sleeper-trigger ()
-  "Launch org-sleeper gate script, then re-arm idle timer."
-  (let ((proc (start-process "org-sleeper" nil
-               "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh"))))
-    (set-process-sentinel proc
-      (lambda (_proc _event)
-        (run-with-idle-timer 600 nil #'my/org-sleeper-trigger)))))
+  "Launch org-sleeper gate script if no run is active."
+  (unless (and my/org-sleeper-process
+               (process-live-p my/org-sleeper-process))
+    (setq my/org-sleeper-process
+          (start-process "org-sleeper" nil
+            "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))))
 
 (when (string= (system-name) "jeff-beast")
-  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
+  (run-with-idle-timer 600 t #'my/org-sleeper-trigger))
 #+end_src
 
 **** Editing text
@@ -5991,6 +6003,17 @@ https://www.reddit.com/r/emacs/comments/1mq2hww/why_do_i_find_magit_so_hard_to_u
 (use-package native-complete)
 #+end_src
 **** ob-mermaid
+Suppress zenuml/core stderr popup on every mermaid eval.
+#+begin_src emacs-lisp
+(defun my/ob-mermaid-suppress-zenuml (orig-fn body params)
+  (cl-letf (((symbol-function 'org-babel-eval)
+             (lambda (cmd &rest args)
+               (apply (symbol-function 'org-babel-eval)
+                      (concat cmd " 2>/dev/null") args))))
+    (funcall orig-fn body params)))
+(advice-add 'org-babel-execute:mermaid :around #'my/ob-mermaid-suppress-zenuml)
+;; (advice-remove 'org-babel-execute:mermaid #'my/ob-mermaid-suppress-zenuml)
+#+end_src
 **** open-chatgtp-query-in-new-browser-window
 
 - Make a ChatGPT query from emacs
@@ -6341,11 +6364,20 @@ https://github.com/LionyxML/ros
 (add-to-list 'emulation-mode-map-alists
              `((my/vterm-override-mode . ,my/vterm-keys-map)))
 
+(defun my/vterm-insert-file-path ()
+  "Insert a file path into vterm using Emacs completion."
+  (interactive)
+  (let ((path (read-file-name "Path: ")))
+    (vterm-insert path)))
+
 (use-package vterm
   :init
   (add-hook 'vterm-mode-hook #'my/vterm-override-mode)
   :config
   (setq vterm-max-scrollback 100000)
+  ;; TAB: Emacs path completion in vterm (useful for claude-code-ide prompts)
+  (define-key vterm-mode-map [tab] #'my/vterm-insert-file-path)
+  (define-key vterm-mode-map (kbd "TAB") #'my/vterm-insert-file-path)
   (custom-set-faces
    '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC"))))))
 #+end_src
@@ -6366,14 +6398,14 @@ https://github.com/LionyxML/ros
 #+end_src
 
 **** whisper
-System setup (ansible-managed): [[file:~/repos/basecamp/basecamp.org][basecamp.org]] apt packages (ffmpeg, build-essential, cmake) and whisper.el clone to [[file:~/.emacs.d/lisp/whisper.el][~/.emacs.d/lisp/whisper.el]].
+System setup (ansible-managed): [[file:~/repos/basecamp/basecamp.org][basecamp.org]] apt packages (ffmpeg, build-essential, cmake) and whisper.el clone to [[file:~/.emacs.d/lisp/whisper][~/.emacs.d/lisp/whisper]].
 Config: [[file:~/repos/emacs/emacs.org::*whisper][Package configuration > whisper]].
 
 [[https://github.com/natrys/whisper.el][whisper.el]] — Emacs speech-to-text via local whisper.cpp model.
 ***** Use-package
 #+begin_src emacs-lisp
 (use-package whisper
-  :load-path "~/.emacs.d/lisp/whisper.el"
+  :load-path "~/.emacs.d/lisp/whisper"
   :config
   (setq whisper-install-directory "~/.emacs.d/.cache/whisper.cpp/"
         whisper-model "base"
@@ -6526,6 +6558,18 @@ https://github.com/joaotavora/yasnippet/issues/998
 :ID:       0e00557e-a0a4-460f-8941-555e11ee2d88
 :END:
 - In CLAUDE.md / MEMORY.md, reference org positions by heading name (e.g. "Org Item Structures"), not line number or level stars. Heading names are stable across edits and level changes; line numbers go stale instantly.
+- Do not pre-build static directory trees or file maps for Claude's benefit — CLAUDE.md + MEMORY.md already cover the files needed for ~90% of tasks, and =ls= / =org_outline= resolve the rest in seconds. Static maps go stale and duplicate discoverable state. Instead, invest in feedback memories for workflow patterns, gotchas, and preferences that can't be derived from the codebase.
+- Keep CLAUDE.md and MEMORY.md lean — all content loads every turn, so bloat costs tokens, speed, and instruction-following quality. Prune stale rules, avoid duplicating guidance across both files, and push detail into linked topic files that are fetched on demand.
+***** Markdown formatting for Claude files                           :nohelm:
+What Claude actually uses in =CLAUDE.md=, =MEMORY.md=, agents, and skills:
+- *Headings* (=##=) — used to locate relevant sections; clear names matter more than hierarchy depth
+- *Inline code* (backticks) — parsed as literal/executable; =conda run -n basecamp snakemake= is actionable, prose descriptions are slower
+- *Bold* (=**text**=) — weighted higher when scanning; useful for =**never**= / =**always**= rules
+- *Bullet lists* — preferred for instructions; each bullet is a discrete rule. Prose paragraphs are harder to extract rules from
+- *Tables* — useful for structured mappings (machine names, env names, comparisons). Faster lookup than scanning bullets
+- *Fenced code blocks with language tags* — treated as ready-to-run command templates; more explicit than inline backticks for multi-line commands
+
+No special behavior from: YAML frontmatter (only meaningful in memory files), HTML, blockquotes, numbered lists (no different from bullets unless ordering matters), or markdown links (not auto-followed).
 ***** Protocol: parallel Claude Code session via worktree [/]
 Claude Code enforces one session per directory. To run a second session on the same repo, create a git worktree so each session has its own directory and branch.
 - [ ] Create the worktree and branch: =git worktree add -b <branch-name> <directory-path>=
@@ -6558,6 +6602,7 @@ Do not check out the same branch in both the main repo and a worktree simultaneo
 (setq claude-code-ide-use-ide-diff nil)
 #+end_src
 
+- TAB in vterm inserts file paths via Emacs completion (vertico) — see [[file:emacs.org::*vterm][vterm]]
 - [ ] Integrate across machines — consider symlinking =~/.claude/=
 
 ***** Ediff workarounds                                              :nohelm:
@@ -6692,6 +6737,11 @@ Interactive UI tools available inside skills (deferred — fetched via =ToolSear
 ****** Skill ideas
 
 - Refactor and annotate: apply project style guides
+
+****** Skill design patterns                                         :nohelm:
+
+- *Skips are signal* — when a user skips a proposed action (KB insert, refactor suggestion, etc.), treat it as knowledge about what they already know or don't value, not just a pass. Track skip categories during a session and stop proposing similar actions. Discovered during [[id:7F3A2B8E-1D4C-4E9A-B6F5-8C2D9E0A3B7F][mindjack]] smoke test.
+- *Worth-it gate* — before investing time in brainstorming/designing something, do a quick assessment: is this idea novel enough? Already solved? Worth the ROI? Present a brief take and let the user confirm before proceeding with full design exploration.
 
 ***** Settings reference                                             :nohelm:
 
@@ -6892,21 +6942,21 @@ to handle position shifts. Saves the buffer on success."
   (claude-code-ide-mcp-server-with-session-context nil
     (with-current-buffer (find-file-noselect file-path)
       (org-with-wide-buffer
-       (goto-char (point-min))
-       (let ((src-pos (re-search-forward
-                       (format "^\\*+ %s" (regexp-quote source-heading)) nil t)))
-         (unless src-pos
-           (error "Source heading '%s' not found" source-heading))
+       (let ((case-fold-search nil)
+             (heading-re (lambda (h) (format "^\\*+ %s\\([ \t]\\|$\\)" (regexp-quote h)))))
          (goto-char (point-min))
-         (unless (re-search-forward
-                  (format "^\\*+ %s" (regexp-quote target-heading)) nil t)
-           (error "Target heading '%s' not found" target-heading))
-         (goto-char src-pos)
-         (beginning-of-line)
-         (org-cut-subtree)
-         (goto-char (point-min))
-         (re-search-forward (format "^\\*+ %s" (regexp-quote target-heading)) nil t)
-         (beginning-of-line)
+         (let ((src-pos (re-search-forward (funcall heading-re source-heading) nil t)))
+           (unless src-pos
+             (error "Source heading '%s' not found" source-heading))
+           (goto-char (point-min))
+           (unless (re-search-forward (funcall heading-re target-heading) nil t)
+             (error "Target heading '%s' not found" target-heading))
+           (goto-char src-pos)
+           (beginning-of-line)
+           (org-cut-subtree)
+           (goto-char (point-min))
+           (re-search-forward (funcall heading-re target-heading) nil t)
+           (beginning-of-line)
          (let ((target-level (org-current-level)))
            (org-end-of-subtree t)
            (unless (bolp) (newline))
@@ -6992,6 +7042,7 @@ to handle position shifts. Saves the buffer on success."
 - Batch refactor burn at end of week credits
 - Agents for reformatting / linting
 - [[https://github.com/xleddyl/claude-watch][claude-watch]]
+- Pre-mortem mode for devils-advocate: blind agent assumes the proposition already failed and explains why (Gary Klein). Flag on =/devils-advocate= or separate =/pre-mortem= skill.
 ***** Reference                                                      :nohelm:
 - [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]
 - Comprehensive guides
@@ -7992,6 +8043,7 @@ description: >
   isolated git worktree with full permissions. User reviews the result after.
   Trigger on: "moonshot", "let it rip", "autonomous implementation", or when
   the user wants to hand off a feature build to run unattended.
+allowed-tools: Read, Bash, Skill, Agent
 ---
 
 # Moonshot: Autonomous Implementation Skill
@@ -8118,4 +8170,173 @@ When the background agent completes and you receive the notification:
 - Only Phase 3 (execution) runs autonomously in the background
 - If the user wants to abort mid-run, they can use TaskStop with the agent ID
 - The worktree isolates git working directory state but does NOT sandbox shell commands — this is an accepted risk
+#+end_src
+*** Mindjack skill
+:PROPERTIES:
+:ID:       7F3A2B8E-1D4C-4E9A-B6F5-8C2D9E0A3B7F
+:END:
+
+Interactive knowledge integration tutor — Socratic teaching with per-turn knowledgebase scanning and integration.
+
+See [[file:docs/superpowers/specs/2026-03-14-mindjack-design.md][design spec]].
+
+**** Claude skill                                                    :nohelm:
+
+#+begin_src markdown :tangle ~/.claude/skills/mindjack/SKILL.md :mkdirp yes :comments no
+---
+name: mindjack
+description: >
+  Interactive knowledge integration tutor. Analyzes a build or topic, prioritizes
+  concepts, then runs a Socratic teaching loop with per-turn org knowledgebase
+  scanning and integration. Trigger on: "mindjack", "teach me what we built",
+  "walk me through this", "help me understand this code/build/system". Works for
+  code, tools, protocols — anything encountered in the context of work. Do NOT
+  trigger for single-answer questions about code behavior — only for multi-turn
+  learning where the user wants to understand a system or build across several concepts.
+allowed-tools: Read, Bash, Edit, Skill, AskUserQuestion
+---
+
+# Mindjack: Interactive Knowledge Integration Tutor
+
+You run an interactive Socratic teaching loop. You analyze what the user built or encountered, teach it concept by concept, check understanding, and integrate new knowledge into their org knowledgebase — all in real time.
+
+## Step 1: Detect Entry Point
+
+Determine which mode applies:
+
+### Same session
+The conversation already contains a recent build (substantial tool use, files modified, code written). You have full context.
+- Analyze the conversation for new patterns, tools, design decisions, and terminology introduced
+- No archaeology needed — the context is right here
+
+### Fresh session with target
+The user points at code (file, directory, project) without prior build context.
+- Read the code structure and patterns
+- Hunt for specs/plans in `docs/superpowers/specs/` and `docs/superpowers/plans/`
+- Read recent commit messages: `git log --oneline -20 -- <path>`
+- Check for related org headings via `org_ql_query`
+- Reconstruct the narrative from artifacts
+
+### Non-code topic
+The user names a topic they encountered in the context of work — a tool, a technique, a protocol. No archaeology needed. Proceed directly to concept extraction.
+
+**Scope guard:** Mindjack teaches things the user *built*, *used*, or *encountered in their work*. It is not a general tutoring service. If the topic has no connection to their work, say so and suggest a better approach.
+
+## Step 2: Extract and Prioritize Concepts
+
+Analyze the target and identify teachable concepts. Rank by:
+
+1. **Novelty** — concepts with no coverage in the user's org knowledgebase rank highest. Scan with `org_ql_query` across agenda files.
+2. **Centrality** — concepts that other parts of the build depend on
+3. **Complexity** — teach foundations before things that depend on them
+
+Present the top 3-5 as a numbered menu:
+
+> "Here's what I think matters most from this build:
+> 1. [Concept A] — [one-line why it matters]
+> 2. [Concept B] — [one-line why it matters]
+> 3. [Concept C] — [one-line why it matters]
+>
+> Where do you want to start? You can pick a number, reorder, or add something I missed."
+
+Use **AskUserQuestion** to present this menu with the concepts as options.
+
+**Wait for the user to confirm before starting the loop.**
+
+**Fallback:** If you can't extract clear concepts (code is too opaque, not enough context), say so directly: "I can't auto-detect the key concepts here — what should we focus on?"
+
+## Step 3: Core Loop — SCAN → TEACH → CHECK → INTEGRATE → STEER
+
+Run this loop for each concept, one at a time.
+
+### SCAN
+
+**Before teaching, scan the knowledgebase for existing coverage of this concept.** This determines what the user already has and what gaps remain — so teaching targets only the gaps.
+
+1. **Search:** `org_ql_query` across org-agenda-files for headings related to the concept (use 2-3 keyword variations)
+2. **Surface existing:** If related entries exist, fetch them with `org_subtree_by_heading` and review their content
+3. **Assess coverage:** Determine what the user already has documented vs. what's missing or stale
+
+Use this scan to calibrate the TEACH phase:
+- If KB coverage is comprehensive: teach only what's *not* there (nuances, failure modes, connections to the current build)
+- If KB coverage is partial: teach the gaps, referencing what they already have as foundation
+- If KB has nothing: teach from scratch
+- If KB content is stale or inaccurate: flag it and teach the corrected version
+
+**Do not present scan results as a separate step to the user.** Weave the findings naturally into the TEACH phase — e.g., "You already have [X] documented; what's missing is [Y]..." or simply skip well-covered ground and focus on what's new.
+
+### TEACH
+
+Explain the concept clearly, **targeting gaps identified by the SCAN**. Bridge from knowledge the user already has — both from the KB and from their background.
+
+**Calibration — the user is a scientist:**
+- Molecular biology, bioinformatics background
+- CS/software engineering concepts may be 100% foreign
+- Bridge from scientific analogues: experimental design → software design, protocol steps → function composition, reagent swapping → dependency injection, controls → assertions/tests
+- For non-bio work (Emacs config, infrastructure, devops): adapt analogues to the user's actual experience with those tools — don't force biology metaphors
+- Build up, don't talk down — teach missing foundations inline as naturally as teaching a new lab technique. Never signal "you should know this"
+- **Anchor in the code** — always tie abstract concepts back to the specific code being examined. The code is the specimen; the concepts are the observations.
+
+**When a foundation is missing:** If explaining concept A requires understanding concept B that the user doesn't have, pause A immediately. Teach B inline. Then resume A. Never defer: "we'll cover that later." Teach it now.
+
+### CHECK
+
+Verify understanding with a Socratic question. **Calibrate difficulty to the gap** — if the SCAN showed the user already has partial coverage, ask about the new material, not the basics.
+
+Mix these techniques based on what fits the concept:
+
+- **"Explain back"** — "In your own words, what does [concept] do in this code?"
+- **"Why X not Y"** — "Why did we use [approach A] here instead of [approach B]?"
+- **"What if"** — "What would happen if we changed [thing] to [alternative]?"
+
+Use **AskUserQuestion** to pose the check. Provide 2-3 response options plus a free-text option, so the user can pick or type their own answer.
+
+**Recovery paths:**
+- If the user doesn't get it: decompose into smaller pieces. Re-explain from a different angle — don't repeat the same words louder.
+- If the user gives minimal engagement ("yeah I get it" repeatedly with no substance): notice the pattern and ask directly — "Want to skip the checks and just do KB integration, or is the pacing off?" Respect their preference.
+
+### INTEGRATE
+
+After understanding is confirmed, propose KB updates based on what SCAN found.
+
+- **New entries:** If SCAN found no coverage, propose adding the concept under a suggested heading.
+- **Updates to stale entries:** If SCAN found outdated content, propose corrections.
+- **No action needed:** If KB already covers this concept well, say so and move on — don't force an insert.
+
+Present proposals via **AskUserQuestion** with options: Approve / Edit (let me rephrase) / Skip.
+
+For approved inserts: invoke the **org-edit** skill, then insert under the identified heading following org-edit conventions. Keep entries concise — atomic knowledge items, not essays.
+
+**Skips are signal.** When the user skips a KB insert, it means the concept is already internalized — not just "not now." Track what categories of knowledge get skipped (e.g., tangle workflows, org structure). Stop proposing similar inserts for the rest of the session. The user's skips teach you what they already know.
+
+### STEER
+
+After integration, present the next step:
+
+> "That's [concept]. Ready for the next one, or want to go deeper here?"
+
+Use **AskUserQuestion** with options:
+- **Go deeper** — drill into the current concept further
+- **Next: [name of next concept]** — move to next priority
+- **Something else** — redirect to a specific topic (free text)
+- **Done for now** — end the mindjack session
+
+If the user says "I know this" about a concept, skip it and adjust — they may know more than the initial KB scan suggested.
+
+## Session End
+
+When all concepts are covered or the user says done:
+- No summary document produced — the learning happened in dialogue
+- The KB entries are the persistent artifacts
+- Simply end: "That covers what we had. The KB entries we added are the takeaway."
+
+## Key Rules
+
+- **One concept at a time.** Never teach two concepts in one message.
+- **Always confirm the concept list** before starting the loop.
+- **Inline foundations** — never defer prerequisite knowledge.
+- **Scan-first** — always check KB coverage before teaching, so you target gaps not redundancy.
+- **User steers** — they can redirect, skip, go deeper, or stop at any point.
+- **Anchor in the code** — abstract concepts always tie back to the specific artifact.
+- **Scoped to work** — teach things from the user's work context, not arbitrary topics.
 #+end_src
