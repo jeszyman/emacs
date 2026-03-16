@@ -2,8 +2,12 @@
 :PROPERTIES:
 :ID:       a49abc44-8e71-4a1a-bd35-a77849427c94
 :END:
+
+Okay, we're trying for longer. One, two, three, four, five seconds.
+Are you working now?
 ** README                                                          :noexport:
 *** Change log
+- [2026-03-16 Mon] whisper.el jeff-beast fixes: =whisper-show-progress-in-mode-line nil= (whisper.cpp stderr routing), advise =whisper-run= to send ="q"= to ffmpeg stdin (ffmpeg 4.4 drops PulseAudio buffers on SIGINT), vterm support via =vterm-send-string= + =vterm-send-return= with =whisper-after-transcription-hook=
 - [2026-03-16 Mon] systemd emacs daemon fix: changed service from =Type=forking= / =--daemon= to =Type=simple= / =--fg-daemon= (ansible playbooks in basecamp.org). Root cause: bloated =~/.cache/org-persist/= blocked event loop past systemd timeout. Added =org-element-cache-persistent nil= guard in Load First for daemon mode. Documented learnings under [[id:c70cfb48-b027-4b4f-8e0c-5fbc3d4222a0][systemd server start]].
 - [2026-03-15 Sun] Ideas reorganization: added =:ideas:= tag to main Ideas container, removed developed skills (Moonshot, Mindjack) from Ideas, demoted thin subheadings to list items, added IDs to 14 subheadings, dissolved =*** Not organized= grab-bag, grouped into =*** Packages to evaluate=, =*** Emacs behavior improvements=, =*** Tangle and export=, =*** ESS R buffer in separate frame=. Consolidated 4 scattered Ideas sections with provenance cross-links. Moved Claude Code ideas to private.org =** Claude build ideas=. Cross-linked emacs.org Ideas ↔ private.org. Also applied same workflow to career.org: tag cleanup, cross-link index, dissolved nested Ideas, moved items to domain containers (cfDNA, Funding, Career development, Completed projects).
 - [2026-03-14 Sat] org-sleeper process management: fixed 3 bugs — =setsid= + =< /dev/null= for SIGTSTP, =timeout -k 10= for hard kill, =process-live-p= guard for pile-up prevention. Gate script TSV logging: 8-column validation filter, no-fix/no-output fallback rows. Server socket: moved =server-socket-dir= + =server-start= from ansible =lineinfile= to =load-first.el= (tangling overwrote ansible-added lines in =init.el=). Removed redundant ansible tasks from both emacs29/emacs30 playbooks in =basecamp.org=.
@@ -6471,11 +6475,43 @@ Config: [[file:~/repos/emacs/emacs.org::*whisper][Package configuration > whispe
         whisper-model "base"
         whisper-language "en"
         whisper-translate nil
-        whisper-use-threads (/ (num-processors) 2))
+        whisper-use-threads (/ (num-processors) 2)
+        ;; Newer whisper.cpp sends transcription to stderr with --print-progress
+        whisper-show-progress-in-mode-line nil)
   ;; Machine-specific mic: Logitech Webcam C925e on jeff-beast
   (when (string= (system-name) "jeff-beast")
     (setq whisper--ffmpeg-input-device
           "alsa_input.usb-046d_Logitech_Webcam_C925e_9891F59F-02.analog-stereo"))
+  ;; Remove read-only guard so whisper works in vterm
+  (setq whisper-before-transcription-hook nil)
+  ;; Track vterm origin for direct text insertion
+  (defvar my/whisper--vterm-target nil)
+  ;; In vterm: send transcription via vterm-send-string, clear stdout buffer
+  ;; so whisper skips creating a display buffer
+  (add-hook 'whisper-after-transcription-hook
+            (lambda ()
+              (when my/whisper--vterm-target
+                (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+                  (with-current-buffer my/whisper--vterm-target
+                    (vterm-send-string text)
+                    (vterm-send-return)))
+                (erase-buffer))))
+  ;; Restore state after each run
+  (add-hook 'whisper-after-insert-hook
+            (lambda ()
+              (setq whisper-insert-text-at-point t
+                    my/whisper--vterm-target nil)))
+  ;; ffmpeg 4.4 drops audio on signals; send "q" to stdin for clean shutdown.
+  ;; In vterm, disable insert-at-point so vterm hook handles it instead.
+  (advice-add 'whisper-run :around
+              (lambda (orig-fn &optional arg)
+                (if (process-live-p whisper--recording-process)
+                    (process-send-string whisper--recording-process "q")
+                  (when (derived-mode-p 'vterm-mode)
+                    (setq my/whisper--vterm-target (current-buffer)
+                          whisper-insert-text-at-point nil))
+                  (funcall orig-fn arg)))
+              '((name . my/whisper-quit-for-ffmpeg)))
   (defun my/whisper-run-with-mic ()
     "Boost mic to 100% before invoking whisper-run."
     (interactive)

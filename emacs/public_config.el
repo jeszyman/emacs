@@ -4,7 +4,7 @@
 ;; 
 ;; Source:  /home/jeszyman/repos/emacs/emacs.org
 ;; Author:  Jeffrey Szymanski
-;; Tangled: 2026-03-16 08:17:45
+;; Tangled: 2026-03-16 11:12:17
 ;; ============================================================
 
 ;; Base Emacs
@@ -1366,6 +1366,32 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 
 (when (string= (system-name) "jeff-beast")
   (my/org-sleeper-rearm))
+;; org-sleeper
+
+;; Emacs idle timer trigger for the org-sleeper autonomous linter. One-shot idle timer fires after 600s of idle, launches the gate script, and a process sentinel re-arms a new timer when the run finishes. The =process-live-p= guard prevents pile-up if the timer fires while a run is active.
+
+
+(defvar my/org-sleeper-process nil
+  "Process object for the current org-sleeper run.")
+
+(defun my/org-sleeper-rearm ()
+  "Schedule next org-sleeper run after 600s idle."
+  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
+
+(defun my/org-sleeper-trigger ()
+  "Launch org-sleeper gate script if no run is active, re-arm on exit."
+  (if (and my/org-sleeper-process
+           (process-live-p my/org-sleeper-process))
+      ;; Previous run still active — re-arm to try again later
+      (my/org-sleeper-rearm)
+    (setq my/org-sleeper-process
+          (start-process "org-sleeper" nil
+            "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))
+    (set-process-sentinel my/org-sleeper-process
+      (lambda (_proc _event) (my/org-sleeper-rearm)))))
+
+(when (string= (system-name) "jeff-beast")
+  (my/org-sleeper-rearm))
 ;; Editing text
 
 ;;https://emacs.stackexchange.com/questions/12701/kill-a-line-deletes-the-line-but-leaves-a-blank-newline-character
@@ -2409,11 +2435,43 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
         whisper-model "base"
         whisper-language "en"
         whisper-translate nil
-        whisper-use-threads (/ (num-processors) 2))
+        whisper-use-threads (/ (num-processors) 2)
+        ;; Newer whisper.cpp sends transcription to stderr with --print-progress
+        whisper-show-progress-in-mode-line nil)
   ;; Machine-specific mic: Logitech Webcam C925e on jeff-beast
   (when (string= (system-name) "jeff-beast")
     (setq whisper--ffmpeg-input-device
           "alsa_input.usb-046d_Logitech_Webcam_C925e_9891F59F-02.analog-stereo"))
+  ;; Remove read-only guard so whisper works in vterm
+  (setq whisper-before-transcription-hook nil)
+  ;; Track vterm origin for direct text insertion
+  (defvar my/whisper--vterm-target nil)
+  ;; In vterm: send transcription via vterm-send-string, clear stdout buffer
+  ;; so whisper skips creating a display buffer
+  (add-hook 'whisper-after-transcription-hook
+            (lambda ()
+              (when my/whisper--vterm-target
+                (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+                  (with-current-buffer my/whisper--vterm-target
+                    (vterm-send-string text)
+                    (vterm-send-return)))
+                (erase-buffer))))
+  ;; Restore state after each run
+  (add-hook 'whisper-after-insert-hook
+            (lambda ()
+              (setq whisper-insert-text-at-point t
+                    my/whisper--vterm-target nil)))
+  ;; ffmpeg 4.4 drops audio on signals; send "q" to stdin for clean shutdown.
+  ;; In vterm, disable insert-at-point so vterm hook handles it instead.
+  (advice-add 'whisper-run :around
+              (lambda (orig-fn &optional arg)
+                (if (process-live-p whisper--recording-process)
+                    (process-send-string whisper--recording-process "q")
+                  (when (derived-mode-p 'vterm-mode)
+                    (setq my/whisper--vterm-target (current-buffer)
+                          whisper-insert-text-at-point nil))
+                  (funcall orig-fn arg)))
+              '((name . my/whisper-quit-for-ffmpeg)))
   (defun my/whisper-run-with-mic ()
     "Boost mic to 100% before invoking whisper-run."
     (interactive)
