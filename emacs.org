@@ -2,9 +2,6 @@
 :PROPERTIES:
 :ID:       a49abc44-8e71-4a1a-bd35-a77849427c94
 :END:
-
-Okay, we're trying for longer. One, two, three, four, five seconds.
-Are you working now?
 ** README                                                          :noexport:
 *** Change log
 - [2026-03-16 Mon] whisper.el jeff-beast fixes: =whisper-show-progress-in-mode-line nil= (whisper.cpp stderr routing), advise =whisper-run= to send ="q"= to ffmpeg stdin (ffmpeg 4.4 drops PulseAudio buffers on SIGINT), vterm support via =vterm-send-string= + =vterm-send-return= with =whisper-after-transcription-hook=
@@ -6148,7 +6145,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
         mu4e-use-fancy-chars t)
 
   ;; Org integration
-  (require 'org-mu4e))
+  (require 'mu4e-org))
 #+end_src
 
 **** openwith
@@ -6494,7 +6491,9 @@ Config: [[file:~/repos/emacs/emacs.org::*whisper][Package configuration > whispe
                 (let ((text (buffer-substring-no-properties (point-min) (point-max))))
                   (with-current-buffer my/whisper--vterm-target
                     (vterm-send-string text)
-                    (vterm-send-return)))
+                    ;; Auto-submit only in Claude Code sessions
+                    (when (string-match-p "\\*claude-code" (buffer-name))
+                      (vterm-send-return))))
                 (erase-buffer))))
   ;; Restore state after each run
   (add-hook 'whisper-after-insert-hook
@@ -6657,6 +6656,7 @@ https://github.com/joaotavora/yasnippet/issues/998
 - In CLAUDE.md / MEMORY.md, reference org positions by heading name (e.g. "Org Item Structures"), not line number or level stars. Heading names are stable across edits and level changes; line numbers go stale instantly.
 - Do not pre-build static directory trees or file maps for Claude's benefit — CLAUDE.md + MEMORY.md already cover the files needed for ~90% of tasks, and =ls= / =org_outline= resolve the rest in seconds. Static maps go stale and duplicate discoverable state. Instead, invest in feedback memories for workflow patterns, gotchas, and preferences that can't be derived from the codebase.
 - Keep CLAUDE.md and MEMORY.md lean — all content loads every turn, so bloat costs tokens, speed, and instruction-following quality. Prune stale rules, avoid duplicating guidance across both files, and push detail into linked topic files that are fetched on demand.
+- Claude can control i3 windows and Emacs frames together: =i3-msg -t get_tree= reports window IDs that match Emacs =outer-window-id= frame parameters. This lets Claude switch buffers in specific frames by position (e.g. "switch the left pane to *scratch*"). Technique details in MEMORY at =reference_i3_emacs_control.md=.
 ***** Markdown formatting for Claude files                           :nohelm:
 What Claude actually uses in =CLAUDE.md=, =MEMORY.md=, agents, and skills:
 - *Headings* (=##=) — used to locate relevant sections; clear names matter more than hierarchy depth

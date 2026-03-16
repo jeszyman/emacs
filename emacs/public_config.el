@@ -3,8 +3,8 @@
 ;; Edits will be overwritten on next org-babel tangle.
 ;; 
 ;; Source:  /home/jeszyman/repos/emacs/emacs.org
-;; Author:  Jeffrey Szymanski
-;; Tangled: 2026-03-16 11:12:17
+;; Author:  Jeff Szymanski
+;; Tangled: 2026-03-16 12:34:25
 ;; ============================================================
 
 ;; Base Emacs
@@ -2171,7 +2171,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
         mu4e-use-fancy-chars t)
 
   ;; Org integration
-  (require 'org-mu4e))
+  (require 'mu4e-org))
 ;; Use-package
 
 (use-package openwith
@@ -2454,7 +2454,9 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
                 (let ((text (buffer-substring-no-properties (point-min) (point-max))))
                   (with-current-buffer my/whisper--vterm-target
                     (vterm-send-string text)
-                    (vterm-send-return)))
+                    ;; Auto-submit only in Claude Code sessions
+                    (when (string-match-p "\\*claude-code" (buffer-name))
+                      (vterm-send-return))))
                 (erase-buffer))))
   ;; Restore state after each run
   (add-hook 'whisper-after-insert-hook
