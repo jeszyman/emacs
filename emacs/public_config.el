@@ -4,7 +4,7 @@
 ;; 
 ;; Source:  /home/jeszyman/repos/emacs/emacs.org
 ;; Author:  Jeffrey Szymanski
-;; Tangled: 2026-03-14 19:08:16
+;; Tangled: 2026-03-16 08:17:45
 ;; ============================================================
 
 ;; Base Emacs
@@ -23,6 +23,7 @@
 ;; - whenever you open a new directory in Dired, the old Dired buffer is automatically killed
 
 (setq dired-kill-when-opening-new-dired-buffer t)
+(setq dired-dwim-target t)
 
 ;; - when listing files:
 
@@ -59,6 +60,7 @@
 
 (setq frame-background-mode 'dark)
 (setq inhibit-splash-screen t)
+(setq redisplay-skip-fontification-on-input t)
 
 ; ---   Windows   --- ;
 ; ------------------- ;
@@ -72,7 +74,7 @@
 ;
 ; Fringe- Set finge color to background
 ;https://emacs.stackexchange.com/a/31944/11502
-(set-face-attribute 'fringe nil :background nil)
+(set-face-attribute 'fringe nil :background 'unspecified)
 
 ; ---   Lines   --- ;
 ; ----------------- ;
@@ -262,6 +264,7 @@
 ; Follow symlinks in dired
 ;;https://emacs.stackexchange.com/questions/41286/follow-symlinked-directories-in-dired
 (setq find-file-visit-truename t)
+(setq vc-follow-symlinks t)
 
 (setq browse-url-browser-function 'browse-url-generic
       browse-url-generic-program "/usr/bin/brave-browser")
@@ -1339,22 +1342,30 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 ;; 4. C-c C-c on non-checkbox: normal org-ctrl-c-ctrl-c behavior
 ;; org-sleeper
 
-;; Emacs idle timer trigger for the org-sleeper autonomous linter. Repeating idle timer fires every 600s of idle. The guard in the trigger function prevents spawning a new run if the previous one is still alive, avoiding process pile-up during long idle periods.
+;; Emacs idle timer trigger for the org-sleeper autonomous linter. One-shot idle timer fires after 600s of idle, launches the gate script, and a process sentinel re-arms a new timer when the run finishes. The =process-live-p= guard prevents pile-up if the timer fires while a run is active.
 
 
 (defvar my/org-sleeper-process nil
   "Process object for the current org-sleeper run.")
 
+(defun my/org-sleeper-rearm ()
+  "Schedule next org-sleeper run after 600s idle."
+  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
+
 (defun my/org-sleeper-trigger ()
-  "Launch org-sleeper gate script if no run is active."
-  (unless (and my/org-sleeper-process
-               (process-live-p my/org-sleeper-process))
+  "Launch org-sleeper gate script if no run is active, re-arm on exit."
+  (if (and my/org-sleeper-process
+           (process-live-p my/org-sleeper-process))
+      ;; Previous run still active — re-arm to try again later
+      (my/org-sleeper-rearm)
     (setq my/org-sleeper-process
           (start-process "org-sleeper" nil
-            "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))))
+            "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))
+    (set-process-sentinel my/org-sleeper-process
+      (lambda (_proc _event) (my/org-sleeper-rearm)))))
 
 (when (string= (system-name) "jeff-beast")
-  (run-with-idle-timer 600 t #'my/org-sleeper-trigger))
+  (my/org-sleeper-rearm))
 ;; Editing text
 
 ;;https://emacs.stackexchange.com/questions/12701/kill-a-line-deletes-the-line-but-leaves-a-blank-newline-character
@@ -1544,7 +1555,7 @@ skipped and nothing is inserted for it."
   ;; Bibliography paths
   (org-cite-global-bibliography '("/home/jeszyman/repos/org/bib.bib"))
   (citar-bibliography org-cite-global-bibliography)
-  (citar-library-paths '("~/data/library/"))   ;; PDF storage
+  (citar-library-paths '("~/library/"))   ;; PDF storage
 
   ;; Set citation processors
   (org-cite-insert-processor 'citar)
@@ -1690,6 +1701,8 @@ skipped and nothing is inserted for it."
   (add-hook 'ess-r-mode-hook 'eglot-ensure)
   (add-hook 'python-mode-hook 'eglot-ensure)
   :config
+  (setq eglot-autoshutdown t)
+  (setq eglot-sync-connect 0)
   (add-to-list 'eglot-server-programs '(sh-mode . ("bash-language-server" "start")))
   (add-to-list 'eglot-server-programs '(python-mode . ("pylsp")))
   (add-to-list 'eglot-server-programs '(ess-r-mode . ("R" "--slave" "-e" "languageserver::run()"))))
@@ -2058,11 +2071,12 @@ skipped and nothing is inserted for it."
 ;; Suppress zenuml/core stderr popup on every mermaid eval.
 
 (defun my/ob-mermaid-suppress-zenuml (orig-fn body params)
-  (cl-letf (((symbol-function 'org-babel-eval)
-             (lambda (cmd &rest args)
-               (apply (symbol-function 'org-babel-eval)
-                      (concat cmd " 2>/dev/null") args))))
-    (funcall orig-fn body params)))
+  (let ((orig-eval (symbol-function 'org-babel-eval)))
+    (cl-letf (((symbol-function 'org-babel-eval)
+               (lambda (cmd &rest args)
+                 (apply orig-eval
+                        (concat cmd " 2>/dev/null") args))))
+      (funcall orig-fn body params))))
 (advice-add 'org-babel-execute:mermaid :around #'my/ob-mermaid-suppress-zenuml)
 ;; (advice-remove 'org-babel-execute:mermaid #'my/ob-mermaid-suppress-zenuml)
 ;; open-chatgtp-query-in-new-browser-window
@@ -2589,17 +2603,17 @@ to handle position shifts. Saves the buffer on success."
            (goto-char (point-min))
            (re-search-forward (funcall heading-re target-heading) nil t)
            (beginning-of-line)
-         (let ((target-level (org-current-level)))
-           (org-end-of-subtree t)
-           (unless (bolp) (newline))
-           (if as-sibling
-               (org-paste-subtree target-level)
-             (org-paste-subtree (1+ target-level))))
-         (save-buffer)
-         (format "Moved '%s' %s '%s'"
-                 source-heading
-                 (if as-sibling "after" "under")
-                 target-heading))))))
+           (let ((target-level (org-current-level)))
+             (org-end-of-subtree t)
+             (unless (bolp) (newline))
+             (if as-sibling
+                 (org-paste-subtree target-level)
+               (org-paste-subtree (1+ target-level))))
+           (save-buffer)
+           (format "Moved '%s' %s '%s'"
+                   source-heading
+                   (if as-sibling "after" "under")
+                   target-heading)))))))
 (with-eval-after-load 'claude-code-ide
   (claude-code-ide-make-tool
    :function #'claude-code-ide-org-outline

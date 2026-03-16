@@ -4,13 +4,17 @@
 ;; 
 ;; Source:  /home/jeszyman/repos/emacs/emacs.org
 ;; Author:  Jeffrey Szymanski
-;; Tangled: 2026-03-14 19:08:16
+;; Tangled: 2026-03-16 08:17:45
 ;; ============================================================
 
 (add-to-list 'exec-path "/usr/local/bin")
 
 ;; Puts bib.bib into loaded buffers
 (find-file-noselect "~/repos/org/bib.bib")
+;; Disable persistent org-element cache in daemon mode to prevent
+;; bloated cache from blocking startup and starving the event loop
+(when (daemonp)
+  (setq org-element-cache-persistent nil))
 (setq server-socket-dir (expand-file-name "server" user-emacs-directory))
 (require 'server)
 (unless (server-running-p) (server-start))

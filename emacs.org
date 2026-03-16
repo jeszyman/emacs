@@ -2,10 +2,10 @@
 :PROPERTIES:
 :ID:       a49abc44-8e71-4a1a-bd35-a77849427c94
 :END:
-
-
 ** README                                                          :noexport:
 *** Change log
+- [2026-03-16 Mon] systemd emacs daemon fix: changed service from =Type=forking= / =--daemon= to =Type=simple= / =--fg-daemon= (ansible playbooks in basecamp.org). Root cause: bloated =~/.cache/org-persist/= blocked event loop past systemd timeout. Added =org-element-cache-persistent nil= guard in Load First for daemon mode. Documented learnings under [[id:c70cfb48-b027-4b4f-8e0c-5fbc3d4222a0][systemd server start]].
+- [2026-03-15 Sun] Ideas reorganization: added =:ideas:= tag to main Ideas container, removed developed skills (Moonshot, Mindjack) from Ideas, demoted thin subheadings to list items, added IDs to 14 subheadings, dissolved =*** Not organized= grab-bag, grouped into =*** Packages to evaluate=, =*** Emacs behavior improvements=, =*** Tangle and export=, =*** ESS R buffer in separate frame=. Consolidated 4 scattered Ideas sections with provenance cross-links. Moved Claude Code ideas to private.org =** Claude build ideas=. Cross-linked emacs.org Ideas ↔ private.org. Also applied same workflow to career.org: tag cleanup, cross-link index, dissolved nested Ideas, moved items to domain containers (cfDNA, Funding, Career development, Completed projects).
 - [2026-03-14 Sat] org-sleeper process management: fixed 3 bugs — =setsid= + =< /dev/null= for SIGTSTP, =timeout -k 10= for hard kill, =process-live-p= guard for pile-up prevention. Gate script TSV logging: 8-column validation filter, no-fix/no-output fallback rows. Server socket: moved =server-socket-dir= + =server-start= from ansible =lineinfile= to =load-first.el= (tangling overwrote ansible-added lines in =init.el=). Removed redundant ansible tasks from both emacs29/emacs30 playbooks in =basecamp.org=.
 - [2026-03-14 Sat] Claude hygiene: added =allowed-tools= to mindjack/moonshot org source blocks, sharpened mindjack trigger description, clarified devils-advocate agent role description, added pre-mortem idea to claude-code Ideas.
 - [2026-03-14 Sat] mindjack skill: interactive Socratic knowledge integration tutor. Teaches concepts from builds one at a time, checks understanding, scans org KB per turn, proposes inserts. Smoke-tested on self (same-session) and org-sleeper (fresh target). Feedback-driven refinements: dropped forced science analogies, added skip-tracking (skips = user already knows this), reordered core loop to SCAN → TEACH → CHECK → INTEGRATE → STEER (KB scan before teaching so explanations target gaps). Skill defined in emacs.org under =*** Mindjack skill=, tangles to =~/.claude/skills/mindjack/SKILL.md=.
@@ -823,6 +823,10 @@ https://wilkesley.org/~ian/xah/emacs/elisp_syntax_coloring.html
 :ID:       c70cfb48-b027-4b4f-8e0c-5fbc3d4222a0
 :END:
 [[https://www.google.com/search?q=emacs+systemd+server+start][google:emacs systemd server start]]
+- Service file: [[file:~/.config/systemd/user/emacs.service]] (deployed by basecamp ansible, not tangled from this file)
+- Use =Type=simple= + =--fg-daemon=, not =Type=forking= + =--daemon=. The forking variant hangs when init spawns subprocesses (exec-path-from-shell, hunspell) that inherit the parent's stdout fd, preventing the parent from exiting.
+- =--fg-daemon= does not auto-start the server at a custom =server-socket-dir=, so the explicit =(server-start)= in Load First is required.
+- If the daemon hangs on startup, clear =~/.cache/org-persist/=. A bloated org-element cache can block the event loop for longer than systemd's timeout (2026-03-16 incident). The =org-element-cache-persistent= guard in Load First prevents recurrence.
 **** Undo
 - https://github.com/casouri/vundo
 
@@ -1159,6 +1163,19 @@ active process."
 
 #+end_src
 - https://www.youtube.com/watch?app=desktop&v=D3FzMPZm7vY&ab_channel=DistroTube
+
+**** Tangle convention: =emacs/= subdirectory per repo
+
+Project-specific elisp lives in org-babel blocks in the project's =.org= file and tangles to an =emacs/= subdirectory within that repo. This keeps literate source in =.org= and runnable output in a predictable location. Examples:
+
+| Repo  | Org source    | Tangle target                                 |
+|-------+---------------+-----------------------------------------------|
+| org   | =work.org=    | =./emacs/work.el=                             |
+| org   | =private.org= | =./emacs/private_config.el=                   |
+| emacs | =emacs.org=   | =./emacs/init.el=, =./emacs/public_config.el= |
+
+When a project has elisp that should load on buffer open or provides helper functions, tangle it to =<repo>/emacs/<name>.el= rather than embedding it inline in the org file's local variables.
+
 *** Completion frameworks
 :PROPERTIES:
 :ID:       b67dea45-0f1c-44b7-a76d-efc6dd1f2a75
@@ -3303,6 +3320,9 @@ graph TD
 :header-args: :tangle ./emacs/init.el
 :END:
 [[file:emacs/init.el]]
+
+At startup, =init.el= auto-loads every =.el= file in =~/.emacs.d/config/=. Config files from multiple repos are symlinked into that directory by Ansible (see =private_symlinks= in [[id:63588E4D-5517-4E75-950C-2E444F65D4AD][private.org]]). To add a new config file, tangle it into its repo's =emacs/= directory and ensure Ansible creates the symlink — no changes to =init.el= needed.
+
 #+begin_src emacs-lisp
 ;;-*- mode: elisp -*-
 
@@ -3389,6 +3409,14 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 
 ;; Puts bib.bib into loaded buffers
 (find-file-noselect "~/repos/org/bib.bib")
+
+#+end_src
+
+#+begin_src emacs-lisp
+;; Disable persistent org-element cache in daemon mode to prevent
+;; bloated cache from blocking startup and starving the event loop
+(when (daemonp)
+  (setq org-element-cache-persistent nil))
 
 #+end_src
 
@@ -3486,7 +3514,7 @@ Code that needs to be tangled both here and into custom inits for batch export
 ;
 ; Fringe- Set finge color to background
 ;https://emacs.stackexchange.com/a/31944/11502
-(set-face-attribute 'fringe nil :background nil)
+(set-face-attribute 'fringe nil :background 'unspecified)
 
 ; ---   Lines   --- ;
 ; ----------------- ;
@@ -4954,11 +4982,6 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 - [X] Test
   - [X] Test 2
   - [X] test 3
-***** Ideas
-****** Default reset check boxes
-https://chatgpt.com/c/67069939-5e04-8005-80b3-7865981a8843
-- currently an edit at point for all properties- NO!
-
 ***** org-sleeper
 
 Emacs idle timer trigger for the org-sleeper autonomous linter. One-shot idle timer fires after 600s of idle, launches the gate script, and a process sentinel re-arms a new timer when the run finishes. The =process-live-p= guard prevents pile-up if the timer fires while a run is active.
@@ -5347,7 +5370,7 @@ https://chat.openai.com/c/75a4844b-df8c-4690-8bf0-3078d341d584
   ;; Bibliography paths
   (org-cite-global-bibliography '("/home/jeszyman/repos/org/bib.bib"))
   (citar-bibliography org-cite-global-bibliography)
-  (citar-library-paths '("~/data/library/"))   ;; PDF storage
+  (citar-library-paths '("~/library/"))   ;; PDF storage
 
   ;; Set citation processors
   (org-cite-insert-processor 'citar)
@@ -5887,13 +5910,6 @@ https://github.com/magnars/expand-region.el
 (use-package htmlize)
 #+end_src
 
-**** Ideas
-:PROPERTIES:
-:header-args:emacs-lisp: :tangle no
-:END:
-https://chatgpt.com/c/8e222105-a52a-4856-80d3-c37823f0efb1
-https://joostkremers.github.io/ebib/
-
 **** ivy
 ***** Use-package
 #+begin_src emacs-lisp
@@ -6021,11 +6037,12 @@ https://www.reddit.com/r/emacs/comments/1mq2hww/why_do_i_find_magit_so_hard_to_u
 Suppress zenuml/core stderr popup on every mermaid eval.
 #+begin_src emacs-lisp
 (defun my/ob-mermaid-suppress-zenuml (orig-fn body params)
-  (cl-letf (((symbol-function 'org-babel-eval)
-             (lambda (cmd &rest args)
-               (apply (symbol-function 'org-babel-eval)
-                      (concat cmd " 2>/dev/null") args))))
-    (funcall orig-fn body params)))
+  (let ((orig-eval (symbol-function 'org-babel-eval)))
+    (cl-letf (((symbol-function 'org-babel-eval)
+               (lambda (cmd &rest args)
+                 (apply orig-eval
+                        (concat cmd " 2>/dev/null") args))))
+      (funcall orig-fn body params))))
 (advice-add 'org-babel-execute:mermaid :around #'my/ob-mermaid-suppress-zenuml)
 ;; (advice-remove 'org-babel-execute:mermaid #'my/ob-mermaid-suppress-zenuml)
 #+end_src
@@ -6572,6 +6589,7 @@ https://github.com/joaotavora/yasnippet/issues/998
 :PROPERTIES:
 :ID:       0e00557e-a0a4-460f-8941-555e11ee2d88
 :END:
+[[id:d536d279-9088-4ade-ba9d-7bd5b516f668][Claude build ideas]]
 - In CLAUDE.md / MEMORY.md, reference org positions by heading name (e.g. "Org Item Structures"), not line number or level stars. Heading names are stable across edits and level changes; line numbers go stale instantly.
 - Do not pre-build static directory trees or file maps for Claude's benefit — CLAUDE.md + MEMORY.md already cover the files needed for ~90% of tasks, and =ls= / =org_outline= resolve the rest in seconds. Static maps go stale and duplicate discoverable state. Instead, invest in feedback memories for workflow patterns, gotchas, and preferences that can't be derived from the codebase.
 - Keep CLAUDE.md and MEMORY.md lean — all content loads every turn, so bloat costs tokens, speed, and instruction-following quality. Prune stale rules, avoid duplicating guidance across both files, and push detail into linked topic files that are fetched on demand.
@@ -6748,10 +6766,6 @@ Interactive UI tools available inside skills (deferred — fetched via =ToolSear
 - *CronCreate* — scheduled recurring prompts (session-only, 3-day auto-expire)
 - *NotebookEdit* — Jupyter notebook cell editing (code/markdown)
 - *skill-creator* plugin skill — create, modify, and eval-test skills. Invoke with =Skill("skill-creator:skill-creator")=.
-
-****** Skill ideas
-
-- Refactor and annotate: apply project style guides
 
 ****** Skill design patterns                                         :nohelm:
 
@@ -6972,17 +6986,17 @@ to handle position shifts. Saves the buffer on success."
            (goto-char (point-min))
            (re-search-forward (funcall heading-re target-heading) nil t)
            (beginning-of-line)
-         (let ((target-level (org-current-level)))
-           (org-end-of-subtree t)
-           (unless (bolp) (newline))
-           (if as-sibling
-               (org-paste-subtree target-level)
-             (org-paste-subtree (1+ target-level))))
-         (save-buffer)
-         (format "Moved '%s' %s '%s'"
-                 source-heading
-                 (if as-sibling "after" "under")
-                 target-heading))))))
+           (let ((target-level (org-current-level)))
+             (org-end-of-subtree t)
+             (unless (bolp) (newline))
+             (if as-sibling
+                 (org-paste-subtree target-level)
+               (org-paste-subtree (1+ target-level))))
+           (save-buffer)
+           (format "Moved '%s' %s '%s'"
+                   source-heading
+                   (if as-sibling "after" "under")
+                   target-heading)))))))
 #+end_src
 
 #+begin_src emacs-lisp
@@ -7053,11 +7067,6 @@ to handle position shifts. Saves the buffer on success."
 #+end_src
 
 - Development: add a =claude-code-ide-org-subtree-by-tag= tool — retrieve full subtree content for all headings matching a given tag, using =org-map-entries= with a tag matcher. Current =org_ql_query= returns heading titles only; this tool would return full content per match. Needed so Claude can do tag-based module lookup without falling back to emacsclient.
-***** Ideas                                                          :nohelm:
-- Batch refactor burn at end of week credits
-- Agents for reformatting / linting
-- [[https://github.com/xleddyl/claude-watch][claude-watch]]
-- Pre-mortem mode for devils-advocate: blind agent assumes the proposition already failed and explains why (Gary Klein). Flag on =/devils-advocate= or separate =/pre-mortem= skill.
 ***** Reference                                                      :nohelm:
 - [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]
 - Comprehensive guides
@@ -7401,266 +7410,41 @@ needs an install?
 - https://github.com/a-schaefers/grokEmacs
 - https://lambdaland.org/posts/2025-07-15_bedrock_release/
   - https://lambdaland.org/posts/2024-12-14_emacs_catchup/
-** Ideas
-- TODO Establish commenting conventions for Claude code output — when to comment, how verbose, especially for tangled .el files read independently of org source. Initial discussion in 2026-03-14 session (minimal-emacs.d review). Feedback memory saved.
-- https://www.reddit.com/r/emacs/comments/1c4yeme/announcing_shannonmax_analyze_your_keybindings/
-*** Indirect buffer absolute line numbers in mode line
-Show true (absolute) line numbers from the parent buffer in the mode line of an indirect buffer, not the narrowed-relative numbers. Approaches tried:
-- =make-indirect-buffer= advice (=:filter-return=, =:after=) — timing conflicts with =org-tree-to-indirect-buffer= which reads =mode-line-format= as a buffer identifier mid-execution; stale =org-last-indirect-buffer= caused persistent breakage after advice removal
-- =setq-default mode-line-format= with conditional =(:eval (when (buffer-base-buffer) ...))= — indirect buffers inherit base buffer's local =mode-line-format= via clone, bypassing the default
-- Deferred timer via =run-at-time 0= after =make-indirect-buffer= — did not apply
-- Simplest fallback available now: =M-x what-line= reports absolute line on demand (ignores narrowing)
-*** dwim
-- https://www.reddit.com/r/emacs/comments/1qpkbv6/post_your_favorite_dwim_commands_packages_or_own/
-- DWIM commands examine context and adapt behavior, reducing cognitive load from multiple bindings. One keybinding handles multiple related actions based on point location, region state, or buffer context.
-- Canonical examples: =comment-dwim= (M-;) comments/uncomments/aligns based on context; =org-ctrl-c-ctrl-c= executes source blocks, toggles checkboxes, recalculates tables; =dired-dwim-target= guesses copy/move destination from other dired window
-- Useful when: collapsing region vs no-region variants into single binding, smart defaults that save typing, genuinely context-dependent operations
-- References: [[https://github.com/xenodium/dwim-shell-command][dwim-shell-command]] (xenodium), [[https://www.emacswiki.org/emacs/DoWhatIMean][EmacsWiki: DoWhatIMean]]Want to be notified when Claude responds?Notify Opus 4.5Claude is AI and can make mistakes. Please double-check responses.
-*** org-edna
+** Ideas                                                              :ideas:
 :PROPERTIES:
-:ID:       2acfefa2-2fd1-465f-8c79-d14160de0284
+:ID:       C3586683-6101-4AA1-B9E9-964EE587FBAE
 :END:
-blockers and counters are not respected in orgzly
-https://chatgpt.com/c/673a1bcb-dbe0-8005-b289-3292f7066d63
-https://www.nongnu.org/org-edna-el/
-- id syntax- can be a linker with [[id: , but cannot have a name like [[ ][
-#+begin_src emacs-lisp
-(use-package org-edna
-  :ensure t
-  :config
-  (org-edna-mode 1))
-#+end_src
-
-
-
-
-*** [[file:~/repos/org/private.org::*Abbreviations][abbrev mode — in private.org]]
-*** Display inline pdf image in orgmode
-:PROPERTIES:
-:ID:       14ea79f5-5ffe-4ced-ba91-e84c2d5bcb84
-:END:
-[2025-07-31 Thu] Possible but really slows down emacs. Stick to SVG for now.
-  #+begin_src emacs-lisp
-;; Enable PDF display using pdf-tools
-;(pdf-tools-install)
-;(setq org-file-apps (quote ((auto-mode . emacs)
-;                            ("\\.pdf\\'" . "emacsclient -n %s"))))
-
-(add-to-list 'image-type-file-name-regexps '("\\.pdf\\'" . imagemagick))
-(add-to-list 'image-file-name-extensions "pdf")
-(setq imagemagick-types-inhibit (remove 'PDF imagemagick-types-inhibit))
-(setq org-image-actual-width 600)
-
-
-#+end_src
-*** Minor annoyances
-- switch-to-buffer Agenda as normal buffer file
-*** Not organized
-- https://www.reddit.com/r/emacs/comments/1og34ko/configuring_displaybufferalist_is_absolutely/
-
-
-#+begin_src emacs-lisp
-(defun pulse-line (&rest _)
-      "Pulse the current line."
-      (pulse-momentary-highlight-one-line (point)))
-
-(dolist (command '(scroll-up-command scroll-down-command
-                   recenter-top-bottom other-window))
-  (advice-add command :after #'pulse-line))
-#+end_src
-show with C-l
-- https://www.reddit.com/r/orgmode/comments/1ojnrq1/i_figured_it_out_text_highlighting/
-- https://github.com/SenkiReign/org-grapher?tab=readme-ov-file
-
-#+begin_src emacs-lisp
-;; ditaa setup
-(setq org-ditaa-jar-path "/usr/share/ditaa/ditaa.jar")  ; adjust if different
-(org-babel-do-load-languages
- 'org-babel-load-languages
- '((ditaa . t)))  ; enable ditaa
-
-;; sanity check (M-: to eval)
-(file-exists-p org-ditaa-jar-path)  ;; => t
-
-#+end_src
-
-#+begin_src ditaa :file /tmp/some_filename.png :cmdline -r -s 0.8
-    +-----------+        +---------+
-    |    PLC    |        |         |
-    |  Network  +<------>+   PLC   +<---=---------+
-    |    cRED   |        |  c707   |              |
-    +-----------+        +----+----+              |
-                              ^                   |
-                              |                   |
-                              |  +----------------|-----------------+
-                              |  |                |                 |
-                              v  v                v                 v
-      +----------+       +----+--+--+      +-------+---+      +-----+-----+       Windows clients
-      |          |       |          |      |           |      |           |      +----+      +----+
-      | Database +<----->+  Shared  +<---->+ Executive +<-=-->+ Operator  +<---->|cYEL| . . .|cYEL|
-      |   c707   |       |  Memory  |      |   c707    |      | Server    |      |    |      |    |
-      +--+----+--+       |{d} cGRE  |      +------+----+      |   c707    |      +----+      +----+
-         ^    ^          +----------+             ^           +-------+---+
-         |    |                                   |
-         |    +--------=--------------------------+
-         v#+ATTR_ORG: :width 300
-
-+--------+--------+
-|                 |
-| illwide System  |            -------- Data ---------
-| cBLU            |            --=----- Signals ---=--
-+-----------------+
-
-					       +-------------------+
-		    +---------------+	       |                   |
-		    |		    |	       |              	   |
-		    |         TES   |<-------->|              	   |
-		    |          	    |	       |  c707       	   |
-		    |          	    |	       |       	      	   |
-		    +---------------+	       +-------------------+
-
-
-
-
-
-
-#+end_src
-
-#+ATTR_ORG: :width 800
-[[file:/tmp/some_filename.png]]
-
-
-#+begin_src bash
-
-cw${1:$(let ((text (or yas-selected-text ""))
-             (fill-column 78)) ; 80 - 2 for "# "
-        (if (> (length text) 0)
-            (with-temp-buffer
-              (insert text)
-              (goto-char (point-min))
-              (while (not (eobp))
-                (beginning-of-line)
-                (insert "# ")
-                (end-of-line)
-                (when (> (current-column) 80)
-                  (move-to-column 78)
-                  (when (not (looking-at "\s-"))
-                    (backward-word))
-$(
-let* ((txt (or yas-selected-text
-               (buffer-substring-no-properties (region-beginning) (region-end))))
-       (fill-column 80))
-  (with-temp-buffer
-$(
-let* ((txt (or yas-selected-text
-               (buffer-substring-no-properties (region-beginning) (region-end))))
-       (fill-column 80))
-  (with-temp-buffer
-    (insert txt)
-    (goto-char (point-min))
-    (fill-region (point-min) (point-max))
-    (goto-char (point-min))
-    (let ((out '()))
-      (while (not (eobp))
-        (push (concat "# " (buffer-substring (line-beginning-position)
-                                             (line-end-position)))
-              out)
-        (forward-line 1))
-      (mapconcat #'identity (nreverse out) "\n"))))
-      (mapconcat #'identity (nreverse out) "\n"))))
-
-
-
-##########1##########2##########3##########4##########5##########6##########7##########8
-
-
-# The quick brown fox jumps over the lazy dog. The quick brown fox jumps over
-# the lazy dog. The quick brown fox jumps over the lazy dog.
-
-
-# The quick brown fox jumps over the lazy dog. The quick brown fox jumps over
-# the lazy dog. The quick brown fox jumps over the lazy dog.The quick brown fox
-# jumps over the lazy dog.The quick brown fox jumps over the lazy dog.The quick
-# brown fox jumps over the lazy dog.The quick brown fox jumps over the lazy
-# dog.The quick brown fox jumps over the lazy dog.The quick brown fox jumps over
-# the lazy dog.The quick brown fox jumps over the lazy dog.The quick brown fox
-# jumps over the lazy dog.The quick brown fox jumps over the lazy dog.The quick
-# brown fox jumps over the lazy dog.The quick brown fox jumps over the lazy
-# dog.The quick brown fox jumps over the lazy dog.The quick brown fox jumps over
-# the lazy dog.The quick brown fox jumps over the lazy dog.The quick brown fox
-# jumps over the lazy dog.The quick brown fox jumps over the lazy dog.The quick
-# brown fox jumps over the lazy dog.The quick brown fox jumps over the lazy
-# dog.The quick brown fox jumps over the lazy dog.The quick brown fox jumps over
-# the lazy dog.The quick brown fox jumps over the lazy dog.The quick brown fox
-# jumps over the lazy dog.The quick brown fox jumps over the lazy dog.The quick
-# brown fox jumps over the lazy dog.The quick brown fox jumps over the lazy
-# dog.The quick brown fox jumps over the lazy dog.The quick brown fox jumps over
-# the lazy dog.The quick brown fox jumps over the lazy dog.The quick brown fox
-# jumps over the lazy dog.The quick brown fox jumps over the lazy dog.The quick
-# brown fox jumps over the lazy dog.The quick brown fox jumps over the lazy
-# dog.The quick brown fox jumps over the lazy dog.The quick brown fox jumps over
-# the lazy dog.The quick brown fox jumps over the lazy dog.The quick brown fox
-# jumps over the lazy dog.The quick brown fox jumps over the lazy dog.The quick
-# brown fox jumps over the lazy dog.The quick brown fox jumps over the lazy
-# dog.The quick brown fox jumps over the lazy dog.The quick brown fox jumps over
-# the lazy dog.The quick brown fox jumps over the lazy dog.The quick brown fox
-# jumps over the lazy dog.The quick brown fox jumps over the lazy dog.
-#+end_src
-#+begin_src emacs-lisp
-(setq yas-wrap-around-region nil)
-#+end_src
-
+- - [[id:d536d279-9088-4ade-ba9d-7bd5b516f668][Claude build ideas]]
+- [[https://www.reddit.com/r/emacs/comments/1c4yeme/announcing_shannonmax_analyze_your_keybindings/][shannonmax — analyze your keybindings]]
+- Default reset check boxes — [[https://chatgpt.com/c/67069939-5e04-8005-80b3-7865981a8843][ChatGPT discussion]]; currently an edit at point for all properties — NO! (from [[id:de8f6607-db62-449f-bf57-02221bff0da5][Checkboxes]])
+- Minor annoyance: switch-to-buffer Agenda as normal buffer file
+- Dired enhancement: [[https://github.com/alexluigit/dirvish][dirvish]]
+- =(org-link-open-buffer)= — custom org link type to switch buffers
+- =(run-gnome-ctrl)= — launch gnome-control-center from Emacs via =start-process=
 - Key chords to test
+- [[https://www.reddit.com/r/emacs/comments/1n24uuj/simple_themes_in_emacs/][simple themes in Emacs]]
+- Toggle inline images for links with a description — nothing works so far
+- [[https://www.reddit.com/r/emacs/comments/1ltp2j0/announcing_flyover_modern_aesthetic_overlay_for/][flyover — modern aesthetic overlay]]
+- [[https://www.reddit.com/r/orgmode/comments/1ojnrq1/i_figured_it_out_text_highlighting/][org-mode text highlighting]]
+- [[https://github.com/SenkiReign/org-grapher][org-grapher]]
+- [[https://www.reddit.com/r/emacs/comments/1og34ko/configuring_displaybufferalist_is_absolutely/][configuring display-buffer-alist]]
+- Pulse line on scroll/recenter/other-window (=pulse-momentary-highlight-one-line=, show with C-l)
+- [[https://github.com/ndwarshuis/org-ml][org-ml]] — functional org-mode API
+- Custom transient menu — see [[https://github.com/karthink/calc-transient][calc-transient]] for example
 
-- https://www.reddit.com/r/emacs/comments/1n24uuj/simple_themes_in_emacs/
-- toggle inline images for links with a description- nothing works so far
-  - https://gemini.google.com/app/35e7f90985a3cabc?is_sa=1&is_sa=1&android-min-version=301356232&ios-min-version=322.0&campaign_id=bkws&pt=9008&mt=8&ct=p-growth-sem-bkws&pli=1
-- https://www.reddit.com/r/emacs/comments/1ltp2j0/announcing_flyover_modern_aesthetic_overlay_for/
-- org-ml
-  - https://github.com/ndwarshuis/org-ml
-  - https://chatgpt.com/c/68161d6a-d2ac-8005-a32a-d4534636db42
+*** Packages to evaluate
+**** ebib
+:PROPERTIES:
+:ID:       5C67E7A5-1F4A-4CAD-83E7-DE6C34C76E36
+:END:
+- [[https://chatgpt.com/c/8e222105-a52a-4856-80d3-c37823f0efb1][ebib bibliography manager discussion]]
+- [[https://joostkremers.github.io/ebib/][ebib docs]]
+(from [[id:28ed3017-eedb-4a6c-94e5-f477353170c8][Package configuration]])
 
-- make a custom transient menu https://github.com/karthink/calc-transient/blob/master/calc-transient.el
-#+begin_src emacs-lisp
-  ;; (defun my/load-startup-files ()
-  ;;   "Load specified files into buffers at startup."
-  ;;   (find-file-noselect "~/repos/org/bib.bib")
-
-  ;;   ;; Load all .org files in ~/repos/ and its immediate subdirectories
-  ;;   (dolist (dir (directory-files "~/repos/" t "\\`[^.]"))
-  ;;     (let ((org-files (directory-files dir t "\\.org\\'")))
-  ;;       (dolist (file org-files)
-  ;;         (find-file-noselect file))))
-
-  ;;   ;; Add any additional files you want to load on startup below
-  ;;   ;;(find-file-noselect "/path/to/another/file")
-  ;; )
-
-  ;; (add-hook 'after-init-hook 'my/load-startup-files)
-
-#+end_src
-- Org asking confirm on tangle to files?
-  #+begin_src emacs-lisp
-(defun my/ob-tangle-auto-yes-write-protected (orig &rest args)
-  "Auto-confirm overwriting write-protected files during tangling."
-  (cl-letf* (((symbol-function 'yes-or-no-p)
-              (lambda (p)
-                (if (string-match-p "write-protected; try to save anyway\\?" p)
-                    t
-                  (funcall (symbol-function 'yes-or-no-p) p))))
-             ((symbol-function 'y-or-n-p)
-              (lambda (p)
-                (if (string-match-p "write-protected; try to save anyway\\?" p)
-                    t
-                  (funcall (symbol-function 'y-or-n-p) p)))))
-    (apply orig args)))
-
-(advice-add 'org-babel-tangle :around #'my/ob-tangle-auto-yes-write-protected)
-
-#+end_src
-- supertag https://github.com/yibie/org-supertag
-
-*** Jinx spelling
+**** Jinx spelling
+:PROPERTIES:
+:ID:       F54E09A9-D7EC-450C-A96A-9BA218CEBBD9
+:END:
 https://github.com/minad/jinx
 #+begin_src emacs-lisp
 (use-package jinx
@@ -7669,24 +7453,241 @@ https://github.com/minad/jinx
 	 ))
 #+end_src
 
-*** Strip properties on tangle with org comments
+**** org-edna
+:PROPERTIES:
+:ID:       2acfefa2-2fd1-465f-8c79-d14160de0284
+:END:
+blockers and counters are not respected in orgzly
+- [[https://chatgpt.com/c/673a1bcb-dbe0-8005-b289-3292f7066d63][org-edna setup and orgzly compatibility discussion]]
+- [[https://www.nongnu.org/org-edna-el/][org-edna documentation]]
+- id syntax- can be a linker with [[id: , but cannot have a name like [[ ][
 #+begin_src emacs-lisp
-(defun strip-org-properties-comments ()
-  "Remove ;; :PROPERTIES: drawers and collapse blank lines in tangled config."
-  (interactive)
-  (when (and buffer-file-name
-             (string-match-p "public_config\\.el\\'" buffer-file-name))
-    (message "Running cleanup on: %s" buffer-file-name)
-    (goto-char (point-min))
-    ;; Remove PROPERTIES drawers
-    (while (re-search-forward "^;; :PROPERTIES:\\(?:.\\|\n\\)*?^;; :END:\n" nil t)
-      (replace-match ""))
-    ;; Collapse multiple blank lines
-    (goto-char (point-min))
-    (while (re-search-forward "\n\\{3,\\}" nil t)
-      (replace-match "\n\n"))
-    (message "Cleanup complete for: %s" buffer-file-name)))
+(use-package org-edna
+  :ensure t
+  :config
+  (org-edna-mode 1))
+#+end_src
 
+**** plantuml
+:PROPERTIES:
+:ID:       7A28100E-8B01-4946-A317-3A6C5919E957
+:END:
+#+begin_src emacs-lisp
+(use-package ob-plantuml
+  :after org
+  :config
+  ;; Point this to your plantuml.jar
+  (setq org-plantuml-jar-path "/usr/share/plantuml/plantuml.jar")
+  ;; Or if you have the plantuml executable
+  ;; (setq org-plantuml-exec-mode 'plantuml)
+  )
+
+;; enable plantuml without dropping existing langs
+(add-to-list 'org-babel-load-languages '(plantuml . t))
+
+(org-babel-do-load-languages
+ 'org-babel-load-languages
+ org-babel-load-languages)
+
+#+end_src
+
+**** improved org tables
+:PROPERTIES:
+:ID:       78A550F7-335D-43A6-9274-66A44910A772
+:END:
+- https://github.com/yibie/grid-table
+- org-supertag table view
+  - https://www.reddit.com/r/orgmode/comments/1mim7oe/update_orgsupertag_table_view_now_support/
+  - https://github.com/yibie/org-supertag
+
+**** org-web-tools
+:PROPERTIES:
+:ID:       c968788a-5931-4941-9111-56db279d1494
+:END:
+https://github.com/alphapapa/org-web-tools
+
+**** [[https://github.com/yibie/org-supertag][org-supertag]]
+
+**** Evil
+:PROPERTIES:
+:ID:       1a23bec3-19e2-4340-b16f-ece6abd9c9e0
+:END:
+- https://stackoverflow.com/questions/8483182/evil-mode-best-practice?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+cite:fisher2011
+#+begin_src emacs-lisp
+;;(require 'evil)
+;;(evil-mode 1)
+;;(setq evil-default-state 'emacs) ;; changes default state to emacs
+#+end_src
+https://github.com/emacs-evil/evil
+
+**** Embark
+:PROPERTIES:
+:ID:       43BD91F1-1328-467D-B67E-B095A7F4B601
+:END:
+- https://github.com/oantolin/embark
+- https://github.com/kickingvegas/casual
+- http://yummymelon.com/devnull/announcing-casual-avy.html
+#+begin_src emacs-lisp
+(use-package marginalia
+  :ensure t
+  :config
+  (marginalia-mode))
+
+(use-package embark
+  :ensure t
+
+  :bind
+  (("C-." . embark-act)         ;; pick some comfortable binding
+   ("C-;" . embark-dwim)        ;; good alternative: M-.
+   ("C-h B" . embark-bindings) ;; alternative for `describe-bindings'
+   (:map org-mode-map ;; Override org-mode specific binding
+         ("C-;" . embark-dwim)
+	 ("C-." . embark-act)
+   ))
+
+  :init
+
+  ;; Optionally replace the key help with a completing-read interface
+  (setq prefix-help-command #'embark-prefix-help-command)
+
+  ;; Show the Embark target at point via Eldoc. You may adjust the
+  ;; Eldoc strategy, if you want to see the documentation from
+  ;; multiple providers. Beware that using this can be a little
+  ;; jarring since the message shown in the minibuffer can be more
+  ;; than one line, causing the modeline to move up and down:
+
+  ;; (add-hook 'eldoc-documentation-functions #'embark-eldoc-first-target)
+  ;; (setq eldoc-documentation-strategy #'eldoc-documentation-compose-eagerly)
+
+  :config
+
+  ;; Hide the mode line of the Embark live/completions buffers
+  (add-to-list 'display-buffer-alist
+               '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
+                 nil
+                 (window-parameters (mode-line-format . none)))))
+
+;; Consult users will also want the embark-consult package.
+(use-package embark-consult
+  :ensure t ; only need to install it, embark loads it after consult if found
+  :hook
+  (embark-collect-mode . consult-preview-at-point-mode))
+#+end_src
+
+**** Casual / transient
+:PROPERTIES:
+:ID:       761722B1-E48A-4A76-BF54-C007D9019F0D
+:END:
+https://www.reddit.com/r/emacs/comments/1qnqgto/alternative_transient_documentation/
+#+begin_src emacs-lisp
+(use-package casual
+  :ensure t
+  :config
+  ;; Additional configuration here
+)
+
+;(use-package casual-agenda)
+#+end_src
+
+#+begin_src emacs-lisp
+(require 'transient)
+
+(defun casual-bibtex-open-url ()
+  "Open the URL or DOI in the BibTeX entry at point."
+  (interactive)
+  (let ((url (bibtex-autokey-get-field "url")))
+    (if url
+        (browse-url url)
+      (message "No URL found in this entry."))))
+
+(defun casual-bibtex-copy-key ()
+  "Copy the citation key of the current BibTeX entry to the clipboard."
+  (interactive)
+  (let ((key (bibtex-autokey-get-field "key")))
+    (if key
+        (progn
+          (kill-new key)
+          (message "Copied citation key: %s" key))
+      (message "No citation key found in this entry."))))
+
+(defun casual-bibtex-check-duplicates ()
+  "Check for duplicate BibTeX entries in the buffer."
+  (interactive)
+  (bibtex-check-duplicates))
+
+(transient-define-prefix casual-bibtex-menu ()
+  "Casual menu for BibTeX."
+  [["Actions"
+    ("o" "Open URL" casual-bibtex-open-url)
+    ("c" "Copy Citation Key" casual-bibtex-copy-key)
+    ("d" "Check Duplicates" casual-bibtex-check-duplicates)
+    ("s" "Sort Entries" bibtex-sort-buffer)
+    ("v" "Validate Buffer" bibtex-validate)]])
+
+#+end_src
+
+**** [[file:~/repos/org/private.org::*Abbreviations][abbrev mode — in private.org]]
+
+*** Emacs behavior improvements
+**** Indirect buffer absolute line numbers in mode line
+:PROPERTIES:
+:ID:       CB4C1E72-2FBE-42BC-B963-858BA01EC699
+:END:
+Show true (absolute) line numbers from the parent buffer in the mode line of an indirect buffer, not the narrowed-relative numbers. Approaches tried:
+- =make-indirect-buffer= advice (=:filter-return=, =:after=) — timing conflicts with =org-tree-to-indirect-buffer= which reads =mode-line-format= as a buffer identifier mid-execution; stale =org-last-indirect-buffer= caused persistent breakage after advice removal
+- =setq-default mode-line-format= with conditional =(:eval (when (buffer-base-buffer) ...))= — indirect buffers inherit base buffer's local =mode-line-format= via clone, bypassing the default
+- Deferred timer via =run-at-time 0= after =make-indirect-buffer= — did not apply
+- Simplest fallback available now: =M-x what-line= reports absolute line on demand (ignores narrowing)
+
+**** dwim
+:PROPERTIES:
+:ID:       0F46CB2A-3A5B-4A55-A822-5C4B05D9096F
+:END:
+- https://www.reddit.com/r/emacs/comments/1qpkbv6/post_your_favorite_dwim_commands_packages_or_own/
+- DWIM commands examine context and adapt behavior, reducing cognitive load from multiple bindings. One keybinding handles multiple related actions based on point location, region state, or buffer context.
+- Canonical examples: =comment-dwim= (M-;) comments/uncomments/aligns based on context; =org-ctrl-c-ctrl-c= executes source blocks, toggles checkboxes, recalculates tables; =dired-dwim-target= guesses copy/move destination from other dired window
+- Useful when: collapsing region vs no-region variants into single binding, smart defaults that save typing, genuinely context-dependent operations
+- References: [[https://github.com/xenodium/dwim-shell-command][dwim-shell-command]] (xenodium), [[https://www.emacswiki.org/emacs/DoWhatIMean][EmacsWiki: DoWhatIMean]]
+
+**** Paste without line breaks
+:PROPERTIES:
+:ID:       29C2D7F1-A40B-4D98-9F42-1D31A4A1684D
+:END:
+#+begin_src emacs-lisp
+(defun paste-without-line-breaks ()
+  "Paste the clipboard content without line breaks."
+  (interactive)
+  (let ((clipboard-content (current-kill 0)))
+    (insert (replace-regexp-in-string "\n" " " clipboard-content))))
+
+;; Bind to C-c v (you can change this to any key combination you prefer)
+(global-set-key (kbd "C-c v") 'paste-without-line-breaks)
+#+end_src
+- [[https://claude.ai/chat/5c14d313-143c-4cd9-882a-0d59aa67c09e][paste-without-line-breaks implementation discussion]]
+- [[https://chatgpt.com/c/66f70956-8184-8005-b6ff-6c77e19ddcde][paste-without-line-breaks design]]
+
+**** prog-mode prettify symbols
+:PROPERTIES:
+:ID:       088CAF28-14B9-4A23-9151-9DD59E538E5A
+:END:
+#+begin_src emacs-lisp
+
+(setq-default prettify-symbols-alist '(
+                                       ("DONE"  ?✔)
+                                       ))
+(setq prettify-symbols-unprettify-at-point 'right-edge)
+(add-hook 'org-mode-hook 'prettify-symbols-mode)
+(global-prettify-symbols-mode t)
+
+#+end_src
+
+*** Tangle and export
+**** Strip properties on tangle with org comments
+:PROPERTIES:
+:ID:       ABA4F5C4-A955-4431-B8F0-4EEF159335AD
+:END:
+#+begin_src emacs-lisp
 (defun strip-org-properties-comments ()
   "Remove `;; :PROPERTIES:` drawers and collapse blank lines in tangled config."
   (interactive)
@@ -7721,80 +7722,31 @@ https://github.com/minad/jinx
               (add-hook 'before-save-hook #'strip-org-properties-comments nil 'local))))
 #+end_src
 
-*** plantuml
-#+begin_src emacs-lisp
-(use-package ob-plantuml
-  :after org
-  :config
-  ;; Point this to your plantuml.jar
-  (setq org-plantuml-jar-path "/usr/share/plantuml/plantuml.jar")
-  ;; Or if you have the plantuml executable
-  ;; (setq org-plantuml-exec-mode 'plantuml)
-  )
-
-;; enable plantuml without dropping existing langs
-(add-to-list 'org-babel-load-languages '(plantuml . t))
-
-(org-babel-do-load-languages
- 'org-babel-load-languages
- org-babel-load-languages)
-
-#+end_src
-
-*** Dired enhancement
-- https://github.com/alexluigit/dirvish
-
-*** improved org tables
-- https://github.com/yibie/grid-table
-- org-supertag table view
-  - https://www.reddit.com/r/orgmode/comments/1mim7oe/update_orgsupertag_table_view_now_support/
-  - https://github.com/yibie/org-supertag
-*** prog-mode
-#+begin_src emacs-lisp
-
-(setq-default prettify-symbols-alist '(
-                                       ("DONE"  ?✔)
-                                       ))
-(setq prettify-symbols-unprettify-at-point 'right-edge)
-(add-hook 'org-mode-hook 'prettify-symbols-mode)
-(global-prettify-symbols-mode t)
-
-#+end_src
-*** org-web-tools
+**** Display inline pdf image in orgmode
 :PROPERTIES:
-:ID:       c968788a-5931-4941-9111-56db279d1494
+:ID:       14ea79f5-5ffe-4ced-ba91-e84c2d5bcb84
 :END:
-https://github.com/alphapapa/org-web-tools
+[2025-07-31 Thu] Possible but really slows down emacs. Stick to SVG for now.
+  #+begin_src emacs-lisp
+;; Enable PDF display using pdf-tools
+;(pdf-tools-install)
+;(setq org-file-apps (quote ((auto-mode . emacs)
+;                            ("\\.pdf\\'" . "emacsclient -n %s"))))
 
-*** Evil
+(add-to-list 'image-type-file-name-regexps '("\\.pdf\\'" . imagemagick))
+(add-to-list 'image-file-name-extensions "pdf")
+(setq imagemagick-types-inhibit (remove 'PDF imagemagick-types-inhibit))
+(setq org-image-actual-width 600)
+
+
+#+end_src
+- ditaa setup for org-babel diagrams
+- Auto-confirm tangle to write-protected files (=advice-add 'org-babel-tangle=)
+
+*** ESS R buffer in separate frame
 :PROPERTIES:
-:ID:       1a23bec3-19e2-4340-b16f-ece6abd9c9e0
+:ID:       3F85E6DC-6FC2-413C-94F3-FC117E6C676D
 :END:
-- https://stackoverflow.com/questions/8483182/evil-mode-best-practice?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
-cite:fisher2011
-#+begin_src emacs-lisp
-;;(require 'evil)
-;;(evil-mode 1)
-;;(setq evil-default-state 'emacs) ;; changes default state to emacs
-#+end_src
-https://github.com/emacs-evil/evil
-
-
-
-*** Paste without line breaks
-#+begin_src emacs-lisp
-(defun paste-without-line-breaks ()
-  "Paste the clipboard content without line breaks."
-  (interactive)
-  (let ((clipboard-content (current-kill 0)))
-    (insert (replace-regexp-in-string "\n" " " clipboard-content))))
-
-;; Bind to C-c v (you can change this to any key combination you prefer)
-(global-set-key (kbd "C-c v") 'paste-without-line-breaks)
-#+end_src
-- https://claude.ai/chat/5c14d313-143c-4cd9-882a-0d59aa67c09e
-- https://chatgpt.com/c/66f70956-8184-8005-b6ff-6c77e19ddcde
-*** System checker
 #+begin_src emacs-lisp
 (defun my-ess-shell-display-buffer-in-new-frame (buffer alist)
   "Display the R shell buffer in a new frame."
@@ -7855,10 +7807,9 @@ https://github.com/emacs-evil/evil
                 (apply orig-fun args))))
 #+end_src
 
+- [[https://claude.ai/chat/fdc4825f-2695-4349-9c6a-b41313905a07][system checker — ESS R buffer in new frame]]
+- [[https://chatgpt.com/c/6722326f-2360-8005-bb87-58ed4372e525][system checker — test buffer and yasnippet diagnostics]]
 
-https://claude.ai/chat/fdc4825f-2695-4349-9c6a-b41313905a07
-
-https://chatgpt.com/c/6722326f-2360-8005-bb87-58ed4372e525
 #+begin_src emacs-lisp
 (defun create-or-update-test-buffer-in-new-frame-and-return ()
   "Create or update a buffer named '*Test Buffer*' in a new frame, insert 'THIS IS A TEST', then return focus to the original buffer."
@@ -7886,473 +7837,4 @@ https://chatgpt.com/c/6722326f-2360-8005-bb87-58ed4372e525
 
 (create-or-update-test-buffer-in-new-frame-and-return)
 
-#+end_src
-
-*** (org-link-open-buffer)
-https://chatgpt.com/c/cc823a5b-e895-4a4e-b4a4-1b1a1f2716bb
-#+begin_src emacs-lisp
-(defun org-link-open-buffer (buffer-name)
-  "Switch to a buffer with BUFFER-NAME."
-  (switch-to-buffer buffer-name))
-
-(org-link-set-parameters "buffer"
-                         :follow (lambda (path) (org-link-open-buffer path)))
-
-#+end_src
-
-*** (run-gnome-ctrl)
-
-#+begin_src emacs-lisp
-(defun run-gnome-ctrl ()
-  "Starts the Gnome Control Center application.
-
-Example usage:
-  (run-gnome-ctrl)"
-
-  (start-process "gnome-control-center"
-		 "*Messages*"
-		 "env"
-		 "XDG_CURRENT_DESKTOP=GNOME"
-		 "gnome-control-center"))
-
-#+end_src
-
-Invoke by org-open-at-point like [[elisp:(run-gnome-ctrl)]]
-*** Embark test
-- https://github.com/oantolin/embark
-- https://github.com/oantolin/embark
-- https://github.com/kickingvegas/casual
-- http://yummymelon.com/devnull/announcing-casual-avy.html
-#+begin_src emacs-lisp
-(use-package marginalia
-  :ensure t
-  :config
-  (marginalia-mode))
-
-(use-package embark
-  :ensure t
-
-  :bind
-  (("C-." . embark-act)         ;; pick some comfortable binding
-   ("C-;" . embark-dwim)        ;; good alternative: M-.
-   ("C-h B" . embark-bindings) ;; alternative for `describe-bindings'
-   (:map org-mode-map ;; Override org-mode specific binding
-         ("C-;" . embark-dwim)
-	 ("C-." . embark-act)
-   ))
-
-  :init
-
-  ;; Optionally replace the key help with a completing-read interface
-  (setq prefix-help-command #'embark-prefix-help-command)
-
-  ;; Show the Embark target at point via Eldoc. You may adjust the
-  ;; Eldoc strategy, if you want to see the documentation from
-  ;; multiple providers. Beware that using this can be a little
-  ;; jarring since the message shown in the minibuffer can be more
-  ;; than one line, causing the modeline to move up and down:
-
-  ;; (add-hook 'eldoc-documentation-functions #'embark-eldoc-first-target)
-  ;; (setq eldoc-documentation-strategy #'eldoc-documentation-compose-eagerly)
-
-  :config
-
-  ;; Hide the mode line of the Embark live/completions buffers
-  (add-to-list 'display-buffer-alist
-               '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
-                 nil
-                 (window-parameters (mode-line-format . none)))))
-
-;; Consult users will also want the embark-consult package.
-(use-package embark-consult
-  :ensure t ; only need to install it, embark loads it after consult if found
-  :hook
-  (embark-collect-mode . consult-preview-at-point-mode))
-#+end_src
-
-https://github.com/oantolin/embark
-*** Casual / transient test
-https://www.reddit.com/r/emacs/comments/1qnqgto/alternative_transient_documentation/
-#+begin_src emacs-lisp
-(use-package casual
-  :ensure t
-  :config
-  ;; Additional configuration here
-)
-
-;(use-package casual-agenda)
-#+end_src
-
-#+begin_src emacs-lisp
-(require 'transient)
-
-(defun casual-bibtex-open-url ()
-  "Open the URL or DOI in the BibTeX entry at point."
-  (interactive)
-  (let ((url (bibtex-autokey-get-field "url")))
-    (if url
-        (browse-url url)
-      (message "No URL found in this entry."))))
-
-(defun casual-bibtex-copy-key ()
-  "Copy the citation key of the current BibTeX entry to the clipboard."
-  (interactive)
-  (let ((key (bibtex-autokey-get-field "key")))
-    (if key
-        (progn
-          (kill-new key)
-          (message "Copied citation key: %s" key))
-      (message "No citation key found in this entry."))))
-
-(defun casual-bibtex-check-duplicates ()
-  "Check for duplicate BibTeX entries in the buffer."
-  (interactive)
-  (bibtex-check-duplicates))
-
-(transient-define-prefix casual-bibtex-menu ()
-  "Casual menu for BibTeX."
-  [["Actions"
-    ("o" "Open URL" casual-bibtex-open-url)
-    ("c" "Copy Citation Key" casual-bibtex-copy-key)
-    ("d" "Check Duplicates" casual-bibtex-check-duplicates)
-    ("s" "Sort Entries" bibtex-sort-buffer)
-    ("v" "Validate Buffer" bibtex-validate)]])
-
-#+end_src
-
-*** can't see a use for this: kirigami.el
-#+begin_src emacs-lisp
-(use-package kirigami
-  :ensure t)
-#+end_src
-
-*** SessionStart hooks for cross-project context injection
-The =cheaply.sh= hook pattern (UserPromptSubmit) works well for injecting context at
-prompt time. Explore more hooks — especially =SessionStart= — for injecting compact
-architecture context automatically on session open without relying on MEMORY.md token
-budget. Candidates:
-- Inject repo architecture card (public/private emacs, ansible layers, module system)
-- Inject machine identity (hostname → which ansible playbooks apply)
-- Conditionally load private org context summary when in a relevant project
-See: =~/.claude/hooks/= for existing examples; =~/.claude/settings.json= for registration.
-*** Moonshot skill
-:PROPERTIES:
-:ID:       94690B7F-FA4D-4E35-B8E5-C19DC83E5D7A
-:END:
-
-Autonomous implementation skill — runs full brainstorm + plan interactively,
-then dispatches a background agent in a worktree.
-
-See [[file:docs/superpowers/specs/2026-03-11-moonshot-design.md][design spec]].
-
-**** TODO [#B] Smoke test moonshot skill with a real feature
-Test in frag repo or another project. Verify full flow: brainstorm → plan → dispatch → results summary.
-
-**** Claude skill                                                    :nohelm:
-
-#+begin_src markdown :tangle ~/.claude/skills/moonshot/SKILL.md :mkdirp yes :comments no
----
-name: moonshot
-description: >
-  Autonomous agent workflow for ambitious implementation attempts. Runs the full
-  brainstorming + write-plans flow, then dispatches a background agent in an
-  isolated git worktree with full permissions. User reviews the result after.
-  Trigger on: "moonshot", "let it rip", "autonomous implementation", or when
-  the user wants to hand off a feature build to run unattended.
-allowed-tools: Read, Bash, Skill, Agent
----
-
-# Moonshot: Autonomous Implementation Skill
-
-You orchestrate a three-phase workflow: design → plan → autonomous execution.
-
-## Phase 1: Design (Interactive)
-
-Invoke the `superpowers:brainstorming` skill. Run the full brainstorming flow:
-- Explore project context
-- Ask clarifying questions (one at a time)
-- Propose 2-3 approaches with recommendation
-- Present design section by section, get approval
-- Write spec doc to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
-- Run spec review loop
-- User reviews spec
-
-Do NOT skip or abbreviate any brainstorming steps. Same rigor as a normal design.
-
-## Phase 2: Plan (Interactive)
-
-Invoke the `superpowers:writing-plans` skill. Run the full planning flow:
-- Write implementation plan with bite-sized tasks
-- Save to `docs/superpowers/plans/YYYY-MM-DD-<topic>-plan.md`
-- Run plan review loop
-- User approves plan
-
-## Phase 3: Dispatch (Autonomous)
-
-Once the plan is approved, transition to autonomous execution:
-
-### Step 3a: Confirm budget and timeout
-
-Ask the user:
-> "Ready to launch the moonshot. Defaults: **$5 budget**, **30 min timeout**. You can change either value or hit enter to use defaults."
-
-Record the user's choices (or defaults).
-
-### Step 3b: Read the spec and plan docs
-
-Read the spec doc and plan doc that were written in Phases 1 and 2.
-Store their full content for inclusion in the agent prompt.
-
-### Step 3c: Assemble the agent prompt
-
-Construct the prompt from three parts:
-
-**Part 1 — System preamble:**
-
-```
-You are executing a moonshot implementation autonomously. Rules:
-
-1. Work best-effort through the plan below. Complete as many steps as you can.
-2. Commit after each major plan task (not every sub-step — after each ### Task).
-3. If a step fails, note what went wrong in a commit message and continue to the next task.
-4. Do not stop to ask questions — make reasonable decisions and document choices in commits.
-5. Only modify files in your current working directory (the worktree). You may read files anywhere on disk for reference.
-6. BUDGET: Do not exceed approximately $<BUDGET> in token usage. If you estimate you are approaching the limit, commit your progress and stop.
-7. TIMEOUT: You have approximately <TIMEOUT> minutes. If you are running long, prioritize committing progress over completing all steps.
-8. After completing the plan (or as much as you can):
-   - Attempt a build/compile if the repo has one (make, npm build, cargo build, etc.)
-   - Run any test suite present in the repo if one exists (make test, npm test, pytest, etc.)
-   - Include build and test results in your final commit message
-9. Your final output message must be a results summary in this format:
-
-## Moonshot Results
-- **Steps completed:** X/Y
-- **Steps skipped/failed:** [list with brief reasons]
-- **Build results:** [pass/fail/N/A]
-- **Test results:** [pass/fail/no tests found]
-- **Key decisions made:** [any judgment calls you made autonomously]
-```
-
-**Part 2 — Spec document** (full content)
-
-**Part 3 — Plan document** (full content)
-
-### Step 3d: Check for branch collision
-
-Before dispatching, check if the target branch name already exists:
-
-```bash
-git branch --list "moonshot/<topic>-<date>"
-```
-
-If it exists, append a counter: `-2`, `-3`, etc. until an unused name is found.
-
-### Step 3e: Dispatch the background agent
-
-Use the Agent tool with these parameters:
-- `description`: "moonshot: <topic>"
-- `prompt`: the assembled prompt from Step 3c
-- `isolation`: "worktree"
-- `run_in_background`: true
-
-After dispatch, capture the agent ID from the tool response.
-
-Print to the user:
-> "Moonshot launched in background. You'll be notified when it completes.
-> Branch: `moonshot/<topic>-<date>`
-> Budget: $X | Timeout: Y min
-> Agent ID: `<id>` (use TaskStop to abort if needed)"
-
-### Step 3f: Handle completion
-
-When the background agent completes and you receive the notification:
-
-1. Print the agent's results summary to the user
-2. **Verify deliverables** — for each file the plan expected to create or modify:
-   - Confirm it exists (Glob/Read in the worktree)
-   - Spot-check that it's non-empty and structurally valid (e.g., YAML frontmatter parses, code isn't truncated mid-function)
-   - If the agent reported failures, check whether partial output is usable
-   - Report verification results: `X/Y deliverables verified, Z issues found`
-3. Run `git diff --stat` against the base branch in the worktree to show files changed
-4. Print cleanup options:
-   > **Next steps:**
-   > - Review: `git log moonshot/<branch>` / `git diff main...moonshot/<branch>`
-   > - Merge: `git merge moonshot/<branch>`
-   > - Discard: `git worktree remove <path> && git branch -D moonshot/<branch>`
-
-## Notes
-
-- The brainstorming and write-plans phases are fully interactive — the user is in the loop
-- Only Phase 3 (execution) runs autonomously in the background
-- If the user wants to abort mid-run, they can use TaskStop with the agent ID
-- The worktree isolates git working directory state but does NOT sandbox shell commands — this is an accepted risk
-#+end_src
-*** Mindjack skill
-:PROPERTIES:
-:ID:       7F3A2B8E-1D4C-4E9A-B6F5-8C2D9E0A3B7F
-:END:
-
-Interactive knowledge integration tutor — Socratic teaching with per-turn knowledgebase scanning and integration.
-
-See [[file:docs/superpowers/specs/2026-03-14-mindjack-design.md][design spec]].
-
-**** Claude skill                                                    :nohelm:
-
-#+begin_src markdown :tangle ~/.claude/skills/mindjack/SKILL.md :mkdirp yes :comments no
----
-name: mindjack
-description: >
-  Interactive knowledge integration tutor. Analyzes a build or topic, prioritizes
-  concepts, then runs a Socratic teaching loop with per-turn org knowledgebase
-  scanning and integration. Trigger on: "mindjack", "teach me what we built",
-  "walk me through this", "help me understand this code/build/system". Works for
-  code, tools, protocols — anything encountered in the context of work. Do NOT
-  trigger for single-answer questions about code behavior — only for multi-turn
-  learning where the user wants to understand a system or build across several concepts.
-allowed-tools: Read, Bash, Edit, Skill, AskUserQuestion
----
-
-# Mindjack: Interactive Knowledge Integration Tutor
-
-You run an interactive Socratic teaching loop. You analyze what the user built or encountered, teach it concept by concept, check understanding, and integrate new knowledge into their org knowledgebase — all in real time.
-
-## Step 1: Detect Entry Point
-
-Determine which mode applies:
-
-### Same session
-The conversation already contains a recent build (substantial tool use, files modified, code written). You have full context.
-- Analyze the conversation for new patterns, tools, design decisions, and terminology introduced
-- No archaeology needed — the context is right here
-
-### Fresh session with target
-The user points at code (file, directory, project) without prior build context.
-- Read the code structure and patterns
-- Hunt for specs/plans in `docs/superpowers/specs/` and `docs/superpowers/plans/`
-- Read recent commit messages: `git log --oneline -20 -- <path>`
-- Check for related org headings via `org_ql_query`
-- Reconstruct the narrative from artifacts
-
-### Non-code topic
-The user names a topic they encountered in the context of work — a tool, a technique, a protocol. No archaeology needed. Proceed directly to concept extraction.
-
-**Scope guard:** Mindjack teaches things the user *built*, *used*, or *encountered in their work*. It is not a general tutoring service. If the topic has no connection to their work, say so and suggest a better approach.
-
-## Step 2: Extract and Prioritize Concepts
-
-Analyze the target and identify teachable concepts. Rank by:
-
-1. **Novelty** — concepts with no coverage in the user's org knowledgebase rank highest. Scan with `org_ql_query` across agenda files.
-2. **Centrality** — concepts that other parts of the build depend on
-3. **Complexity** — teach foundations before things that depend on them
-
-Present the top 3-5 as a numbered menu:
-
-> "Here's what I think matters most from this build:
-> 1. [Concept A] — [one-line why it matters]
-> 2. [Concept B] — [one-line why it matters]
-> 3. [Concept C] — [one-line why it matters]
->
-> Where do you want to start? You can pick a number, reorder, or add something I missed."
-
-Use **AskUserQuestion** to present this menu with the concepts as options.
-
-**Wait for the user to confirm before starting the loop.**
-
-**Fallback:** If you can't extract clear concepts (code is too opaque, not enough context), say so directly: "I can't auto-detect the key concepts here — what should we focus on?"
-
-## Step 3: Core Loop — SCAN → TEACH → CHECK → INTEGRATE → STEER
-
-Run this loop for each concept, one at a time.
-
-### SCAN
-
-**Before teaching, scan the knowledgebase for existing coverage of this concept.** This determines what the user already has and what gaps remain — so teaching targets only the gaps.
-
-1. **Search:** `org_ql_query` across org-agenda-files for headings related to the concept (use 2-3 keyword variations)
-2. **Surface existing:** If related entries exist, fetch them with `org_subtree_by_heading` and review their content
-3. **Assess coverage:** Determine what the user already has documented vs. what's missing or stale
-
-Use this scan to calibrate the TEACH phase:
-- If KB coverage is comprehensive: teach only what's *not* there (nuances, failure modes, connections to the current build)
-- If KB coverage is partial: teach the gaps, referencing what they already have as foundation
-- If KB has nothing: teach from scratch
-- If KB content is stale or inaccurate: flag it and teach the corrected version
-
-**Do not present scan results as a separate step to the user.** Weave the findings naturally into the TEACH phase — e.g., "You already have [X] documented; what's missing is [Y]..." or simply skip well-covered ground and focus on what's new.
-
-### TEACH
-
-Explain the concept clearly, **targeting gaps identified by the SCAN**. Bridge from knowledge the user already has — both from the KB and from their background.
-
-**Calibration — the user is a scientist:**
-- Molecular biology, bioinformatics background
-- CS/software engineering concepts may be 100% foreign
-- Bridge from scientific analogues: experimental design → software design, protocol steps → function composition, reagent swapping → dependency injection, controls → assertions/tests
-- For non-bio work (Emacs config, infrastructure, devops): adapt analogues to the user's actual experience with those tools — don't force biology metaphors
-- Build up, don't talk down — teach missing foundations inline as naturally as teaching a new lab technique. Never signal "you should know this"
-- **Anchor in the code** — always tie abstract concepts back to the specific code being examined. The code is the specimen; the concepts are the observations.
-
-**When a foundation is missing:** If explaining concept A requires understanding concept B that the user doesn't have, pause A immediately. Teach B inline. Then resume A. Never defer: "we'll cover that later." Teach it now.
-
-### CHECK
-
-Verify understanding with a Socratic question. **Calibrate difficulty to the gap** — if the SCAN showed the user already has partial coverage, ask about the new material, not the basics.
-
-Mix these techniques based on what fits the concept:
-
-- **"Explain back"** — "In your own words, what does [concept] do in this code?"
-- **"Why X not Y"** — "Why did we use [approach A] here instead of [approach B]?"
-- **"What if"** — "What would happen if we changed [thing] to [alternative]?"
-
-Use **AskUserQuestion** to pose the check. Provide 2-3 response options plus a free-text option, so the user can pick or type their own answer.
-
-**Recovery paths:**
-- If the user doesn't get it: decompose into smaller pieces. Re-explain from a different angle — don't repeat the same words louder.
-- If the user gives minimal engagement ("yeah I get it" repeatedly with no substance): notice the pattern and ask directly — "Want to skip the checks and just do KB integration, or is the pacing off?" Respect their preference.
-
-### INTEGRATE
-
-After understanding is confirmed, propose KB updates based on what SCAN found.
-
-- **New entries:** If SCAN found no coverage, propose adding the concept under a suggested heading.
-- **Updates to stale entries:** If SCAN found outdated content, propose corrections.
-- **No action needed:** If KB already covers this concept well, say so and move on — don't force an insert.
-
-Present proposals via **AskUserQuestion** with options: Approve / Edit (let me rephrase) / Skip.
-
-For approved inserts: invoke the **org-edit** skill, then insert under the identified heading following org-edit conventions. Keep entries concise — atomic knowledge items, not essays.
-
-**Skips are signal.** When the user skips a KB insert, it means the concept is already internalized — not just "not now." Track what categories of knowledge get skipped (e.g., tangle workflows, org structure). Stop proposing similar inserts for the rest of the session. The user's skips teach you what they already know.
-
-### STEER
-
-After integration, present the next step:
-
-> "That's [concept]. Ready for the next one, or want to go deeper here?"
-
-Use **AskUserQuestion** with options:
-- **Go deeper** — drill into the current concept further
-- **Next: [name of next concept]** — move to next priority
-- **Something else** — redirect to a specific topic (free text)
-- **Done for now** — end the mindjack session
-
-If the user says "I know this" about a concept, skip it and adjust — they may know more than the initial KB scan suggested.
-
-## Session End
-
-When all concepts are covered or the user says done:
-- No summary document produced — the learning happened in dialogue
-- The KB entries are the persistent artifacts
-- Simply end: "That covers what we had. The KB entries we added are the takeaway."
-
-## Key Rules
-
-- **One concept at a time.** Never teach two concepts in one message.
-- **Always confirm the concept list** before starting the loop.
-- **Inline foundations** — never defer prerequisite knowledge.
-- **Scan-first** — always check KB coverage before teaching, so you target gaps not redundancy.
-- **User steers** — they can redirect, skip, go deeper, or stop at any point.
-- **Anchor in the code** — abstract concepts always tie back to the specific artifact.
-- **Scoped to work** — teach things from the user's work context, not arbitrary topics.
 #+end_src
