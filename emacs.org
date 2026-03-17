@@ -6206,7 +6206,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   (setq mu4e-maildir "~/Mail"
         mu4e-get-mail-command "mbsync -a"
         mu4e-mu-binary "/usr/local/bin/mu"
-        mu4e-update-interval nil
+        mu4e-update-interval 300
         mu4e-index-update-in-background t)
 
   ;; Identity
@@ -6521,8 +6521,10 @@ https://github.com/LionyxML/ros
   "Override CUA keys in vterm."
   :keymap my/vterm-keys-map)
 
-(add-to-list 'emulation-mode-map-alists
-             `((my/vterm-override-mode . ,my/vterm-keys-map)))
+;; push (not add-to-list) so our entry lands BEFORE cua--keymap-alist,
+;; which CUA adds early — otherwise CUA's C-v binding wins.
+(push `((my/vterm-override-mode . ,my/vterm-keys-map))
+      emulation-mode-map-alists)
 
 (defun my/vterm-insert-file-path ()
   "Insert a file path into vterm using Emacs completion."
@@ -6798,6 +6800,108 @@ Do not check out the same branch in both the main repo and a worktree simultaneo
 
 - TAB in vterm inserts file paths via Emacs completion (vertico) — see [[file:emacs.org::*vterm][vterm]]
 - [ ] Integrate across machines — consider symlinking =~/.claude/=
+
+***** Session links                                                  :nohelm:
+Link org headings to Claude Code sessions. =claude-session:= org links resume the session when clicked. =jg/claude-session-insert-link= provides a completing-read over all past sessions. =jg/claude-session-current= returns the active session ID for the buffer's project directory.
+
+#+begin_src emacs-lisp
+(defun jg/claude-sessions ()
+  "Return list of Claude Code sessions from history.jsonl."
+  (let ((file (expand-file-name "~/.claude/history.jsonl")))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let (sessions)
+          (dolist (line (split-string (buffer-string) "\n" t))
+            (condition-case nil
+                (push (json-parse-string line :object-type 'alist) sessions)
+              (error nil)))
+          (nreverse sessions))))))
+
+(defun jg/claude-session-current (&optional dir)
+  "Return the session ID of the Claude Code session for DIR or default-directory."
+  (interactive)
+  (let ((target (directory-file-name (expand-file-name (or dir default-directory))))
+        (sessions-dir (expand-file-name "~/.claude/sessions/"))
+        result)
+    (when (file-directory-p sessions-dir)
+      (dolist (f (directory-files sessions-dir t "\\.json$"))
+        (condition-case nil
+            (let* ((data (json-parse-string
+                          (with-temp-buffer
+                            (insert-file-contents f)
+                            (buffer-string))
+                          :object-type 'alist))
+                   (pid (alist-get 'pid data))
+                   (sid (alist-get 'sessionId data))
+                   (cwd (directory-file-name (or (alist-get 'cwd data) ""))))
+              (when (and pid
+                         (file-exists-p (format "/proc/%d" pid))
+                         (string= cwd target))
+                (setq result sid)))
+          (error nil))))
+    (when (called-interactively-p 'any)
+      (message "Current session: %s" (or result "none found")))
+    result))
+
+(defun jg/claude-session-insert-link (&optional all-projects)
+  "Browse Claude Code sessions and insert an org link at point.
+With prefix arg, show all projects; otherwise filter to current project."
+  (interactive "P")
+  (let* ((current-proj (directory-file-name (expand-file-name default-directory)))
+         (sessions (jg/claude-sessions))
+         (filtered (if all-projects sessions
+                     (cl-remove-if-not
+                      (lambda (s)
+                        (string= (directory-file-name
+                                   (or (alist-get 'project s) ""))
+                                 current-proj))
+                      sessions)))
+         (candidates
+          (mapcar
+           (lambda (s)
+             (let* ((sid (alist-get 'sessionId s))
+                    (ts (alist-get 'timestamp s))
+                    (proj (or (alist-get 'project s) ""))
+                    (display (or (alist-get 'display s) ""))
+                    (date (format-time-string "%Y-%m-%d %H:%M"
+                            (seconds-to-time (/ ts 1000.0))))
+                    (proj-short (file-name-nondirectory
+                                  (directory-file-name proj)))
+                    (snippet (truncate-string-to-width display 80)))
+               (cons (format "%s | %s | %s" date proj-short snippet) sid)))
+           filtered))
+         (sorted (sort candidates
+                       (lambda (a b) (string> (car a) (car b)))))
+         (choice (completing-read
+                   (format "Claude session%s: "
+                           (if all-projects " (all)" (format " (%s)" (file-name-nondirectory current-proj))))
+                   sorted nil t))
+         (session-id (cdr (assoc choice sorted))))
+    (insert (format "[[claude-session:%s][%s]]"
+                    session-id
+                    (substring choice 0 (min 60 (length choice)))))))
+
+(org-link-set-parameters "claude-session"
+  :follow (lambda (id)
+            (let* ((project-dir (or
+                     (let ((sessions (jg/claude-sessions)))
+                       (cl-loop for s in sessions
+                                when (string= (alist-get 'sessionId s) id)
+                                return (alist-get 'project s)))
+                     default-directory))
+                   (active-sid (jg/claude-session-current project-dir)))
+              (if active-sid
+                  (user-error "Session already active for %s (%s). Close it first, then click this link to resume %s"
+                              (file-name-nondirectory (directory-file-name project-dir))
+                              (substring active-sid 0 8)
+                              (substring id 0 8))
+                (let ((vterm-buffer-name (format "*claude-resume[%s]*" (substring id 0 8))))
+                  (vterm vterm-buffer-name)
+                  (vterm-send-string (format "cd %s && claude --resume %s\n"
+                                             (shell-quote-argument project-dir) id))))))
+  :face 'org-link)
+#+end_src
 
 ***** Ediff workarounds                                              :nohelm:
 
