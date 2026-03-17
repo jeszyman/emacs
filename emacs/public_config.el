@@ -1,11 +1,11 @@
-;; ============================================================
-;; AUTO-GENERATED — DO NOT EDIT DIRECTLY
-;; Edits will be overwritten on next org-babel tangle.
-;; 
-;; Source:  /home/jeszyman/repos/emacs/emacs.org
-;; Author:  Jeff Szymanski
-;; Tangled: 2026-03-16 12:34:25
-;; ============================================================
+; ============================================================
+; AUTO-GENERATED — DO NOT EDIT DIRECTLY
+; Edits will be overwritten on next org-babel tangle.
+; 
+; Source:  /home/jeszyman/repos/emacs/emacs.org
+; Author:  Jeffrey Szymanski
+; Tangled: 2026-03-17 12:50:59
+; ============================================================
 
 ;; Base Emacs
 ;; - Frozen Emacs: =pkill -USR2 emacs=
@@ -645,6 +645,103 @@ Requires pdfannots to be installed and on PATH."
 (setq safe-local-variable-values '((org-confirm-elisp-link-function . nil)))
 
 (setq org-hide-block-startup t)
+;; Tangle preamble inserter
+;; Auto-inserts an AUTO-GENERATED preamble into each tangled output file. Uses Emacs =comment-start= via =set-auto-mode= to detect the correct comment syntax for any file type. Special handling for =.md= (HTML comment after YAML frontmatter) and skip for =.json= / extensionless files.
+
+
+(defun jg/tangle-comment-char (file)
+  "Return comment prefix for FILE using Emacs major-mode comment syntax.
+Returns a string prefix, the symbol 'md for markdown, or nil to skip."
+  (let ((ext (file-name-extension file)))
+    (cond
+     ((equal ext "md") 'md)
+     ((equal ext "json") nil)
+     ((null ext) nil)
+     (t (let (result)
+          (with-temp-buffer
+            (let ((buffer-file-name file))
+              (ignore-errors (set-auto-mode))
+              (when (and (boundp 'comment-start) comment-start)
+                (setq result (concat (string-trim-right comment-start) " ")))))
+          (or result "# "))))))
+
+(defun jg/insert-tangle-header (file source-org timestamp author)
+  "Insert or replace preamble in FILE identifying it as auto-generated.
+SOURCE-ORG is the originating org file path, TIMESTAMP is a date string,
+AUTHOR is the author name.  Does nothing for .json and extensionless files.
+For .md files inserts an HTML comment after the YAML frontmatter closing ---."
+  (let ((comment (jg/tangle-comment-char file)))
+    (unless (null comment)
+      (let ((orig-mode (file-modes file)))
+        (set-file-modes file #o644)
+        (if (eq comment 'md)
+            ;; .md: one-line HTML comment placed after YAML frontmatter
+            (let* ((marker "<!-- AUTO-GENERATED")
+                   (note (concat marker " — do not edit directly.\n"
+                                 "     Source:  " source-org "\n"
+                                 "     Tangled: " timestamp " -->\n")))
+              (with-temp-buffer
+                (insert-file-contents file)
+                ;; Remove existing note (idempotency)
+                (goto-char (point-min))
+                (when (search-forward marker nil t)
+                  (beginning-of-line)
+                  (let ((start (point)))
+                    (search-forward "-->" nil t)
+                    (forward-line 1)
+                    (delete-region start (point))))
+                ;; Find closing --- of YAML frontmatter and insert after it
+                (goto-char (point-min))
+                (when (looking-at "---")
+                  (forward-line 1)
+                  (when (re-search-forward "^---" nil t)
+                    (forward-line 1)
+                    (insert note)))
+                (write-region (point-min) (point-max) file nil 'quiet)))
+          ;; All other files: block comment at top (or after shebang)
+          (let* ((sep (make-string 60 ?=))
+                 (header (concat comment sep "\n"
+                                 comment "AUTO-GENERATED — DO NOT EDIT DIRECTLY\n"
+                                 comment "Edits will be overwritten on next org-babel tangle.\n"
+                                 comment "\n"
+                                 comment "Source:  " source-org "\n"
+                                 comment "Author:  " author "\n"
+                                 comment "Tangled: " timestamp "\n"
+                                 comment sep "\n"
+                                 "\n")))
+            (with-temp-buffer
+              (insert-file-contents file)
+              ;; Remove existing preamble (idempotency)
+              (goto-char (point-min))
+              (when (search-forward (concat comment sep) nil t)
+                (goto-char (point-min))
+                (let ((shebang (looking-at "#!")))
+                  (when shebang (forward-line 1))
+                  (let ((start (point)))
+                    (when (search-forward (concat comment sep) nil t)
+                      (forward-line 1)
+                      (when (looking-at "\n") (forward-line 1))
+                      (delete-region start (point))))))
+              ;; Insert preamble
+              (goto-char (point-min))
+              (when (looking-at "#!") (forward-line 1))
+              (insert header)
+              (write-region (point-min) (point-max) file nil 'quiet))))
+        (set-file-modes file orig-mode)))))
+
+(defun jg/tangle-with-header-advice (orig-fun &rest args)
+  "Around advice for org-babel-tangle that inserts preamble headers.
+Intercepts all callers — org-auto-tangle, M-x org-babel-tangle, skill, etc."
+  (let* ((source-org (buffer-file-name))
+         (timestamp  (format-time-string "%Y-%m-%d %H:%M:%S"))
+         (author     (or (user-full-name) "Jeff Szymanski"))
+         (files      (apply orig-fun args)))
+    (when source-org
+      (dolist (f files)
+        (jg/insert-tangle-header (expand-file-name f) source-org timestamp author)))
+    files))
+
+(advice-add 'org-babel-tangle :around #'jg/tangle-with-header-advice)
 ;; Toggle collapse blocks
 
 (defvar org-blocks-hidden nil)
@@ -2171,7 +2268,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
         mu4e-use-fancy-chars t)
 
   ;; Org integration
-  (require 'mu4e-org))
+  (require 'org-mu4e))
 ;; Use-package
 
 (use-package openwith
@@ -2454,9 +2551,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
                 (let ((text (buffer-substring-no-properties (point-min) (point-max))))
                   (with-current-buffer my/whisper--vterm-target
                     (vterm-send-string text)
-                    ;; Auto-submit only in Claude Code sessions
-                    (when (string-match-p "\\*claude-code" (buffer-name))
-                      (vterm-send-return))))
+                    (vterm-send-return)))
                 (erase-buffer))))
   ;; Restore state after each run
   (add-hook 'whisper-after-insert-hook
@@ -2639,41 +2734,78 @@ Returns matching heading titles with org-id when present, optionally prefixed wi
            (concat file-str h id-str)))
        (org-ql-select file-list parsed-query
          :action 'element-with-markers)))))
-(defun claude-code-ide-org-refile-subtree (file-path source-heading target-heading &optional as-sibling)
+(defun claude-code-ide-org-refile-subtree (file-path source-heading target-heading &optional as-sibling source-id target-id)
   "Move subtree SOURCE-HEADING relative to TARGET-HEADING in FILE-PATH.
 By default pastes as the last child of target. With AS-SIBLING non-nil,
 pastes after the target subtree at the same level instead.
-Verifies both headings exist before cutting, then re-finds target after cut
-to handle position shifts. Saves the buffer on success."
+SOURCE-ID and TARGET-ID are optional org-id UUIDs for disambiguation.
+When provided, the heading is located by ID instead of text search.
+If text search finds multiple matches and no ID is provided, errors
+with a list of matches (line numbers and levels) for disambiguation.
+Saves the buffer on success."
   (claude-code-ide-mcp-server-with-session-context nil
     (with-current-buffer (find-file-noselect file-path)
       (org-with-wide-buffer
-       (let ((case-fold-search nil)
-             (heading-re (lambda (h) (format "^\\*+ %s\\([ \t]\\|$\\)" (regexp-quote h)))))
-         (goto-char (point-min))
-         (let ((src-pos (re-search-forward (funcall heading-re source-heading) nil t)))
-           (unless src-pos
-             (error "Source heading '%s' not found" source-heading))
-           (goto-char (point-min))
-           (unless (re-search-forward (funcall heading-re target-heading) nil t)
-             (error "Target heading '%s' not found" target-heading))
+       (let* ((case-fold-search nil)
+              (heading-re (lambda (h) (format "^\\*+ %s\\([ \t]\\|$\\)" (regexp-quote h))))
+              (find-by-id (lambda (id)
+                            (goto-char (point-min))
+                            (when (re-search-forward
+                                   (format "^[ \t]*:ID:[ \t]+%s" (regexp-quote id)) nil t)
+                              (org-back-to-heading t)
+                              (point))))
+              (find-unique (lambda (heading id label)
+                             (if id
+                                 (or (funcall find-by-id id)
+                                     (error "%s ID '%s' not found" label id))
+                               (goto-char (point-min))
+                               (let ((positions nil))
+                                 (while (re-search-forward (funcall heading-re heading) nil t)
+                                   (save-excursion
+                                     (beginning-of-line)
+                                     (push (list (line-number-at-pos)
+                                                 (org-current-level)
+                                                 (org-get-heading t t t t))
+                                           positions)))
+                                 (setq positions (nreverse positions))
+                                 (cond
+                                  ((null positions)
+                                   (error "%s heading '%s' not found" label heading))
+                                  ((= 1 (length positions))
+                                   (goto-char (point-min))
+                                   (re-search-forward (funcall heading-re heading) nil t)
+                                   (beginning-of-line)
+                                   (point))
+                                  (t
+                                   (error "%s heading '%s' is ambiguous (%d matches). Provide an ID to disambiguate. Matches: %s"
+                                          label heading (length positions)
+                                          (mapconcat (lambda (p)
+                                                       (format "L%d (level %d: %s)"
+                                                               (nth 0 p) (nth 1 p) (nth 2 p)))
+                                                     positions ", ")))))))))
+         (let ((src-pos (funcall find-unique source-heading source-id "Source"))
+               (tgt-pos (funcall find-unique target-heading target-id "Target")))
            (goto-char src-pos)
-           (beginning-of-line)
            (org-cut-subtree)
-           (goto-char (point-min))
-           (re-search-forward (funcall heading-re target-heading) nil t)
-           (beginning-of-line)
-           (let ((target-level (org-current-level)))
-             (org-end-of-subtree t)
-             (unless (bolp) (newline))
-             (if as-sibling
-                 (org-paste-subtree target-level)
-               (org-paste-subtree (1+ target-level))))
+           ;; Re-find target after cut (positions shifted)
+           (let ((tgt-pos2 (if target-id
+                               (funcall find-by-id target-id)
+                             (progn (goto-char (point-min))
+                                    (re-search-forward (funcall heading-re target-heading) nil t)
+                                    (beginning-of-line)
+                                    (point)))))
+             (goto-char tgt-pos2)
+             (let ((target-level (org-current-level)))
+               (org-end-of-subtree t)
+               (unless (bolp) (newline))
+               (if as-sibling
+                   (org-paste-subtree target-level)
+                 (org-paste-subtree (1+ target-level)))))
            (save-buffer)
            (format "Moved '%s' %s '%s'"
                    source-heading
                    (if as-sibling "after" "under")
-                   target-heading)))))))
+                   target-heading))))))))
 (with-eval-after-load 'claude-code-ide
   (claude-code-ide-make-tool
    :function #'claude-code-ide-org-outline
@@ -2724,7 +2856,7 @@ to handle position shifts. Saves the buffer on success."
   (claude-code-ide-make-tool
    :function #'claude-code-ide-org-refile-subtree
    :name "org_refile_subtree"
-   :description "Move an org subtree (by exact heading title) relative to another heading in the same file. Default: paste as last child of target. With as_sibling=true: paste after target at same level. Much more efficient than text editing for structural reorganization."
+   :description "Move an org subtree (by exact heading title) relative to another heading in the same file. Default: paste as last child of target. With as_sibling=true: paste after target at same level. Errors on ambiguous heading names — provide source_id/target_id to disambiguate."
    :args '((:name "file_path"
                   :type string
                   :description "Absolute path to the org file")
@@ -2737,4 +2869,12 @@ to handle position shifts. Saves the buffer on success."
            (:name "as_sibling"
                   :type boolean
                   :description "If true, paste after target at same level rather than as a child"
+                  :optional t)
+           (:name "source_id"
+                  :type string
+                  :description "Org-id UUID of the source heading, for disambiguation when multiple headings share the same title"
+                  :optional t)
+           (:name "target_id"
+                  :type string
+                  :description "Org-id UUID of the target heading, for disambiguation when multiple headings share the same title"
                   :optional t))))

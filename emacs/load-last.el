@@ -1,11 +1,11 @@
-;; ============================================================
-;; AUTO-GENERATED — DO NOT EDIT DIRECTLY
-;; Edits will be overwritten on next org-babel tangle.
-;; 
-;; Source:  /home/jeszyman/repos/emacs/emacs.org
-;; Author:  Jeff Szymanski
-;; Tangled: 2026-03-16 12:34:25
-;; ============================================================
+; ============================================================
+; AUTO-GENERATED — DO NOT EDIT DIRECTLY
+; Edits will be overwritten on next org-babel tangle.
+; 
+; Source:  /home/jeszyman/repos/emacs/emacs.org
+; Author:  Jeffrey Szymanski
+; Tangled: 2026-03-17 12:50:59
+; ============================================================
 
 (defun jg--parse-org-enums (file tag)
   "Parse recipe enums from a heading tagged with TAG in FILE.
