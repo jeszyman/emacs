@@ -4,7 +4,7 @@
 ;; 
 ;; Source:  /home/jeszyman/repos/emacs/emacs.org
 ;; Author:  Jeffrey Szymanski
-;; Tangled: 2026-03-16 11:12:17
+;; Tangled: 2026-03-17 09:19:58
 ;; ============================================================
 
 ;; Base Emacs
@@ -2637,41 +2637,78 @@ Returns matching heading titles with org-id when present, optionally prefixed wi
            (concat file-str h id-str)))
        (org-ql-select file-list parsed-query
          :action 'element-with-markers)))))
-(defun claude-code-ide-org-refile-subtree (file-path source-heading target-heading &optional as-sibling)
+(defun claude-code-ide-org-refile-subtree (file-path source-heading target-heading &optional as-sibling source-id target-id)
   "Move subtree SOURCE-HEADING relative to TARGET-HEADING in FILE-PATH.
 By default pastes as the last child of target. With AS-SIBLING non-nil,
 pastes after the target subtree at the same level instead.
-Verifies both headings exist before cutting, then re-finds target after cut
-to handle position shifts. Saves the buffer on success."
+SOURCE-ID and TARGET-ID are optional org-id UUIDs for disambiguation.
+When provided, the heading is located by ID instead of text search.
+If text search finds multiple matches and no ID is provided, errors
+with a list of matches (line numbers and levels) for disambiguation.
+Saves the buffer on success."
   (claude-code-ide-mcp-server-with-session-context nil
     (with-current-buffer (find-file-noselect file-path)
       (org-with-wide-buffer
-       (let ((case-fold-search nil)
-             (heading-re (lambda (h) (format "^\\*+ %s\\([ \t]\\|$\\)" (regexp-quote h)))))
-         (goto-char (point-min))
-         (let ((src-pos (re-search-forward (funcall heading-re source-heading) nil t)))
-           (unless src-pos
-             (error "Source heading '%s' not found" source-heading))
-           (goto-char (point-min))
-           (unless (re-search-forward (funcall heading-re target-heading) nil t)
-             (error "Target heading '%s' not found" target-heading))
+       (let* ((case-fold-search nil)
+              (heading-re (lambda (h) (format "^\\*+ %s\\([ \t]\\|$\\)" (regexp-quote h))))
+              (find-by-id (lambda (id)
+                            (goto-char (point-min))
+                            (when (re-search-forward
+                                   (format "^[ \t]*:ID:[ \t]+%s" (regexp-quote id)) nil t)
+                              (org-back-to-heading t)
+                              (point))))
+              (find-unique (lambda (heading id label)
+                             (if id
+                                 (or (funcall find-by-id id)
+                                     (error "%s ID '%s' not found" label id))
+                               (goto-char (point-min))
+                               (let ((positions nil))
+                                 (while (re-search-forward (funcall heading-re heading) nil t)
+                                   (save-excursion
+                                     (beginning-of-line)
+                                     (push (list (line-number-at-pos)
+                                                 (org-current-level)
+                                                 (org-get-heading t t t t))
+                                           positions)))
+                                 (setq positions (nreverse positions))
+                                 (cond
+                                  ((null positions)
+                                   (error "%s heading '%s' not found" label heading))
+                                  ((= 1 (length positions))
+                                   (goto-char (point-min))
+                                   (re-search-forward (funcall heading-re heading) nil t)
+                                   (beginning-of-line)
+                                   (point))
+                                  (t
+                                   (error "%s heading '%s' is ambiguous (%d matches). Provide an ID to disambiguate. Matches: %s"
+                                          label heading (length positions)
+                                          (mapconcat (lambda (p)
+                                                       (format "L%d (level %d: %s)"
+                                                               (nth 0 p) (nth 1 p) (nth 2 p)))
+                                                     positions ", ")))))))))
+         (let ((src-pos (funcall find-unique source-heading source-id "Source"))
+               (tgt-pos (funcall find-unique target-heading target-id "Target")))
            (goto-char src-pos)
-           (beginning-of-line)
            (org-cut-subtree)
-           (goto-char (point-min))
-           (re-search-forward (funcall heading-re target-heading) nil t)
-           (beginning-of-line)
-           (let ((target-level (org-current-level)))
-             (org-end-of-subtree t)
-             (unless (bolp) (newline))
-             (if as-sibling
-                 (org-paste-subtree target-level)
-               (org-paste-subtree (1+ target-level))))
+           ;; Re-find target after cut (positions shifted)
+           (let ((tgt-pos2 (if target-id
+                               (funcall find-by-id target-id)
+                             (progn (goto-char (point-min))
+                                    (re-search-forward (funcall heading-re target-heading) nil t)
+                                    (beginning-of-line)
+                                    (point)))))
+             (goto-char tgt-pos2)
+             (let ((target-level (org-current-level)))
+               (org-end-of-subtree t)
+               (unless (bolp) (newline))
+               (if as-sibling
+                   (org-paste-subtree target-level)
+                 (org-paste-subtree (1+ target-level)))))
            (save-buffer)
            (format "Moved '%s' %s '%s'"
                    source-heading
                    (if as-sibling "after" "under")
-                   target-heading)))))))
+                   target-heading))))))))
 (with-eval-after-load 'claude-code-ide
   (claude-code-ide-make-tool
    :function #'claude-code-ide-org-outline
@@ -2722,7 +2759,7 @@ to handle position shifts. Saves the buffer on success."
   (claude-code-ide-make-tool
    :function #'claude-code-ide-org-refile-subtree
    :name "org_refile_subtree"
-   :description "Move an org subtree (by exact heading title) relative to another heading in the same file. Default: paste as last child of target. With as_sibling=true: paste after target at same level. Much more efficient than text editing for structural reorganization."
+   :description "Move an org subtree (by exact heading title) relative to another heading in the same file. Default: paste as last child of target. With as_sibling=true: paste after target at same level. Errors on ambiguous heading names — provide source_id/target_id to disambiguate."
    :args '((:name "file_path"
                   :type string
                   :description "Absolute path to the org file")
@@ -2735,4 +2772,12 @@ to handle position shifts. Saves the buffer on success."
            (:name "as_sibling"
                   :type boolean
                   :description "If true, paste after target at same level rather than as a child"
+                  :optional t)
+           (:name "source_id"
+                  :type string
+                  :description "Org-id UUID of the source heading, for disambiguation when multiple headings share the same title"
+                  :optional t)
+           (:name "target_id"
+                  :type string
+                  :description "Org-id UUID of the target heading, for disambiguation when multiple headings share the same title"
                   :optional t))))
