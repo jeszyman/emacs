@@ -2,11 +2,9 @@
 :PROPERTIES:
 :ID:       a49abc44-8e71-4a1a-bd35-a77849427c94
 :END:
-
-Okay, we're trying for longer. One, two, three, four, five seconds.
-Are you working now?
 ** README                                                          :noexport:
 *** Change log
+- [2026-03-16 Mon] Ideas cleanup: topical consolidation — dissolved flat list and =*** Emacs behavior improvements= into 7 themed groups (Appearance, Org-mode tools, Buffer/window, Keybindings, Custom elisp, Packages to evaluate, Tangle/export). Removed duplicates, stale skills (Moonshot/Mindjack already in work.org), rejected ideas. Moved Claude ideas to private.org. Also restructured contacts.org: single canonical =** Contacts= list, groups as cross-link-only, archived 48 DONE tasks, promoted data to properties, deduplicated entries.
 - [2026-03-16 Mon] whisper.el jeff-beast fixes: =whisper-show-progress-in-mode-line nil= (whisper.cpp stderr routing), advise =whisper-run= to send ="q"= to ffmpeg stdin (ffmpeg 4.4 drops PulseAudio buffers on SIGINT), vterm support via =vterm-send-string= + =vterm-send-return= with =whisper-after-transcription-hook=
 - [2026-03-16 Mon] systemd emacs daemon fix: changed service from =Type=forking= / =--daemon= to =Type=simple= / =--fg-daemon= (ansible playbooks in basecamp.org). Root cause: bloated =~/.cache/org-persist/= blocked event loop past systemd timeout. Added =org-element-cache-persistent nil= guard in Load First for daemon mode. Documented learnings under [[id:c70cfb48-b027-4b4f-8e0c-5fbc3d4222a0][systemd server start]].
 - [2026-03-15 Sun] Ideas reorganization: added =:ideas:= tag to main Ideas container, removed developed skills (Moonshot, Mindjack) from Ideas, demoted thin subheadings to list items, added IDs to 14 subheadings, dissolved =*** Not organized= grab-bag, grouped into =*** Packages to evaluate=, =*** Emacs behavior improvements=, =*** Tangle and export=, =*** ESS R buffer in separate frame=. Consolidated 4 scattered Ideas sections with provenance cross-links. Moved Claude Code ideas to private.org =** Claude build ideas=. Cross-linked emacs.org Ideas ↔ private.org. Also applied same workflow to career.org: tag cleanup, cross-link index, dissolved nested Ideas, moved items to domain containers (cfDNA, Funding, Career development, Completed projects).
@@ -3105,9 +3103,6 @@ https://emacs.stackexchange.com/questions/48526/how-do-i-delete-all-blank-lines-
 :END:
 - [[id:c5b813eb-f76b-4377-a483-ee6c932b4aa7][General writing and typesetting module]]
 *** [[id:B171BCE2-2FF8-45C6-8958-8799B349E1B0][Org-Mode in basecamp-private]]
-:PROPERTIES:
-:ID:       b8cd229a-fe04-4c7b-a86b-812584ba7ff3
-:END:
 *** Local YAS
 :PROPERTIES:
 :ID:       4ce165ef-2b82-4dcb-b3ba-09fc3d2f4898
