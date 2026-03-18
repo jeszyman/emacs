@@ -4,6 +4,7 @@
 :END:
 ** README                                                          :noexport:
 *** Change log
+- [2026-03-18 Wed] Fixed org MCP tools not registering: stale =public_config.elc= (Sep 2025) was loaded instead of current =.el= source. Deleted =.elc=; tools (=org_outline=, =org_subtree_by_id=, =org_subtree_by_heading=, =org_ql_query=, =org_refile_subtree=) will auto-register on next Emacs restart.
 - [2026-03-17 Tue] Tangle preamble inserter: moved from private.org to emacs.org =****** Tangle preamble inserter= under Source code and tangle. Replaced hardcoded extension→comment-char cond chain with =set-auto-mode= / =comment-start= auto-detection (covers all Emacs-known languages). Fallback =# = for unknown modes. Fixes =.sty= / =.cls= / =.tex= getting =#= preambles instead of =%=.
 - [2026-03-17 Tue] Added =[[shell:brave-browser --app=...][Claude usage dashboard]]= launcher link to claude-code heading — opens Brave in app mode (no address bar) to =claude.ai/settings/usage=.
 - [2026-03-16 Mon] Ideas cleanup: topical consolidation — dissolved flat list and =*** Emacs behavior improvements= into 7 themed groups (Appearance, Org-mode tools, Buffer/window, Keybindings, Custom elisp, Packages to evaluate, Tangle/export). Removed duplicates, stale skills (Moonshot/Mindjack already in work.org), rejected ideas. Moved Claude ideas to private.org. Also restructured contacts.org: single canonical =** Contacts= list, groups as cross-link-only, archived 48 DONE tasks, promoted data to properties, deduplicated entries.
@@ -4135,6 +4136,9 @@ When set as a list as below, 300 pixels will be the default, but another width c
 #+end_src
 
 ***** Source code and tangle
+
+Stale =.elc= files silently override =.el= source — Emacs's =load= prefers byte-compiled files. After tangling new code into a =.el= file, delete any corresponding =.elc= or recompile. The =public_config.elc= incident (2026-03-18) caused org MCP tools to silently not register for months because the =.elc= predated the registration code.
+
 #+begin_src emacs-lisp
 ; For org 9.7
 (setq org-babel-tangle-remove-file-before-write 'auto)
@@ -6537,9 +6541,8 @@ https://github.com/LionyxML/ros
   (add-hook 'vterm-mode-hook #'my/vterm-override-mode)
   :config
   (setq vterm-max-scrollback 100000)
-  ;; TAB: Emacs path completion in vterm (useful for claude-code-ide prompts)
-  (define-key vterm-mode-map [tab] #'my/vterm-insert-file-path)
-  (define-key vterm-mode-map (kbd "TAB") #'my/vterm-insert-file-path)
+  ;; S-TAB: Emacs path completion in vterm (useful for claude-code-ide prompts)
+  (define-key vterm-mode-map [backtab] #'my/vterm-insert-file-path)
   (custom-set-faces
    '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC"))))))
 #+end_src
@@ -6756,6 +6759,7 @@ https://github.com/joaotavora/yasnippet/issues/998
 - In CLAUDE.md / MEMORY.md, reference org positions by heading name (e.g. "Org Item Structures"), not line number or level stars. Heading names are stable across edits and level changes; line numbers go stale instantly.
 - Do not pre-build static directory trees or file maps for Claude's benefit — CLAUDE.md + MEMORY.md already cover the files needed for ~90% of tasks, and =ls= / =org_outline= resolve the rest in seconds. Static maps go stale and duplicate discoverable state. Instead, invest in feedback memories for workflow patterns, gotchas, and preferences that can't be derived from the codebase.
 - Keep CLAUDE.md and MEMORY.md lean — all content loads every turn, so bloat costs tokens, speed, and instruction-following quality. Prune stale rules, avoid duplicating guidance across both files, and push detail into linked topic files that are fetched on demand.
+- Remote control: enabled via =~/.claude/policy-limits.json= (set =allow_remote_control.allowed= to =true=). Default is =false=, which blocks =claude remote-control= with an org policy error even for individual users.
 ***** Markdown formatting for Claude files                           :nohelm:
 What Claude actually uses in =CLAUDE.md=, =MEMORY.md=, agents, and skills:
 - *Headings* (=##=) — used to locate relevant sections; clear names matter more than hierarchy depth
@@ -6776,8 +6780,11 @@ Claude Code enforces one session per directory. To run a second session on the s
   - For the IDE, see [[https://github.com/manzaltu/claude-code-ide.el?tab=readme-ov-file#multiple-claude-code-instances-on-one-project][claude-code-ide multiple instances]]
 - [ ] Do work, commit as needed
 - [ ] When done, merge or cherry-pick changes back to the original branch
+- [ ] Before removing, run closeout in the worktree session to persist memory and plans
 - [ ] Remove the worktree: =git worktree remove <directory-path>=
 Do not check out the same branch in both the main repo and a worktree simultaneously.
+
+*Session persistence caveat:* Claude Code sessions are keyed by directory path. When a worktree is removed, the session cannot be resumed (=--continue= fails — no directory). The conversation history survives as a =.jsonl= in =~/.claude/projects/-<path-slug>/= but is not loadable. *The primary way to carry context forward is through committed plans and specs* (e.g. =docs/superpowers/plans/*.md=, =docs/superpowers/specs/*.md=) — these persist in the repo on the branch and a new session on main can pick up where the worktree session left off by reading them. Additionally: (1) run closeout in the worktree session before removal (persists memory), (2) merge the branch, (3) copy any relevant memory files from the worktree's project dir to the main project's memory dir.
 - Agents: =--max-turns= vs time limit
 ***** Use-package                                                    :nohelm:
 
@@ -6800,108 +6807,6 @@ Do not check out the same branch in both the main repo and a worktree simultaneo
 
 - TAB in vterm inserts file paths via Emacs completion (vertico) — see [[file:emacs.org::*vterm][vterm]]
 - [ ] Integrate across machines — consider symlinking =~/.claude/=
-
-***** Session links                                                  :nohelm:
-Link org headings to Claude Code sessions. =claude-session:= org links resume the session when clicked. =jg/claude-session-insert-link= provides a completing-read over all past sessions. =jg/claude-session-current= returns the active session ID for the buffer's project directory.
-
-#+begin_src emacs-lisp
-(defun jg/claude-sessions ()
-  "Return list of Claude Code sessions from history.jsonl."
-  (let ((file (expand-file-name "~/.claude/history.jsonl")))
-    (when (file-exists-p file)
-      (with-temp-buffer
-        (insert-file-contents file)
-        (let (sessions)
-          (dolist (line (split-string (buffer-string) "\n" t))
-            (condition-case nil
-                (push (json-parse-string line :object-type 'alist) sessions)
-              (error nil)))
-          (nreverse sessions))))))
-
-(defun jg/claude-session-current (&optional dir)
-  "Return the session ID of the Claude Code session for DIR or default-directory."
-  (interactive)
-  (let ((target (directory-file-name (expand-file-name (or dir default-directory))))
-        (sessions-dir (expand-file-name "~/.claude/sessions/"))
-        result)
-    (when (file-directory-p sessions-dir)
-      (dolist (f (directory-files sessions-dir t "\\.json$"))
-        (condition-case nil
-            (let* ((data (json-parse-string
-                          (with-temp-buffer
-                            (insert-file-contents f)
-                            (buffer-string))
-                          :object-type 'alist))
-                   (pid (alist-get 'pid data))
-                   (sid (alist-get 'sessionId data))
-                   (cwd (directory-file-name (or (alist-get 'cwd data) ""))))
-              (when (and pid
-                         (file-exists-p (format "/proc/%d" pid))
-                         (string= cwd target))
-                (setq result sid)))
-          (error nil))))
-    (when (called-interactively-p 'any)
-      (message "Current session: %s" (or result "none found")))
-    result))
-
-(defun jg/claude-session-insert-link (&optional all-projects)
-  "Browse Claude Code sessions and insert an org link at point.
-With prefix arg, show all projects; otherwise filter to current project."
-  (interactive "P")
-  (let* ((current-proj (directory-file-name (expand-file-name default-directory)))
-         (sessions (jg/claude-sessions))
-         (filtered (if all-projects sessions
-                     (cl-remove-if-not
-                      (lambda (s)
-                        (string= (directory-file-name
-                                   (or (alist-get 'project s) ""))
-                                 current-proj))
-                      sessions)))
-         (candidates
-          (mapcar
-           (lambda (s)
-             (let* ((sid (alist-get 'sessionId s))
-                    (ts (alist-get 'timestamp s))
-                    (proj (or (alist-get 'project s) ""))
-                    (display (or (alist-get 'display s) ""))
-                    (date (format-time-string "%Y-%m-%d %H:%M"
-                            (seconds-to-time (/ ts 1000.0))))
-                    (proj-short (file-name-nondirectory
-                                  (directory-file-name proj)))
-                    (snippet (truncate-string-to-width display 80)))
-               (cons (format "%s | %s | %s" date proj-short snippet) sid)))
-           filtered))
-         (sorted (sort candidates
-                       (lambda (a b) (string> (car a) (car b)))))
-         (choice (completing-read
-                   (format "Claude session%s: "
-                           (if all-projects " (all)" (format " (%s)" (file-name-nondirectory current-proj))))
-                   sorted nil t))
-         (session-id (cdr (assoc choice sorted))))
-    (insert (format "[[claude-session:%s][%s]]"
-                    session-id
-                    (substring choice 0 (min 60 (length choice)))))))
-
-(org-link-set-parameters "claude-session"
-  :follow (lambda (id)
-            (let* ((project-dir (or
-                     (let ((sessions (jg/claude-sessions)))
-                       (cl-loop for s in sessions
-                                when (string= (alist-get 'sessionId s) id)
-                                return (alist-get 'project s)))
-                     default-directory))
-                   (active-sid (jg/claude-session-current project-dir)))
-              (if active-sid
-                  (user-error "Session already active for %s (%s). Close it first, then click this link to resume %s"
-                              (file-name-nondirectory (directory-file-name project-dir))
-                              (substring active-sid 0 8)
-                              (substring id 0 8))
-                (let ((vterm-buffer-name (format "*claude-resume[%s]*" (substring id 0 8))))
-                  (vterm vterm-buffer-name)
-                  (vterm-send-string (format "cd %s && claude --resume %s\n"
-                                             (shell-quote-argument project-dir) id))))))
-  :face 'org-link)
-#+end_src
 
 ***** Ediff workarounds                                              :nohelm:
 
@@ -7382,6 +7287,7 @@ Saves the buffer on success."
 
 - Development: add a =claude-code-ide-org-subtree-by-tag= tool — retrieve full subtree content for all headings matching a given tag, using =org-map-entries= with a tag matcher. Current =org_ql_query= returns heading titles only; this tool would return full content per match. Needed so Claude can do tag-based module lookup without falling back to emacsclient.
 ***** Ideas                                                          :nohelm:
+- Session linking to org (attempted 2026-03-17, abandoned): tried building =claude-session:= org links that resume sessions via =claude --resume <id>=. Problems: (1) CLI doesn't guard against multiple sessions in same directory — silently launches a second, causing interleaved messages; (2) sessions are project-scoped (stored per-project in =~/.claude/projects/=), so cross-project resume/fork fails with "no conversation found"; (3) =--fork-session= works but only from the matching project dir. Revisit if claude-code-ide adds native resume-by-ID support. See also [[id:d536d279-9088-4ade-ba9d-7bd5b516f668][Claude build ideas]] in private.org.
 - Batch refactor burn at end of week credits
 - Agents for reformatting / linting
 - [[https://github.com/xleddyl/claude-watch][claude-watch]]

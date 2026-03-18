@@ -4,7 +4,7 @@
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
 ; Author:  Jeffrey Szymanski
-; Tangled: 2026-03-17 12:50:59
+; Tangled: 2026-03-18 07:48:22
 ; ============================================================
 
 ;; Base Emacs
@@ -2230,7 +2230,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   (setq mu4e-maildir "~/Mail"
         mu4e-get-mail-command "mbsync -a"
         mu4e-mu-binary "/usr/local/bin/mu"
-        mu4e-update-interval nil
+        mu4e-update-interval 300
         mu4e-index-update-in-background t)
 
   ;; Identity
@@ -2493,8 +2493,10 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   "Override CUA keys in vterm."
   :keymap my/vterm-keys-map)
 
-(add-to-list 'emulation-mode-map-alists
-             `((my/vterm-override-mode . ,my/vterm-keys-map)))
+;; push (not add-to-list) so our entry lands BEFORE cua--keymap-alist,
+;; which CUA adds early — otherwise CUA's C-v binding wins.
+(push `((my/vterm-override-mode . ,my/vterm-keys-map))
+      emulation-mode-map-alists)
 
 (defun my/vterm-insert-file-path ()
   "Insert a file path into vterm using Emacs completion."
@@ -2507,9 +2509,8 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   (add-hook 'vterm-mode-hook #'my/vterm-override-mode)
   :config
   (setq vterm-max-scrollback 100000)
-  ;; TAB: Emacs path completion in vterm (useful for claude-code-ide prompts)
-  (define-key vterm-mode-map [tab] #'my/vterm-insert-file-path)
-  (define-key vterm-mode-map (kbd "TAB") #'my/vterm-insert-file-path)
+  ;; S-TAB: Emacs path completion in vterm (useful for claude-code-ide prompts)
+  (define-key vterm-mode-map [backtab] #'my/vterm-insert-file-path)
   (custom-set-faces
    '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC"))))))
 ;; Use-package
