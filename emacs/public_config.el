@@ -4,7 +4,7 @@
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
 ; Author:  Jeffrey Szymanski
-; Tangled: 2026-03-18 07:48:22
+; Tangled: 2026-03-19 09:46:46
 ; ============================================================
 
 ;; Base Emacs
@@ -140,7 +140,6 @@
 
 (setq tramp-default-method "ssh")
 
-
 (defadvice tramp-completion-handle-file-name-all-completions
   (around dotemacs-completion-docker activate)
   "(tramp-completion-handle-file-name-all-completions \"\" \"/docker:\" returns
@@ -190,13 +189,11 @@
 ;; - *Auto-save files* (`auto-save-file-name-transforms`): Emacs periodically writes unsaved buffer state to =~/.emacs.d/auto-save-list/= using =#=-delimited naming. These are deleted on normal save but survive crashes. Recover with =M-x recover-file=.
 ;; - *Stale dirs*: =~/repos/org/auto-save-list/= and =~/repos/org/backups/= exist from an older config but are no longer written to. All active backups go to =~/.emacs.d/=.
 
-
 ;; Shorthand for save all buffers
 ;;  https://stackoverflow.com/questions/15254414/how-to-silently-save-all-buffers-in-emacs
 (defun save-all ()
   (interactive)
   (save-some-buffers t))
-
 
 ; ---   Saving And Backup   --- ;
 ; ----------------------------- ;
@@ -215,7 +212,6 @@
 (setq backup-directory-alist '(("." . "~/.emacs.d/backup-save-list")))
 
 (setq auto-save-visited-mode t) ; Visited files will be auto-saved
-
 
 (setq auto-save-file-name-transforms
       `((".*" ,(concat user-emacs-directory "auto-save-list/") t)))
@@ -346,7 +342,6 @@
 ;; When point is on an org-cite reference, resolves the PDF automatically via =citar=.
 ;; Requires =pdfannots= on PATH (=pip install pdfannots=).
 
-
 (defun my/pdf-from-cite-at-point ()
   "Return the PDF path for the org-cite key at point, or nil if not on a citation.
 citar-get-files returns a hash-table keyed by citekey; extract the list with gethash."
@@ -387,7 +382,6 @@ Requires pdfannots to be installed and on PATH."
      "read_only")
     (unless buf-mod
       (set-buffer-modified-p nil))))
-
 
 (defun org-remove-readonly ()
   (interactive)
@@ -430,6 +424,14 @@ Requires pdfannots to be installed and on PATH."
 ;; cua-mode
 
 (cua-mode t)
+(defun jg/cua-paste-clean (orig-fun &rest args)
+  "When called with C-u prefix, paste with line breaks replaced by spaces."
+  (if current-prefix-arg
+      (let ((clipboard-content (current-kill 0)))
+        (insert (replace-regexp-in-string "\n" " " clipboard-content)))
+    (apply orig-fun args)))
+
+(advice-add 'cua-paste :around #'jg/cua-paste-clean)
 ;; remove-blank-lines
 
 (defun remove-blank-lines ()
@@ -479,8 +481,6 @@ Requires pdfannots to be installed and on PATH."
 
 (add-hook 'org-mode-hook #'org-hide-markers-without-space)
 ;; Tags
-
-
 
         (setq
          org-tags-exclude-from-inheritance
@@ -547,7 +547,6 @@ Requires pdfannots to be installed and on PATH."
         (wl . wl)))
 ;; Set org-file-apps to use xdg-open for all file extensions
 
-
 (setq org-file-apps
       `((directory . "/usr/bin/gnome-terminal --working-directory=\"%s\"")
         ("\\.pdf\\'" . "setsid -w xdg-open \"%s\"")
@@ -569,7 +568,6 @@ Requires pdfannots to be installed and on PATH."
 ;; ssh: link type
 
 ;; Opens a gnome-terminal SSH session. Usage: =[[ssh:jeff-beast][label]]=
-
 
 (org-link-set-parameters "ssh"
   :follow (lambda (path)
@@ -601,6 +599,8 @@ Requires pdfannots to be installed and on PATH."
 
 (setq org-format-latex-options (plist-put org-format-latex-options :scale 3))
 ;; Source code and tangle
+
+;; Stale =.elc= files silently override =.el= source — Emacs's =load= prefers byte-compiled files. After tangling new code into a =.el= file, delete any corresponding =.elc= or recompile. The =public_config.elc= incident (2026-03-18) caused org MCP tools to silently not register for months because the =.elc= predated the registration code.
 
 ; For org 9.7
 (setq org-babel-tangle-remove-file-before-write 'auto)
@@ -647,7 +647,6 @@ Requires pdfannots to be installed and on PATH."
 (setq org-hide-block-startup t)
 ;; Tangle preamble inserter
 ;; Auto-inserts an AUTO-GENERATED preamble into each tangled output file. Uses Emacs =comment-start= via =set-auto-mode= to detect the correct comment syntax for any file type. Special handling for =.md= (HTML comment after YAML frontmatter) and skip for =.json= / extensionless files.
-
 
 (defun jg/tangle-comment-char (file)
   "Return comment prefix for FILE using Emacs major-mode comment syntax.
@@ -757,32 +756,25 @@ Intercepts all callers — org-auto-tangle, M-x org-babel-tangle, skill, etc."
 
 ;; https://emacs.stackexchange.com/questions/39390/force-org-to-use-instead-of-begin-example-for-source-block-output
 
-
 (setq org-babel-min-lines-for-block-output 1000)
 ;; Change noweb wrapper symbols
 
 (setq org-babel-noweb-wrap-start "<#"
       org-babel-noweb-wrap-end "#>")
-;; stripe properties drawer on tangle
+;; Strip properties drawers from tangled output
 
-;; (defun my/org-babel-tangle-no-drawers ()
-;;   "Tangle with `:comments org`, removing property drawers entirely."
-;;   (interactive)
-;;   (let ((tangled-files (org-babel-tangle)))  ;; returns a list of file names
-;;     (dolist (f tangled-files)
-;;       (with-temp-buffer
-;;         (insert-file-contents f)
-;;         (goto-char (point-min))
-;;         ;; Remove everything from #.*:PROPERTIES: up to #.*:END:
-;;         (while (re-search-forward "^#.*:PROPERTIES:" nil t)
-;;           (let ((start (match-beginning 0)))
-;;             (when (re-search-forward "^#.*:END:" nil t)
-;;               (delete-region start (match-end 0)))))
-;;         ;; Remove extra blank lines
-;;         (goto-char (point-min))
-;;         (while (re-search-forward "\n\\{2,\\}" nil t)
-;;           (replace-match "\n"))
-;;         (write-region (point-min) (point-max) f)))))
+(defun jg/strip-properties-from-tangle ()
+  "Remove tangled :PROPERTIES: drawer comments and collapse excess blank lines."
+  (save-excursion
+    (goto-char (point-min))
+    (while (re-search-forward "^;; :PROPERTIES:\n\\(;; .*\n\\)*;; :END:\n" nil t)
+      (replace-match ""))
+    (goto-char (point-min))
+    (while (re-search-forward "\n\\{3,\\}" nil t)
+      (replace-match "\n\n")))
+  (save-buffer))
+
+(add-hook 'org-babel-post-tangle-hook #'jg/strip-properties-from-tangle)
 ;; Distinguish Org Edit Special buffers
 
 ;; Distinguish Org Edit Special buffers
@@ -838,7 +830,6 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
   ;; Ensure tags are aligned after all visibility changes
   (org-align-tags t)) ;; Pass `t` to align all tags in the buffer
 
-
 (global-set-key (kbd "C-c d") 'my-collapse-all-drawers)
 ;; You might want to remove the hook if you don't want this function to run every time you open an org file
 (add-hook 'org-mode-hook 'my-collapse-all-drawers)
@@ -846,7 +837,6 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 
 (setq org-cycle-separator-lines 0)
 (setq yas-indent-line 'fixed)
-
 
 ;; https://chatgpt.com/c/670d4cb7-5c08-8005-bec8-a2800e4bd0c4
 
@@ -876,7 +866,6 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 
 (setq org-id-link-to-org-use-id 'use-existing)
 ;;https://stackoverflow.com/questions/28351465/emacs-orgmode-do-not-insert-line-between-headers
-
 
 (setq org-enforce-todo-checkbox-dependencies t)
 ;; don't adapt indentation to header level
@@ -951,26 +940,34 @@ When called with two prefix arguments, ARG, run the original function without pr
 (defun my-org-open-at-point (&optional arg)
   "Open the link at point.
 Use a new window in Brave if ARG is non-nil and the link is a URL.
-Open in a new Emacs frame if ARG is non-nil for ID or file links."
+Open in a new Emacs frame if ARG is non-nil for ID or file links.
+On citations, use jg/citar-open-smart (PDF > DOI > URL)."
   (interactive "P")
   (let* ((context (org-element-context))
+         (etype (org-element-type context))
          (link-type (org-element-property :type context))
          (raw-link (org-element-property :raw-link context))
          (link-path (org-element-property :path context)))
-    (if (and arg link-type)
-        (cond
-         ((or (string= link-type "http") (string= link-type "https"))
-          (my-org-open-in-brave-new-window raw-link))
-         ((or (string= link-type "id") (string= link-type "file"))
-          (org-link-frame-open-id-or-file-in-new-frame link-path))
-         (t
-          (message "No special handling for this link type: %s" link-type)))
-      (org-open-at-point))))
+    (cond
+     ;; Citation: smart open (PDF > DOI > URL)
+     ((memq etype '(citation citation-reference))
+      (let ((key (org-element-property :key context)))
+        (jg/citar-open-smart key)))
+     ;; Prefix arg: special handling for links
+     ((and arg link-type)
+      (cond
+       ((or (string= link-type "http") (string= link-type "https"))
+        (my-org-open-in-brave-new-window raw-link))
+       ((or (string= link-type "id") (string= link-type "file"))
+        (org-link-frame-open-id-or-file-in-new-frame link-path))
+       (t
+        (message "No special handling for this link type: %s" link-type))))
+     ;; Default
+     (t (org-open-at-point)))))
 
 ;; Rebind C-c C-o in org mode to our custom function
 (define-key org-mode-map (kbd "C-c C-o") 'my-org-open-at-point)
 ;; Checkboxes
-
 
 ;; (defun org-toggle-checkbox-and-children ()
 ;;   "Toggle checkbox and all children checkboxes."
@@ -1059,7 +1056,6 @@ Open in a new Emacs frame if ARG is non-nil for ID or file links."
 (setq org-use-property-inheritance t)
 ;; (browse-org-table-urls-by-name)
 
-
 (defun browse-org-table-urls-by-name (table-name)
   "Browse URLs listed in an Org-mode table identified by TABLE-NAME.
 TABLE-NAME is the name of the table identified as #+name."
@@ -1118,9 +1114,7 @@ TABLE-NAME is the name of the table identified as #+name."
                 ;; Get all subdirectories (excluding . and ..) in ~/repos/
                 (directory-files "~/repos/" t "^[^.]+" t)))))
 
-
 (setq org-agenda-skip-unavailable-files t)
-
 
 (setq org-agenda-use-tag-inheritance t)
 ;;  http://stackoverflow.com/questions/36873727/make-org-agenda-full-screen
@@ -1181,7 +1175,6 @@ TABLE-NAME is the name of the table identified as #+name."
 ;; Checkbox intermediate states!
 
 ;; https://claude.ai/chat/81ca7e51-65b4-4c0d-892b-a94861979890
-
 
 ;; Enhanced Org mode checkbox toggling with three states
 ;; States: [ ] (empty) -> [-] (partial/in-progress) -> [X] (done) -> [ ] (cycle)
@@ -1441,7 +1434,6 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 
 ;; Emacs idle timer trigger for the org-sleeper autonomous linter. One-shot idle timer fires after 600s of idle, launches the gate script, and a process sentinel re-arms a new timer when the run finishes. The =process-live-p= guard prevents pile-up if the timer fires while a run is active.
 
-
 (defvar my/org-sleeper-process nil
   "Process object for the current org-sleeper run.")
 
@@ -1466,7 +1458,6 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 ;; org-sleeper
 
 ;; Emacs idle timer trigger for the org-sleeper autonomous linter. One-shot idle timer fires after 600s of idle, launches the gate script, and a process sentinel re-arms a new timer when the run finishes. The =process-live-p= guard prevents pile-up if the timer fires while a run is active.
-
 
 (defvar my/org-sleeper-process nil
   "Process object for the current org-sleeper run.")
@@ -1579,19 +1570,6 @@ skipped and nothing is inserted for it."
 ;; Alpha key
 
 (global-set-key (kbd "C-x a") (lambda () (interactive) (insert "α")))
-;; Prevent properties drawers in tangle with org comments
-
-(defun remove-property-drawers-from-tangled-file ()
-  "Remove property drawers from the tangled file."
-  (let ((file (buffer-file-name)))
-    (when file
-      (with-temp-buffer
-        (insert-file-contents file)
-        ;; Adjust the regex to match the specific format of your property drawers
-        (while (re-search-forward "^;; :PROPERTIES:\n\\(;; :.*\n\\)+;; :END:\n" nil t)
-          (replace-match ""))
-        (write-file file)))))
-(add-hook 'org-babel-post-tangle-hook 'remove-property-drawers-from-tangled-file)
 ;; AUCTeX
 ;; - [[https://www.gnu.org/software/auctex/manual/auctex.html#Quick-Start][documentation]]
 ;;   - [[https://www.gnu.org/software/auctex/manual/auctex/Folding.html][3.2 Folding Macros and Environments]]
@@ -1600,7 +1578,6 @@ skipped and nothing is inserted for it."
 ;; - [[https://tex.stackexchange.com/questions/145318/how-to-make-auctex-not-prompt-me-on-c-c-c-c][stack:tex: How to make auctex not prompt me on C-c C-c]]
 ;; - [[https://tex.stackexchange.com/questions/20843/useful-shortcuts-or-key-bindings-or-predefined-commands-for-emacsauctex][stack:tex: Useful shortcuts or key bindings or predefined commands for emacs+AUCTeX]]
 ;; - https://piotrkazmierczak.com/2010/emacs-as-the-ultimate-latex-editor/
-
 
 (use-package tex
   :ensure auctex
@@ -1711,23 +1688,72 @@ skipped and nothing is inserted for it."
         ("pdf" . citar-file-open-external)  ;; Use system default for PDFs
         (t . find-file)))                   ;; Default to Emacs for others
 
-
 (require 'oc-biblatex)
 
 (setq org-cite-biblatex-styles
       '((nil nil "autocite" "autocites")   ;; DEFAULT: [cite:@key] -> \autocite{}
         ("auto" nil "autocite" "autocites")
         ("plain" nil "cite" "cites")))     ;; [cite/plain:@key] -> \cite{}
+(use-package embark
+  :ensure t
+  :demand t
+  :bind
+  (("C-." . embark-act)
+   ("C-;" . embark-dwim)
+   ("C-h B" . embark-bindings))
+  :init
+  (setq prefix-help-command #'embark-prefix-help-command)
+  :config
+  (add-to-list 'display-buffer-alist
+               '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
+                 nil
+                 (window-parameters (mode-line-format . none)))))
+
+(use-package embark-consult
+  :ensure t
+  :after embark consult
+  :hook
+  (embark-collect-mode . consult-preview-at-point-mode))
+
 (use-package citar-embark
   :after citar embark
   :no-require
   :config (citar-embark-mode))
 
-(setq citar-at-point-function 'embark-act)
+(defun jg/citar-open-doi (citekey)
+  "Open the DOI for CITEKEY in a browser."
+  (let ((doi (citar-get-value "doi" citekey)))
+    (if doi
+        (browse-url (concat "https://doi.org/" doi))
+      (message "No DOI found for %s" citekey))))
+
+(defun jg/citar-open-smart (citekey)
+  "Open CITEKEY: existing PDF if available, else DOI, else URL."
+  (let* ((files-ht (citar-get-files citekey))
+         (file-list (when (hash-table-p files-ht)
+                      (let (all) (maphash (lambda (_k v) (setq all (append v all))) files-ht) all)))
+         (existing (seq-filter #'file-exists-p file-list))
+         (doi (citar-get-value "doi" citekey))
+         (url (citar-get-value "url" citekey)))
+    (cond
+     (existing (citar-file-open (car existing)))
+     (doi (browse-url (concat "https://doi.org/" doi)))
+     (url (browse-url url))
+     (t (message "No PDF, DOI, or URL found for %s" citekey)))))
+
+(setq citar-at-point-function 'jg/citar-open-smart)
+
+(with-eval-after-load 'citar-embark
+  (keymap-set citar-embark-citation-map "o" #'citar-open-files)
+  (keymap-set citar-embark-citation-map "d" #'jg/citar-open-doi))
+
+(advice-add 'citar-file--parse-file-field :around
+            (lambda (orig &rest args)
+              (let ((inhibit-message t))
+                (apply orig args))))
 
 ;; https://blog.tecosaur.com/tmio/2021-07-31-citations.html
 ;; https://kristofferbalintona.me/posts/202206141852/
-
 
 (setq org-cite-biblatex-styles
       '(("auto" "autocite" "Autocite")
@@ -1737,9 +1763,7 @@ skipped and nothing is inserted for it."
 ;; Conda
 ;; - https://github.com/necaris/conda.el
 
-
 ;; M-x conda-env-activate
-
 
 ;; Remove everything and evaluate this clean version:
 (use-package conda
@@ -1788,7 +1812,9 @@ skipped and nothing is inserted for it."
   ;; Free up keybindings for `completion-at-point`
   (with-eval-after-load 'flyspell
     (define-key flyspell-mode-map (kbd "C-M-i") nil)
-    (define-key flyspell-mode-map (kbd "M-TAB") nil))
+    (define-key flyspell-mode-map (kbd "M-TAB") nil)
+    (define-key flyspell-mode-map (kbd "C-.") nil)
+    (define-key flyspell-mode-map (kbd "C-;") nil))
   (global-set-key (kbd "M-TAB") #'completion-at-point)) ;; Bind `M-TAB` globally
 ;; Hide M-x commands irrelevant to the current mode
 (use-package emacs
@@ -1842,7 +1868,6 @@ skipped and nothing is inserted for it."
 ;; - Workflow: activate env (basecamp etc.), open .py file, Elpy starts, use keybindings to send code, Flycheck handles linting.
 ;; - Checks: PATH includes miniconda3/bin, elpy-rpc-python-command points to miniconda3/bin/python, Flycheck installed, conda info --envs shows envs.
 ;; - References: Elpy docs (editing, IDE/REPL, virtual envs), Emacs StackExchange thread on conda conflicts.
-
 
 ;; -------------------------------------------------------------------
 ;; Elpy — Python IDE inside Emacs
@@ -1928,8 +1953,6 @@ skipped and nothing is inserted for it."
 ;; - https://stat.ethz.ch/pipermail/ess-help/2010-January/005822.html
 ;; - https://github.com/emacs-lsp/lsp-mode/issues/1383
 
-
-
 (use-package ess
   :ensure t
   :init
@@ -2010,7 +2033,6 @@ skipped and nothing is inserted for it."
    helm-completion-style 'emacs
    helm-move-to-line-cycle-in-source nil)) ;; allow C-n through different sections
 ;; helm-org
-
 
 (use-package helm-org
   :config
@@ -2121,13 +2143,11 @@ skipped and nothing is inserted for it."
 (setq key-chord-two-keys-delay 0.01)
 ;;(key-chord-define evil-insert-state-map "jj" 'evil-normal-state)
 
-
 ;; - [[https://github.com/emacsorphanage/key-chord][repo]]
 
 (key-chord-define-global ",." "<>\C-b")
 
 ;; <> <> ,.<sf>
-
 
 (key-chord-define-global "cc"     'claude-code-ide-menu)
 (key-chord-define-global "xx"      'shell)
@@ -2137,7 +2157,6 @@ skipped and nothing is inserted for it."
 (key-chord-define-global "xo" 'other-window)
 (key-chord-define-global "x1" 'delete-other-windows)
 (key-chord-define org-mode-map "cd" 'my-collapse-all-drawers)
-
 
 (setq key-chord-typing-detection t)
 ;; Magit
@@ -2206,7 +2225,6 @@ skipped and nothing is inserted for it."
 
 ;; - Make a ChatGPT query from emacs
 ;;   - https://chatgpt.com/c/d4f18f6b-2f09-4a69-93f1-8f8ab5b39cb0
-
 
 (defun open-chatgpt-query-in-new-browser-window (query &optional use-gpt-4)
   "Send a QUERY to ChatGPT and open the result in a new browser window.
@@ -2297,7 +2315,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 ;; - UUID-based includes work; CUSTOM_ID does not; export from UUID breaks
 ;; - Enable per buffer: ~M-x org-include-inline-mode~
 
-
 ;; Load only — enable per buffer with M-x org-include-inline-mode
 (use-package org-include-inline
   :vc (:url "https://github.com/yibie/org-include-inline" :vc-backend Git))
@@ -2310,7 +2327,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 (ox-extras-activate '(ignore-headlines))
 ;; org-ql
 ;; - org-ql to pull time logs as tabular data exports [[https://claude.ai/chat/c4df90a0-faa0-459e-99a5-cd8d8e3945a6]]
-
 
 (use-package org-ql)
 ;; org-ros
@@ -2361,7 +2377,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   )
 ;; Python
 
-
 ;; Use-package
 
 (use-package savehist)
@@ -2388,7 +2403,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   :after tree-sitter
   :config
   (add-hook 'tree-sitter-after-on-hook #'tree-sitter-hl-mode))
-
 
 (global-tree-sitter-mode)
 (add-hook 'tree-sitter-after-on-hook #'tree-sitter-hl-mode)
@@ -2437,7 +2451,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   :after vertico
   :init
   (marginalia-mode))
-
 
 (use-package savehist
   :ensure t
@@ -2544,6 +2557,8 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   (setq whisper-before-transcription-hook nil)
   ;; Track vterm origin for direct text insertion
   (defvar my/whisper--vterm-target nil)
+  ;; When non-nil, skip vterm-send-return after transcription (WW chord)
+  (defvar my/whisper--no-return nil)
   ;; In vterm: send transcription via vterm-send-string, clear stdout buffer
   ;; so whisper skips creating a display buffer
   (add-hook 'whisper-after-transcription-hook
@@ -2552,13 +2567,15 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
                 (let ((text (buffer-substring-no-properties (point-min) (point-max))))
                   (with-current-buffer my/whisper--vterm-target
                     (vterm-send-string text)
-                    (vterm-send-return)))
+                    (unless my/whisper--no-return
+                      (vterm-send-return))))
                 (erase-buffer))))
   ;; Restore state after each run
   (add-hook 'whisper-after-insert-hook
             (lambda ()
               (setq whisper-insert-text-at-point t
-                    my/whisper--vterm-target nil)))
+                    my/whisper--vterm-target nil
+                    my/whisper--no-return nil)))
   ;; ffmpeg 4.4 drops audio on signals; send "q" to stdin for clean shutdown.
   ;; In vterm, disable insert-at-point so vterm hook handles it instead.
   (advice-add 'whisper-run :around
@@ -2578,7 +2595,15 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
                     (string-trim (shell-command-to-string "pactl get-default-source")))))
       (call-process "pactl" nil nil nil "set-source-volume" source "65536"))
     (whisper-run))
-  (key-chord-define-global "ww" 'my/whisper-run-with-mic))
+  (defun my/whisper-run-with-mic-no-return ()
+    "Stop whisper recording without sending return in vterm."
+    (interactive)
+    (setq my/whisper--no-return t)
+    (if (process-live-p whisper--recording-process)
+        (process-send-string whisper--recording-process "q")
+      (my/whisper-run-with-mic)))
+  (key-chord-define-global "ww" 'my/whisper-run-with-mic)
+  (key-chord-define-global "WW" 'my/whisper-run-with-mic-no-return))
 ;; yaml
 
 (use-package yaml-mode)
@@ -2637,7 +2662,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   (global-org-repeat-by-cron-mode))
 ;; Use-package                                                    :nohelm:
 
-
 (use-package claude-code-ide
   :vc (:url "https://github.com/manzaltu/claude-code-ide.el" :rev :newest)
   :demand t
@@ -2658,7 +2682,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 ;; # Fix: :before advice on ediff-buffers runs after claude-code-ide's setq but
 ;; # before ediff reads it.
 
-
 (advice-add 'ediff-buffers :before
             (lambda (&rest _)
               (setq ediff-window-setup-function 'ediff-setup-windows-multiframe)))
@@ -2674,7 +2697,6 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 ;; org-ql. Much more token-efficient than reading whole files.
 
 ;; These tools run as elisp inside the live Emacs session via [[https://github.com/stevemolitor/claude-code-ide.el][claude-code-ide.el]]: Claude Code sends JSON-RPC requests over a socket, which dispatch to functions like =claude-code-ide-org-outline= that call native org-mode APIs (=org-map-entries=, =org-id-find=, etc.) directly. This means they operate with full org-mode context — no subprocess overhead, no parsing from scratch.
-
 
 (defun claude-code-ide-org-outline (file-path &optional depth)
   "Return heading-only outline of FILE-PATH up to DEPTH levels."

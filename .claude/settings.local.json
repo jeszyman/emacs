@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(emacsclient:*)",
+      "Skill(org-edit)",
+      "Bash(awk:*)",
+      "Bash(uuidgen:*)",
+      "Bash(python3:*)",
+      "Bash(for name:*)",
+      "Bash(for id:*)",
+      "Skill(closeout)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(git add:*)",
+      "Skill(tangle)"
+    ]
+  }
+}

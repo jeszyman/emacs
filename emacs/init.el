@@ -4,7 +4,7 @@
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
 ; Author:  Jeffrey Szymanski
-; Tangled: 2026-03-18 07:48:22
+; Tangled: 2026-03-19 09:46:46
 ; ============================================================
 
 ;;-*- mode: elisp -*-
@@ -53,7 +53,6 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 (defvar my-lisp-dir (expand-file-name "lisp/" user-emacs-directory)
   "Directory containing personal Emacs configuration files.")
 
-
 ;; If my-lisp-dir exists on disk, load every *.el file in it.
 ;; This is a "bulk loader" pattern: it eagerly loads everything at startup.
 (when (file-directory-p my-lisp-dir)
@@ -76,7 +75,6 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 
       ;; If evaluation of that file signals an error, log it but keep going.
       (error (message "Error loading %s: %s" file err)))))
-
 
 ;; Load late configuration
 (safe-load-file-if-exists "load-last.el")

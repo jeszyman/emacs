@@ -3252,10 +3252,11 @@ https://www.reddit.com/r/orgmode/comments/x2e90r/there_really_needs_to_be_a_bett
 - [[http://orgmode.org/worg/org-contrib/babel/intro.html][worg advanced sarching]]
 - http://orgmode.org/worg/org-contrib/org-checklist.html
 **** Comprehensive workflow suites
-***** scimax
+***** CANCELED scimax
 :PROPERTIES:
 :ID:       c1726ede-399f-4f0d-a457-cdb3ed41de1a
 :END:
+Retired — evaluated features comprehensively (2026-03-18). Existing config already covers citations (citar), jupyter (ob-jupyter), completion (vertico/embark), search (org-ql + helm-org-rifle). Remaining candidates (org-db, src block tools, @-links) didn't clear the bar vs current workflow.
 https://www.reddit.com/r/orgmode/comments/q82k5v/new_video_scimax_orgdb_searching_for_things_in/
 ** My public configuration
 *** Architecture
@@ -3912,6 +3913,17 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 #+begin_src emacs-lisp
 (cua-mode t)
 #+end_src
+
+#+begin_src emacs-lisp
+(defun jg/cua-paste-clean (orig-fun &rest args)
+  "When called with C-u prefix, paste with line breaks replaced by spaces."
+  (if current-prefix-arg
+      (let ((clipboard-content (current-kill 0)))
+        (insert (replace-regexp-in-string "\n" " " clipboard-content)))
+    (apply orig-fun args)))
+
+(advice-add 'cua-paste :around #'jg/cua-paste-clean)
+#+end_src
 **** remove-blank-lines
 #+begin_src emacs-lisp
 (defun remove-blank-lines ()
@@ -4322,29 +4334,21 @@ https://emacs.stackexchange.com/questions/39390/force-org-to-use-instead-of-begi
       org-babel-noweb-wrap-end "#>")
 #+end_src
 ****** Post-tangle hooks
-******* stripe properties drawer on tangle
+******* Strip properties drawers from tangled output
 #+begin_src emacs-lisp
-;; (defun my/org-babel-tangle-no-drawers ()
-;;   "Tangle with `:comments org`, removing property drawers entirely."
-;;   (interactive)
-;;   (let ((tangled-files (org-babel-tangle)))  ;; returns a list of file names
-;;     (dolist (f tangled-files)
-;;       (with-temp-buffer
-;;         (insert-file-contents f)
-;;         (goto-char (point-min))
-;;         ;; Remove everything from #.*:PROPERTIES: up to #.*:END:
-;;         (while (re-search-forward "^#.*:PROPERTIES:" nil t)
-;;           (let ((start (match-beginning 0)))
-;;             (when (re-search-forward "^#.*:END:" nil t)
-;;               (delete-region start (match-end 0)))))
-;;         ;; Remove extra blank lines
-;;         (goto-char (point-min))
-;;         (while (re-search-forward "\n\\{2,\\}" nil t)
-;;           (replace-match "\n"))
-;;         (write-region (point-min) (point-max) f)))))
+(defun jg/strip-properties-from-tangle ()
+  "Remove tangled :PROPERTIES: drawer comments and collapse excess blank lines."
+  (save-excursion
+    (goto-char (point-min))
+    (while (re-search-forward "^;; :PROPERTIES:\n\\(;; .*\n\\)*;; :END:\n" nil t)
+      (replace-match ""))
+    (goto-char (point-min))
+    (while (re-search-forward "\n\\{3,\\}" nil t)
+      (replace-match "\n\n")))
+  (save-buffer))
 
+(add-hook 'org-babel-post-tangle-hook #'jg/strip-properties-from-tangle)
 #+end_src
-https://chatgpt.com/c/675d9823-49a8-8005-840d-464e88f9c994?model=o1
 ****** Distinguish Org Edit Special buffers
 #+begin_src emacs-lisp
 ;; Distinguish Org Edit Special buffers
@@ -4557,21 +4561,30 @@ When called with two prefix arguments, ARG, run the original function without pr
 (defun my-org-open-at-point (&optional arg)
   "Open the link at point.
 Use a new window in Brave if ARG is non-nil and the link is a URL.
-Open in a new Emacs frame if ARG is non-nil for ID or file links."
+Open in a new Emacs frame if ARG is non-nil for ID or file links.
+On citations, use jg/citar-open-smart (PDF > DOI > URL)."
   (interactive "P")
   (let* ((context (org-element-context))
+         (etype (org-element-type context))
          (link-type (org-element-property :type context))
          (raw-link (org-element-property :raw-link context))
          (link-path (org-element-property :path context)))
-    (if (and arg link-type)
-        (cond
-         ((or (string= link-type "http") (string= link-type "https"))
-          (my-org-open-in-brave-new-window raw-link))
-         ((or (string= link-type "id") (string= link-type "file"))
-          (org-link-frame-open-id-or-file-in-new-frame link-path))
-         (t
-          (message "No special handling for this link type: %s" link-type)))
-      (org-open-at-point))))
+    (cond
+     ;; Citation: smart open (PDF > DOI > URL)
+     ((memq etype '(citation citation-reference))
+      (let ((key (org-element-property :key context)))
+        (jg/citar-open-smart key)))
+     ;; Prefix arg: special handling for links
+     ((and arg link-type)
+      (cond
+       ((or (string= link-type "http") (string= link-type "https"))
+        (my-org-open-in-brave-new-window raw-link))
+       ((or (string= link-type "id") (string= link-type "file"))
+        (org-link-frame-open-id-or-file-in-new-frame link-path))
+       (t
+        (message "No special handling for this link type: %s" link-type))))
+     ;; Default
+     (t (org-open-at-point)))))
 
 ;; Rebind C-c C-o in org mode to our custom function
 (define-key org-mode-map (kbd "C-c C-o") 'my-org-open-at-point)
@@ -5375,28 +5388,6 @@ https://github.com/gregsexton/ob-ipython/issues/28
 #+end_src
 
 
-**** Prevent properties drawers in tangle with org comments
-:PROPERTIES:
-:ID:       aa896a50-db72-45a7-9f41-ed822ffb43e6
-:END:
-#+begin_src emacs-lisp
-(defun remove-property-drawers-from-tangled-file ()
-  "Remove property drawers from the tangled file."
-  (let ((file (buffer-file-name)))
-    (when file
-      (with-temp-buffer
-        (insert-file-contents file)
-        ;; Adjust the regex to match the specific format of your property drawers
-        (while (re-search-forward "^;; :PROPERTIES:\n\\(;; :.*\n\\)+;; :END:\n" nil t)
-          (replace-match ""))
-        (write-file file)))))
-
-#+end_src
-#+begin_src emacs-lisp
-(add-hook 'org-babel-post-tangle-hook 'remove-property-drawers-from-tangled-file)
-
-#+end_src
-https://chat.openai.com/c/75a4844b-df8c-4690-8bf0-3078d341d584
 
 *** Package configuration
 :PROPERTIES:
@@ -5546,12 +5537,63 @@ https://chat.openai.com/c/75a4844b-df8c-4690-8bf0-3078d341d584
 
 #+end_src
 #+begin_src emacs-lisp
+(use-package embark
+  :ensure t
+  :demand t
+  :bind
+  (("C-." . embark-act)
+   ("C-;" . embark-dwim)
+   ("C-h B" . embark-bindings))
+  :init
+  (setq prefix-help-command #'embark-prefix-help-command)
+  :config
+  (add-to-list 'display-buffer-alist
+               '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
+                 nil
+                 (window-parameters (mode-line-format . none)))))
+
+(use-package embark-consult
+  :ensure t
+  :after embark consult
+  :hook
+  (embark-collect-mode . consult-preview-at-point-mode))
+
 (use-package citar-embark
   :after citar embark
   :no-require
   :config (citar-embark-mode))
 
-(setq citar-at-point-function 'embark-act)
+(defun jg/citar-open-doi (citekey)
+  "Open the DOI for CITEKEY in a browser."
+  (let ((doi (citar-get-value "doi" citekey)))
+    (if doi
+        (browse-url (concat "https://doi.org/" doi))
+      (message "No DOI found for %s" citekey))))
+
+(defun jg/citar-open-smart (citekey)
+  "Open CITEKEY: existing PDF if available, else DOI, else URL."
+  (let* ((files-ht (citar-get-files citekey))
+         (file-list (when (hash-table-p files-ht)
+                      (let (all) (maphash (lambda (_k v) (setq all (append v all))) files-ht) all)))
+         (existing (seq-filter #'file-exists-p file-list))
+         (doi (citar-get-value "doi" citekey))
+         (url (citar-get-value "url" citekey)))
+    (cond
+     (existing (citar-file-open (car existing)))
+     (doi (browse-url (concat "https://doi.org/" doi)))
+     (url (browse-url url))
+     (t (message "No PDF, DOI, or URL found for %s" citekey)))))
+
+(setq citar-at-point-function 'jg/citar-open-smart)
+
+(with-eval-after-load 'citar-embark
+  (keymap-set citar-embark-citation-map "o" #'citar-open-files)
+  (keymap-set citar-embark-citation-map "d" #'jg/citar-open-doi))
+
+(advice-add 'citar-file--parse-file-field :around
+            (lambda (orig &rest args)
+              (let ((inhibit-message t))
+                (apply orig args))))
 #+end_src
 https://blog.tecosaur.com/tmio/2021-07-31-citations.html
 https://kristofferbalintona.me/posts/202206141852/
@@ -5680,7 +5722,9 @@ Kernelspecs live at =~/.local/share/jupyter/kernels/<name>/kernel.json=. They st
   ;; Free up keybindings for `completion-at-point`
   (with-eval-after-load 'flyspell
     (define-key flyspell-mode-map (kbd "C-M-i") nil)
-    (define-key flyspell-mode-map (kbd "M-TAB") nil))
+    (define-key flyspell-mode-map (kbd "M-TAB") nil)
+    (define-key flyspell-mode-map (kbd "C-.") nil)
+    (define-key flyspell-mode-map (kbd "C-;") nil))
   (global-set-key (kbd "M-TAB") #'completion-at-point)) ;; Bind `M-TAB` globally
 #+end_src
 
@@ -6587,6 +6631,8 @@ Config: [[file:~/repos/emacs/emacs.org::*whisper][Package configuration > whispe
   (setq whisper-before-transcription-hook nil)
   ;; Track vterm origin for direct text insertion
   (defvar my/whisper--vterm-target nil)
+  ;; When non-nil, skip vterm-send-return after transcription (WW chord)
+  (defvar my/whisper--no-return nil)
   ;; In vterm: send transcription via vterm-send-string, clear stdout buffer
   ;; so whisper skips creating a display buffer
   (add-hook 'whisper-after-transcription-hook
@@ -6595,13 +6641,15 @@ Config: [[file:~/repos/emacs/emacs.org::*whisper][Package configuration > whispe
                 (let ((text (buffer-substring-no-properties (point-min) (point-max))))
                   (with-current-buffer my/whisper--vterm-target
                     (vterm-send-string text)
-                    (vterm-send-return)))
+                    (unless my/whisper--no-return
+                      (vterm-send-return))))
                 (erase-buffer))))
   ;; Restore state after each run
   (add-hook 'whisper-after-insert-hook
             (lambda ()
               (setq whisper-insert-text-at-point t
-                    my/whisper--vterm-target nil)))
+                    my/whisper--vterm-target nil
+                    my/whisper--no-return nil)))
   ;; ffmpeg 4.4 drops audio on signals; send "q" to stdin for clean shutdown.
   ;; In vterm, disable insert-at-point so vterm hook handles it instead.
   (advice-add 'whisper-run :around
@@ -6621,7 +6669,15 @@ Config: [[file:~/repos/emacs/emacs.org::*whisper][Package configuration > whispe
                     (string-trim (shell-command-to-string "pactl get-default-source")))))
       (call-process "pactl" nil nil nil "set-source-volume" source "65536"))
     (whisper-run))
-  (key-chord-define-global "ww" 'my/whisper-run-with-mic))
+  (defun my/whisper-run-with-mic-no-return ()
+    "Stop whisper recording without sending return in vterm."
+    (interactive)
+    (setq my/whisper--no-return t)
+    (if (process-live-p whisper--recording-process)
+        (process-send-string whisper--recording-process "q")
+      (my/whisper-run-with-mic)))
+  (key-chord-define-global "ww" 'my/whisper-run-with-mic)
+  (key-chord-define-global "WW" 'my/whisper-run-with-mic-no-return))
 #+end_src
 
 **** yaml
@@ -7645,10 +7701,11 @@ needs an install?
 - [[https://www.reddit.com/r/emacs/comments/1ltp2j0/announcing_flyover_modern_aesthetic_overlay_for/][flyover — modern aesthetic overlay]]
 - [[https://www.reddit.com/r/orgmode/comments/1ojnrq1/i_figured_it_out_text_highlighting/][org-mode text highlighting]]
 - Pulse line on scroll/recenter/other-window (=pulse-momentary-highlight-one-line=, show with C-l)
-**** prog-mode prettify symbols
+**** CANCELED prog-mode prettify symbols
 :PROPERTIES:
 :ID:       088CAF28-14B9-4A23-9151-9DD59E538E5A
 :END:
+Retired — breaks org-table column alignment (prettified symbol width ≠ original text width).
 #+begin_src emacs-lisp
 
 (setq-default prettify-symbols-alist '(
@@ -7669,10 +7726,11 @@ needs an install?
 - Minor annoyance: switch-to-buffer Agenda as normal buffer file
 - [[https://www.reddit.com/r/emacs/comments/1og34ko/configuring_displaybufferalist_is_absolutely/][configuring display-buffer-alist]]
 - Dired enhancement: [[https://github.com/alexluigit/dirvish][dirvish]]
-**** Indirect buffer absolute line numbers in mode line
+**** CANCELED Indirect buffer absolute line numbers in mode line
 :PROPERTIES:
 :ID:       CB4C1E72-2FBE-42BC-B963-858BA01EC699
 :END:
+Retired — every approach conflicts with org-tree-to-indirect-buffer. M-x what-line works as fallback.
 Show true (absolute) line numbers from the parent buffer in the mode line of an indirect buffer, not the narrowed-relative numbers. Approaches tried:
 - =make-indirect-buffer= advice (=:filter-return=, =:after=) — timing conflicts with =org-tree-to-indirect-buffer= which reads =mode-line-format= as a buffer identifier mid-execution; stale =org-last-indirect-buffer= caused persistent breakage after advice removal
 - =setq-default mode-line-format= with conditional =(:eval (when (buffer-base-buffer) ...))= — indirect buffers inherit base buffer's local =mode-line-format= via clone, bypassing the default
@@ -7694,36 +7752,9 @@ Show true (absolute) line numbers from the parent buffer in the mode line of an 
 
 *** Custom elisp utilities
 - Custom transient menu — see [[https://github.com/karthink/calc-transient][calc-transient]] for example
-**** Paste without line breaks
-:PROPERTIES:
-:ID:       29C2D7F1-A40B-4D98-9F42-1D31A4A1684D
-:END:
-#+begin_src emacs-lisp
-(defun paste-without-line-breaks ()
-  "Paste the clipboard content without line breaks."
-  (interactive)
-  (let ((clipboard-content (current-kill 0)))
-    (insert (replace-regexp-in-string "\n" " " clipboard-content))))
 
-;; Bind to C-c v (you can change this to any key combination you prefer)
-(global-set-key (kbd "C-c v") 'paste-without-line-breaks)
-#+end_src
-- [[https://claude.ai/chat/5c14d313-143c-4cd9-882a-0d59aa67c09e][paste-without-line-breaks implementation discussion]]
-- [[https://chatgpt.com/c/66f70956-8184-8005-b6ff-6c77e19ddcde][paste-without-line-breaks design]]
 
-**** org-link-open-buffer
-- [[https://chatgpt.com/c/cc823a5b-e895-4a4e-b4a4-1b1a1f2716bb][org-link-open-buffer design discussion]]
-#+begin_src emacs-lisp
-(defun org-link-open-buffer (buffer-name)
-  "Switch to a buffer with BUFFER-NAME."
-  (switch-to-buffer buffer-name))
-
-(org-link-set-parameters "buffer"
-                         :follow (lambda (path) (org-link-open-buffer path)))
-
-#+end_src
-
-**** run-gnome-ctrl
+**** CANCELED run-gnome-ctrl
 #+begin_src emacs-lisp
 (defun run-gnome-ctrl ()
   "Starts the Gnome Control Center application.
@@ -7836,13 +7867,6 @@ Invoke by org-open-at-point like [[elisp:(run-gnome-ctrl)]]
 #+end_src
 
 *** Packages to evaluate
-**** ebib
-:PROPERTIES:
-:ID:       5C67E7A5-1F4A-4CAD-83E7-DE6C34C76E36
-:END:
-- [[https://chatgpt.com/c/8e222105-a52a-4856-80d3-c37823f0efb1][ebib bibliography manager discussion]]
-- [[https://joostkremers.github.io/ebib/][ebib docs]]
-(from [[id:28ed3017-eedb-4a6c-94e5-f477353170c8][Package configuration]])
 
 **** Jinx spelling
 :PROPERTIES:
@@ -7856,127 +7880,6 @@ https://github.com/minad/jinx
 	 ))
 #+end_src
 
-**** org-edna
-:PROPERTIES:
-:ID:       2acfefa2-2fd1-465f-8c79-d14160de0284
-:END:
-blockers and counters are not respected in orgzly
-- [[https://chatgpt.com/c/673a1bcb-dbe0-8005-b289-3292f7066d63][org-edna setup and orgzly compatibility discussion]]
-- [[https://www.nongnu.org/org-edna-el/][org-edna documentation]]
-- id syntax- can be a linker with [[id: , but cannot have a name like [[ ][
-#+begin_src emacs-lisp
-(use-package org-edna
-  :ensure t
-  :config
-  (org-edna-mode 1))
-#+end_src
-
-**** plantuml
-:PROPERTIES:
-:ID:       7A28100E-8B01-4946-A317-3A6C5919E957
-:END:
-#+begin_src emacs-lisp
-(use-package ob-plantuml
-  :after org
-  :config
-  ;; Point this to your plantuml.jar
-  (setq org-plantuml-jar-path "/usr/share/plantuml/plantuml.jar")
-  ;; Or if you have the plantuml executable
-  ;; (setq org-plantuml-exec-mode 'plantuml)
-  )
-
-;; enable plantuml without dropping existing langs
-(add-to-list 'org-babel-load-languages '(plantuml . t))
-
-(org-babel-do-load-languages
- 'org-babel-load-languages
- org-babel-load-languages)
-
-#+end_src
-
-**** improved org tables
-:PROPERTIES:
-:ID:       78A550F7-335D-43A6-9274-66A44910A772
-:END:
-- https://github.com/yibie/grid-table
-- org-supertag table view
-  - https://www.reddit.com/r/orgmode/comments/1mim7oe/update_orgsupertag_table_view_now_support/
-  - https://github.com/yibie/org-supertag
-
-**** org-web-tools
-:PROPERTIES:
-:ID:       c968788a-5931-4941-9111-56db279d1494
-:END:
-https://github.com/alphapapa/org-web-tools
-
-**** [[https://github.com/yibie/org-supertag][org-supertag]]
-
-**** Evil
-:PROPERTIES:
-:ID:       1a23bec3-19e2-4340-b16f-ece6abd9c9e0
-:END:
-- https://stackoverflow.com/questions/8483182/evil-mode-best-practice?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
-cite:fisher2011
-#+begin_src emacs-lisp
-;;(require 'evil)
-;;(evil-mode 1)
-;;(setq evil-default-state 'emacs) ;; changes default state to emacs
-#+end_src
-https://github.com/emacs-evil/evil
-
-**** Embark
-:PROPERTIES:
-:ID:       43BD91F1-1328-467D-B67E-B095A7F4B601
-:END:
-- https://github.com/oantolin/embark
-- https://github.com/kickingvegas/casual
-- http://yummymelon.com/devnull/announcing-casual-avy.html
-#+begin_src emacs-lisp
-(use-package marginalia
-  :ensure t
-  :config
-  (marginalia-mode))
-
-(use-package embark
-  :ensure t
-
-  :bind
-  (("C-." . embark-act)         ;; pick some comfortable binding
-   ("C-;" . embark-dwim)        ;; good alternative: M-.
-   ("C-h B" . embark-bindings) ;; alternative for `describe-bindings'
-   (:map org-mode-map ;; Override org-mode specific binding
-         ("C-;" . embark-dwim)
-	 ("C-." . embark-act)
-   ))
-
-  :init
-
-  ;; Optionally replace the key help with a completing-read interface
-  (setq prefix-help-command #'embark-prefix-help-command)
-
-  ;; Show the Embark target at point via Eldoc. You may adjust the
-  ;; Eldoc strategy, if you want to see the documentation from
-  ;; multiple providers. Beware that using this can be a little
-  ;; jarring since the message shown in the minibuffer can be more
-  ;; than one line, causing the modeline to move up and down:
-
-  ;; (add-hook 'eldoc-documentation-functions #'embark-eldoc-first-target)
-  ;; (setq eldoc-documentation-strategy #'eldoc-documentation-compose-eagerly)
-
-  :config
-
-  ;; Hide the mode line of the Embark live/completions buffers
-  (add-to-list 'display-buffer-alist
-               '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
-                 nil
-                 (window-parameters (mode-line-format . none)))))
-
-;; Consult users will also want the embark-consult package.
-(use-package embark-consult
-  :ensure t ; only need to install it, embark loads it after consult if found
-  :hook
-  (embark-collect-mode . consult-preview-at-point-mode))
-#+end_src
 
 **** Casual / transient
 :PROPERTIES:
@@ -8033,62 +7936,8 @@ https://www.reddit.com/r/emacs/comments/1qnqgto/alternative_transient_documentat
 **** [[file:~/repos/org/private.org::*Abbreviations][abbrev mode — in private.org]]
 
 *** Tangle and export
-**** Strip properties on tangle with org comments
-:PROPERTIES:
-:ID:       ABA4F5C4-A955-4431-B8F0-4EEF159335AD
-:END:
-#+begin_src emacs-lisp
-(defun strip-org-properties-comments ()
-  "Remove `;; :PROPERTIES:` drawers and collapse blank lines in tangled config."
-  (interactive)
-  (when (and buffer-file-name
-             (string-match-p "public_config\\.el\\'" buffer-file-name))
-    (message "Running cleanup on: %s" buffer-file-name)
-    (goto-char (point-min))
-    (let ((start (point-min)))
-      (while (re-search-forward "^;; :PROPERTIES:$" nil t)
-        (let ((drawer-start (match-beginning 0)))
-          (when (re-search-forward "^;; :END:$" nil t)
-            (delete-region drawer-start (1+ (point)))))))
-    ;; Collapse multiple blank lines
-    (goto-char (point-min))
-    (while (re-search-forward "\n\\{3,\\}" nil t)
-      (replace-match "\n\n"))
-    (message "Cleanup complete for: %s" buffer-file-name)))
-
-(defun my/run-before-save-hooks ()
-  "Run buffer-local before-save hooks and save the buffer."
-  (run-hooks 'before-save-hook)
-  (save-buffer))
-
-;; Ensure this runs after tangling
-(add-hook 'org-babel-post-tangle-hook #'my/run-before-save-hooks)
-
-;; Install cleanup on emacs-lisp-mode files
-(add-hook 'emacs-lisp-mode-hook
-          (lambda ()
-            (when (and buffer-file-name
-                       (string-match-p "public_config\\.el\\'" buffer-file-name))
-              (add-hook 'before-save-hook #'strip-org-properties-comments nil 'local))))
-#+end_src
-
-**** Display inline pdf image in orgmode
+**** CANCELED Display inline pdf image in orgmode
 :PROPERTIES:
 :ID:       14ea79f5-5ffe-4ced-ba91-e84c2d5bcb84
 :END:
-[2025-07-31 Thu] Possible but really slows down emacs. Stick to SVG for now.
-  #+begin_src emacs-lisp
-;; Enable PDF display using pdf-tools
-;(pdf-tools-install)
-;(setq org-file-apps (quote ((auto-mode . emacs)
-;                            ("\\.pdf\\'" . "emacsclient -n %s"))))
-
-(add-to-list 'image-type-file-name-regexps '("\\.pdf\\'" . imagemagick))
-(add-to-list 'image-file-name-extensions "pdf")
-(setq imagemagick-types-inhibit (remove 'PDF imagemagick-types-inhibit))
-(setq org-image-actual-width 600)
-
-
-#+end_src
-- ditaa setup for org-babel diagrams
-- Auto-confirm tangle to write-protected files (=advice-add 'org-babel-tangle=)
+Retired — slows down Emacs significantly. Stick to SVG.

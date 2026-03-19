@@ -4,7 +4,7 @@
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
 ; Author:  Jeffrey Szymanski
-; Tangled: 2026-03-18 07:48:22
+; Tangled: 2026-03-19 09:46:46
 ; ============================================================
 
 (defun jg--parse-org-enums (file tag)
@@ -50,7 +50,6 @@ and sub-items are the values. Returns an alist of (FIELD . (value1 value2 ...)).
                          :weight 'light)
      (message "Font set to Hack"))))
 
-
 (custom-set-faces
  '(default ((t (:family "Hack" :height 114 :weight light)))))
 
@@ -83,7 +82,6 @@ and sub-items are the values. Returns an alist of (FIELD . (value1 value2 ...)).
     (with-temp-file temp-file
       (insert body))
     (org-babel-eval (format "cat %s" temp-file) "")))
-
 
 ;; markdown: no ob-markdown package exists; define no-op execute so tangle works
 (defun org-babel-execute:markdown (body _params) body)
