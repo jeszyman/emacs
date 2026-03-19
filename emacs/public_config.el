@@ -3,8 +3,8 @@
 ; Edits will be overwritten on next org-babel tangle.
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
-; Author:  Jeffrey Szymanski
-; Tangled: 2026-03-19 09:46:46
+; Author:  Jeff Szymanski
+; Tangled: 2026-03-19 12:43:37
 ; ============================================================
 
 ;; Base Emacs
@@ -432,6 +432,16 @@ Requires pdfannots to be installed and on PATH."
     (apply orig-fun args)))
 
 (advice-add 'cua-paste :around #'jg/cua-paste-clean)
+;; Emacs caches the X clipboard selection and can return stale text
+;; when an external app (e.g. Outlook) overwrites CLIPBOARD after
+;; Emacs last set it.  Bypass the cache by reading via xclip.
+(setq interprogram-paste-function
+      (lambda ()
+        (let ((text (string-trim-right
+                     (shell-command-to-string "xclip -selection clipboard -o"))))
+          (when (and (> (length text) 0)
+                     (not (string= text (or (car kill-ring) ""))))
+            text))))
 ;; remove-blank-lines
 
 (defun remove-blank-lines ()
