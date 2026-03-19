@@ -4,7 +4,7 @@
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
 ; Author:  Jeff Szymanski
-; Tangled: 2026-03-19 12:43:37
+; Tangled: 2026-03-19 13:08:37
 ; ============================================================
 
 ;; Base Emacs
@@ -432,16 +432,21 @@ Requires pdfannots to be installed and on PATH."
     (apply orig-fun args)))
 
 (advice-add 'cua-paste :around #'jg/cua-paste-clean)
-;; Emacs caches the X clipboard selection and can return stale text
-;; when an external app (e.g. Outlook) overwrites CLIPBOARD after
-;; Emacs last set it.  Bypass the cache by reading via xclip.
+;; Emacs caches the X clipboard selection (gui--last-selected-text-clipboard)
+;; and returns stale text when an external app overwrites CLIPBOARD after
+;; Emacs last set it.  Fix: clear the cache before every paste so
+;; gui-get-selection always re-queries X via native protocol.
+;; Using gui-get-selection instead of shelling out to xclip avoids
+;; subprocess hangs in some frames.
 (setq interprogram-paste-function
       (lambda ()
-        (let ((text (string-trim-right
-                     (shell-command-to-string "xclip -selection clipboard -o"))))
-          (when (and (> (length text) 0)
-                     (not (string= text (or (car kill-ring) ""))))
-            text))))
+        (setq gui--last-selected-text-clipboard nil)
+        (condition-case nil
+            (let ((text (gui-get-selection 'CLIPBOARD 'UTF8_STRING)))
+              (when (and (stringp text) (> (length text) 0)
+                         (not (string= text (or (car kill-ring) ""))))
+                (substring-no-properties text)))
+          (error nil))))
 ;; remove-blank-lines
 
 (defun remove-blank-lines ()
@@ -2295,8 +2300,88 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
         mu4e-headers-date-format "%Y-%m-%d"
         mu4e-use-fancy-chars t)
 
+  ;; Threading
+  (setq mu4e-headers-threading t
+        mu4e-headers-thread-folding t
+        mu4e-headers-include-related t)
+
   ;; Org integration
   (require 'org-mu4e))
+;; Thread folding keybindings
+
+(with-eval-after-load 'mu4e
+  (define-key mu4e-headers-mode-map (kbd "z a") #'mu4e-thread-fold-all)
+  (define-key mu4e-headers-mode-map (kbd "z n") #'mu4e-thread-unfold-all)
+  (define-key mu4e-headers-mode-map (kbd "z t") #'mu4e-thread-fold-toggle))
+;; Immediate refile (archive)
+
+(with-eval-after-load 'mu4e
+  (defun jg/mu4e-refile-now ()
+    "Refile message at point immediately."
+    (interactive)
+    (mu4e-headers-mark-for-refile)
+    (mu4e-mark-execute-all 'no-confirmation)
+    (delete-other-windows))
+
+  (defun jg/mu4e-refile-thread-now ()
+    "Refile entire thread at point immediately."
+    (interactive)
+    (mu4e-headers-mark-thread-using-markpair '(refile) t)
+    (mu4e-mark-execute-all 'no-confirmation)
+    (delete-other-windows))
+
+  (define-key mu4e-headers-mode-map (kbd "r") #'jg/mu4e-refile-now)
+  (define-key mu4e-headers-mode-map (kbd "T") #'jg/mu4e-refile-thread-now))
+;; Org thread link storage
+
+(with-eval-after-load 'mu4e
+  (defun jg/mu4e-org-store-thread-link ()
+    "Store an org link to the mu4e thread at point using msgid query."
+    (when (and (derived-mode-p 'mu4e-headers-mode 'mu4e-view-mode)
+               (mu4e-message-at-point t))
+      (let* ((msg (mu4e-message-at-point))
+             (msgid (mu4e-message-field msg :message-id))
+             (refs (mu4e-message-field msg :references))
+             (oldest-id (if refs (car refs) msgid))
+             (subject (mu4e-message-field msg :subject))
+             (clean-subject (replace-regexp-in-string "^\\(Re\\|Fw\\|Fwd\\): *" "" subject t))
+             (link (concat "mu4e:query:msgid:" oldest-id))
+             (desc (concat clean-subject " thread")))
+        (org-link-store-props :type "mu4e" :link link :description desc)
+        link)))
+  (org-link-set-parameters "mu4e" :store #'jg/mu4e-org-store-thread-link))
+;; Display buffer rules
+
+(with-eval-after-load 'mu4e
+  (add-to-list 'display-buffer-alist
+               '("\\*mu4e-headers\\*" (display-buffer-pop-up-frame))))
+;; Transient
+
+(with-eval-after-load 'mu4e
+  (transient-define-prefix jg/mu4e-transient ()
+    "mu4e actions"
+    [["Message"
+      ("R" "Reply" mu4e-compose-reply)
+      ("F" "Forward" mu4e-compose-forward)
+      ("C" "Compose new" mu4e-compose-new)]
+     ["Archive"
+      ("r" "Archive message" jg/mu4e-refile-now)
+      ("T" "Archive thread" jg/mu4e-refile-thread-now)]
+     ["Mark"
+      ("d" "Trash" mu4e-headers-mark-for-trash)
+      ("D" "Delete" mu4e-headers-mark-for-delete)
+      ("!" "Flag" mu4e-headers-mark-for-flag)
+      ("x" "Execute marks" mu4e-mark-execute-all)]
+     ["Thread"
+      ("z a" "Fold all" mu4e-thread-fold-all)
+      ("z n" "Unfold all" mu4e-thread-unfold-all)
+      ("z t" "Toggle fold" mu4e-thread-fold-toggle)]
+     ["Navigate"
+      ("s" "Search" mu4e-headers-search)
+      ("g" "Refresh" mu4e-headers-rerun-search)
+      ("j" "Jump to maildir" mu4e~headers-jump-to-maildir)
+      ("l" "Store org link" org-store-link)]])
+  (define-key mu4e-headers-mode-map (kbd "?") #'jg/mu4e-transient))
 ;; Use-package
 
 (use-package openwith

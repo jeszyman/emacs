@@ -3926,16 +3926,21 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 #+end_src
 
 #+begin_src emacs-lisp
-;; Emacs caches the X clipboard selection and can return stale text
-;; when an external app (e.g. Outlook) overwrites CLIPBOARD after
-;; Emacs last set it.  Bypass the cache by reading via xclip.
+;; Emacs caches the X clipboard selection (gui--last-selected-text-clipboard)
+;; and returns stale text when an external app overwrites CLIPBOARD after
+;; Emacs last set it.  Fix: clear the cache before every paste so
+;; gui-get-selection always re-queries X via native protocol.
+;; Using gui-get-selection instead of shelling out to xclip avoids
+;; subprocess hangs in some frames.
 (setq interprogram-paste-function
       (lambda ()
-        (let ((text (string-trim-right
-                     (shell-command-to-string "xclip -selection clipboard -o"))))
-          (when (and (> (length text) 0)
-                     (not (string= text (or (car kill-ring) ""))))
-            text))))
+        (setq gui--last-selected-text-clipboard nil)
+        (condition-case nil
+            (let ((text (gui-get-selection 'CLIPBOARD 'UTF8_STRING)))
+              (when (and (stringp text) (> (length text) 0)
+                         (not (string= text (or (car kill-ring) ""))))
+                (substring-no-properties text)))
+          (error nil))))
 #+end_src
 
 **** remove-blank-lines
