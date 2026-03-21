@@ -4,7 +4,7 @@
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
 ; Author:  Jeff Szymanski
-; Tangled: 2026-03-19 13:08:37
+; Tangled: 2026-03-21 08:21:34
 ; ============================================================
 
 ;; Base Emacs
@@ -2164,7 +2164,7 @@ skipped and nothing is inserted for it."
 
 ;; <> <> ,.<sf>
 
-(key-chord-define-global "cc"     'claude-code-ide-menu)
+(key-chord-define-global "jc"     'claude-code-ide-menu)
 (key-chord-define-global "xx"      'shell)
 (key-chord-define-global ",,"     'indent-for-comment)
 (key-chord-define-global "vv"     'vterm)
@@ -2900,7 +2900,7 @@ Saves the buffer on success."
                                           (mapconcat (lambda (p)
                                                        (format "L%d (level %d: %s)"
                                                                (nth 0 p) (nth 1 p) (nth 2 p)))
-                                                     positions ", ")))))))))
+                                                     positions ", "))))))))
          (let ((src-pos (funcall find-unique source-heading source-id "Source"))
                (tgt-pos (funcall find-unique target-heading target-id "Target")))
            (goto-char src-pos)
