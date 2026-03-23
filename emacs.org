@@ -459,6 +459,37 @@ echo "I AM INCLUDED FROM ANOTHER BUFFER"
 echo "I AM INCLUDED FROM LOCAL BUFFER"
 #+end_src
 
+*** Display results from one named block in multiple locations
+
+=#+CALL:= executes a named block but results go to the original =#+RESULTS:= block, not the call site. =#+RESULTS: Name= placed remotely works but only supports one location (org finds the first match). To show the same query results in two or more places, use noweb to include the code body in an independent block at each location.
+
+Given a named block:
+
+#+begin_example
+,#+name: MyQuery
+,#+begin_src emacs-lisp :results replace :cache no
+(org-ql-query ...)
+,#+end_src
+
+,#+RESULTS: MyQuery
+| ... original results stay here ... |
+#+end_example
+
+Display the same results elsewhere in the file with a noweb reference:
+
+#+begin_example
+,#+begin_src emacs-lisp :noweb yes :results replace :cache no
+<#MyQuery#>
+,#+end_src
+#+end_example
+
+=C-c C-c= on the noweb block expands the code from =MyQuery= inline, executes it, and writes results at this location. The original =#+RESULTS: MyQuery= is unaffected — both tables update independently.
+
+This is preferable to =#+CALL:= because:
+- Results appear at point (=#+CALL:= results often go to the named block's =#+RESULTS:= instead)
+- No need for end header arguments or workarounds
+- Each location is a self-contained block with its own =#+RESULTS:=
+
 *** INCLUDE
 :PROPERTIES:
 :ID:       c2184fd3-8358-47c4-9d26-a2db3f94e875
@@ -3343,6 +3374,13 @@ At startup, =init.el= auto-loads every =.el= file in =~/.emacs.d/config/=. Confi
 (require 'use-package)
 (setq use-package-always-ensure t)
 
+;; Redirect Customize writes to a non-tangled file so they survive tangle.
+;; Without this, Emacs appends custom-set-variables to init.el, which is
+;; auto-generated and overwritten on tangle.
+(setq custom-file (expand-file-name "custom.el" user-emacs-directory))
+(when (file-exists-p custom-file)
+  (load custom-file))
+
 ;; Function to safely load a file if it exists
 (defun safe-load-file-if-exists (filepath)
   "Safely load the Emacs Lisp file at FILEPATH if it exists.
@@ -6021,6 +6059,9 @@ https://github.com/magnars/expand-region.el
   (define-key global-map (kbd "C-$") 'org-mark-ring-goto)
   (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings)
   (setq helm-org-ignore-autosaves t)
+  ;; The default (helm) completion style is case-sensitive even with
+  ;; helm-case-fold-search 'smart.  Use basic+substring instead.
+  (setq helm-org-completion-styles '(basic substring))
 
 
 #+end_src
@@ -6373,6 +6414,12 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 (with-eval-after-load 'mu4e
   (add-to-list 'display-buffer-alist
                '("\\*mu4e-headers\\*" (display-buffer-pop-up-frame))))
+#+end_src
+
+***** Silence minibuffer tips
+#+begin_src emacs-lisp
+(with-eval-after-load 'mu4e
+  (advice-add 'mu4e~main-tip :override #'ignore))
 #+end_src
 
 ***** Transient
@@ -7593,43 +7640,6 @@ case "$TERM" in
 :ID:       78120684-eb8c-4970-836e-13d2cb624386
 :header-args: :tangle ./emacs/load-last.el
 :END:
-#+begin_src emacs-lisp
-(defun jg--parse-org-enums (file tag)
-  "Parse recipe enums from a heading tagged with TAG in FILE.
-Expects a nested list structure where top-level items are field names
-and sub-items are the values. Returns an alist of (FIELD . (value1 value2 ...))."
-  (with-current-buffer (find-file-noselect file)
-    (save-excursion
-      (goto-char (point-min))
-      (let ((tag-regexp (concat ":" (regexp-quote tag) ":")))
-        (if (re-search-forward (concat "^\\*+.*" tag-regexp) nil t)
-            (progn
-              (forward-line 1)
-              (let (result current-field)
-                ;; Parse the nested list
-                (while (and (not (looking-at "^\\*"))  ; Stop at next heading
-                            (not (eobp)))
-                  (cond
-                   ;; Top-level list item (field name)
-                   ((looking-at "^- \\([A-Z_]+\\)$")
-                    (setq current-field (intern (match-string 1)))
-                    (push (cons current-field nil) result))
-                   ;; Sub-item (value for current field)
-                   ((looking-at "^  - \\(.+\\)$")
-                    (when current-field
-                      (let* ((value (string-trim (match-string 1)))
-                             (pair (assq current-field result)))
-                        (when pair
-                          (setcdr pair (append (cdr pair) (list value)))))))
-                   ;; Empty line or other content - ignore
-                   (t nil))
-                  (forward-line 1))
-                (message "Parsed enums from tag :%s:" tag)
-                (nreverse result)))
-          (error "Heading with tag ':%s:' not found in %s" tag file))))))
-
-#+end_src
-
 #+begin_src emacs-lisp
 
 (run-with-idle-timer
