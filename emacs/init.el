@@ -3,8 +3,8 @@
 ; Edits will be overwritten on next org-babel tangle.
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
-; Author:  Jeff Szymanski
-; Tangled: 2026-03-21 08:21:34
+; Author:  Jeffrey Szymanski
+; Tangled: 2026-03-23 07:15:57
 ; ============================================================
 
 ;;-*- mode: elisp -*-
@@ -22,6 +22,13 @@
 
 (require 'use-package)
 (setq use-package-always-ensure t)
+
+;; Redirect Customize writes to a non-tangled file so they survive tangle.
+;; Without this, Emacs appends custom-set-variables to init.el, which is
+;; auto-generated and overwritten on tangle.
+(setq custom-file (expand-file-name "custom.el" user-emacs-directory))
+(when (file-exists-p custom-file)
+  (load custom-file))
 
 ;; Function to safely load a file if it exists
 (defun safe-load-file-if-exists (filepath)

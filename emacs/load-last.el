@@ -3,43 +3,10 @@
 ; Edits will be overwritten on next org-babel tangle.
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
-; Author:  Jeff Szymanski
-; Tangled: 2026-03-21 08:21:34
+; Author:  Jeffrey Szymanski
+; Tangled: 2026-03-23 07:15:57
 ; ============================================================
 
-(defun jg--parse-org-enums (file tag)
-  "Parse recipe enums from a heading tagged with TAG in FILE.
-Expects a nested list structure where top-level items are field names
-and sub-items are the values. Returns an alist of (FIELD . (value1 value2 ...))."
-  (with-current-buffer (find-file-noselect file)
-    (save-excursion
-      (goto-char (point-min))
-      (let ((tag-regexp (concat ":" (regexp-quote tag) ":")))
-        (if (re-search-forward (concat "^\\*+.*" tag-regexp) nil t)
-            (progn
-              (forward-line 1)
-              (let (result current-field)
-                ;; Parse the nested list
-                (while (and (not (looking-at "^\\*"))  ; Stop at next heading
-                            (not (eobp)))
-                  (cond
-                   ;; Top-level list item (field name)
-                   ((looking-at "^- \\([A-Z_]+\\)$")
-                    (setq current-field (intern (match-string 1)))
-                    (push (cons current-field nil) result))
-                   ;; Sub-item (value for current field)
-                   ((looking-at "^  - \\(.+\\)$")
-                    (when current-field
-                      (let* ((value (string-trim (match-string 1)))
-                             (pair (assq current-field result)))
-                        (when pair
-                          (setcdr pair (append (cdr pair) (list value)))))))
-                   ;; Empty line or other content - ignore
-                   (t nil))
-                  (forward-line 1))
-                (message "Parsed enums from tag :%s:" tag)
-                (nreverse result)))
-          (error "Heading with tag ':%s:' not found in %s" tag file))))))
 (run-with-idle-timer
  1 nil
  (lambda ()

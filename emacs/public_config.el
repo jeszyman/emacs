@@ -3,8 +3,8 @@
 ; Edits will be overwritten on next org-babel tangle.
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
-; Author:  Jeff Szymanski
-; Tangled: 2026-03-21 08:21:34
+; Author:  Jeffrey Szymanski
+; Tangled: 2026-03-23 07:15:57
 ; ============================================================
 
 ;; Base Emacs
@@ -2062,6 +2062,9 @@ skipped and nothing is inserted for it."
   (define-key global-map (kbd "C-$") 'org-mark-ring-goto)
   (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings)
   (setq helm-org-ignore-autosaves t)
+  ;; The default (helm) completion style is case-sensitive even with
+  ;; helm-case-fold-search 'smart.  Use basic+substring instead.
+  (setq helm-org-completion-styles '(basic substring))
 (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings)
 
 (with-eval-after-load 'org
@@ -2355,6 +2358,10 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
 (with-eval-after-load 'mu4e
   (add-to-list 'display-buffer-alist
                '("\\*mu4e-headers\\*" (display-buffer-pop-up-frame))))
+;; Silence minibuffer tips
+
+(with-eval-after-load 'mu4e
+  (advice-add 'mu4e~main-tip :override #'ignore))
 ;; Transient
 
 (with-eval-after-load 'mu4e

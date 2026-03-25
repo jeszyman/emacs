@@ -3,8 +3,8 @@
 ; Edits will be overwritten on next org-babel tangle.
 ; 
 ; Source:  /home/jeszyman/repos/emacs/emacs.org
-; Author:  Jeff Szymanski
-; Tangled: 2026-03-21 08:21:34
+; Author:  Jeffrey Szymanski
+; Tangled: 2026-03-23 07:15:57
 ; ============================================================
 
 (require 'org)
