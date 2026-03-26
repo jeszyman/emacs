@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-# ============================================================
-# AUTO-GENERATED — DO NOT EDIT DIRECTLY
-# Edits will be overwritten on next org-babel tangle.
-# 
-# Source:  /home/jeszyman/repos/emacs/emacs.org
-# Author:  Jeffrey Szymanski
-# Tangled: 2026-03-23 07:15:57
-# ============================================================
-
 
 """
 Script to generate Markdown files from Emacs Org-mode headers

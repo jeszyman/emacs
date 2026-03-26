@@ -32,6 +32,13 @@
 :export_file_name: /tmp/test
 :EXPORT_HTML_HEAD: <link rel="stylesheet" type="text/css" href="/tmp/cookbook.css" />
 :END:
+- Emphasis
+  =code=
+  ~verbatim~
+  /italic/
+  _underline_
+  +strike-through+
+
 *** Org-ql for structured data
 **** Org-QL Structured Data Query Example
 :PROPERTIES:
@@ -310,6 +317,12 @@ org-version
 
 
 
+- Suppress shell output popups: use =:results silent= and redirect stderr in the block body. Without the redirect, shell commands that write to stderr (e.g., =curl=, =conda run=) trigger an =*Org-Babel Error*= popup buffer even with =:results silent=.
+  #+begin_example
+  ,#+begin_src bash :results silent
+  some-command >/dev/null 2>&1
+  ,#+end_src
+  #+end_example
 - Run a simple timer
   #+begin_src emacs-lisp
 (run-at-time "1 min" nil
@@ -489,6 +502,42 @@ This is preferable to =#+CALL:= because:
 - Results appear at point (=#+CALL:= results often go to the named block's =#+RESULTS:= instead)
 - No need for end header arguments or workarounds
 - Each location is a self-contained block with its own =#+RESULTS:=
+
+*** Tangle one source block to multiple files
+:PROPERTIES:
+:ID:       cf077b34-aeca-4692-8e48-54236e4118a1
+:END:
+
+A single =:tangle= header can only target one file. To write the same code to multiple destinations, name the source block and reference it via noweb in separate blocks that each tangle to a different path.
+
+#+begin_example
+,#+name: mycode
+,#+begin_src zsh :eval never
+echo "Hello, World!"
+,#+end_src
+
+,#+begin_src zsh :eval never :tangle tangled/file_a.zsh :noweb yes
+<<mycode>>
+,#+end_src
+
+,#+begin_src zsh :eval never :tangle tangled/file_b.zsh :noweb yes
+<<mycode>>
+,#+end_src
+#+end_example
+
+Each target block can also add file-specific content around the noweb reference:
+
+#+begin_example
+,#+begin_src zsh :eval never :tangle tangled/file_a.zsh :noweb yes
+# file_a preamble
+<<mycode>>
+,#+end_src
+#+end_example
+
+After =C-c C-v C-t=, both =tangled/file_a.zsh= and =tangled/file_b.zsh= contain the code from =mycode=. Only the named block needs updating — the tangle targets stay in sync.
+
+References:
+- [[https://emacs.stackexchange.com/questions/39032/tangle-the-same-src-block-to-different-files][Tangle the same src block to different files (Stack Exchange)]]
 
 *** INCLUDE
 :PROPERTIES:
@@ -1749,13 +1798,6 @@ sqlite3 -header -csv /tmp/inventory.db "SELECT * FROM inventory;"
 |  5 | USB Cable  |      100 |   9.99 |
 |  6 | Headphones |       25 |  89.99 |
 
-*** Email
-:PROPERTIES:
-:ID:       ea517dbd-d9d1-4e9f-b72d-c45ed8b6e1f3
-:END:
-https://www.reddit.com/r/emacs/comments/1i0jgma/managing_microsoft_email_in_emacs/
-https://github.com/pdobsan/oama
-- email https://www.reddit.com/r/emacs/comments/yx1q69/how_to_set_up_email_step_by_step_guide_for/
 *** External
 :PROPERTIES:
 :ID:       c56ee165-06f6-451b-8a5d-526e684367b6
@@ -2103,10 +2145,13 @@ emacsclient -e "(progn (find-file \"$1\") \
 :ID:       d7d54139-64d0-4cfe-ab3a-879b3617b226
 :END:
 *** [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][org-latex-classes definitions]]
+*** [[id:B171BCE2-2FF8-45C6-8958-8799B349E1B0][Org-Mode in basecamp-private]]
 *** Processes
 :PROPERTIES:
 :ID:       8b5c515e-689b-436d-ac09-f368ec6d87ef
 :END:
+***** Tangle to multiple locations - See [[id:cf077b34-aeca-4692-8e48-54236e4118a1][Tangle one source block to multiple files]] in Cookbook
+
 **** 0 Flat                                                            :flat:
 :PROPERTIES:
 :ID:       1c3e70f6-1ca0-44bd-b2fa-2cf5fae2a126
@@ -2337,18 +2382,8 @@ examples:
 :END:
 - [[https://stackoverflow.com/a/61580716/6106936][use org-mode noweb to tangle blocks from multiple files]]
 - https://emacs.stackexchange.com/questions/17091/including-code-block-in-a-another-file
-***** Tangle to multiple locations
-:PROPERTIES:
-:ID:       38e75166-d05e-4ef5-96eb-ed38b2f0ab10
-:END:
-- https://www.google.com/search?q=tangle+block+to+multiple+locations
-- https://emacs.stackexchange.com/questions/39032/tangle-the-same-src-block-to-different-files
 **** Agenda
-- https://whhone.com/posts/org-agenda-repeated-tasks/
-- https://www.reddit.com/r/emacs/comments/1en7wap/find_your_tasks_instantly_when_you_need_to_5/
-- https://whhone.com/posts/org-agenda-repeated-tasks/
 **** Org-down
-- https://github.com/karlicoss/orgparse
 - https://github.com/ndwarshuis/org-sql?tab=readme-ov-file
 - http://orgmode.org/worg/dev/org-syntax.html
 **** Archiving
@@ -2360,22 +2395,11 @@ examples:
 :PROPERTIES:
 :ID:       33ff8cf2-a702-4401-ab9d-3555b56476ad
 :END:
-- https://github.com/lf-araujo/MxNotebook
-- https://github.com/rougier/notebook-mode/blob/master/notebook.el
-- https://www.reddit.com/r/orgmode/comments/5j9rmv/change_the_color_of_the_todo_keyword_you_use_to/
-- Emphasis
-  =code=
-  ~verbatim~
-  /italic/
-  _underline_
-  +strike-through+
-- https://www.reddit.com/r/emacs/comments/13y4gg0/nano_modeline_10_now_with_buttons/
 - [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Visual-Line-Mode.html][default visual line mode]]
 - Themes
   - https://github.com/minad/org-modern
     -
     - https://github.com/jdtsmith/org-modern-indent
-
 - Code blocks
   #+begin_src emacs-lisp
 ;(use-package org-modern-indent
@@ -2396,16 +2420,6 @@ examples:
     #+END_SRC
 ***** Ricing
 - https://lepisma.xyz/2017/10/28/ricing-org-mode/
-**** Calendar sync
-:PROPERTIES:
-:ID:       91fd993a-aea5-4e05-b16a-ee3aa4e01eac
-:END:
-https://www.reddit.com/r/orgmode/comments/ux9f78/a_python_script_to_sync_from_google_calendar_to/
-- to do ics import to org
-  - https://github.com/asoroa/ical2org.py
-  - https://orgmode.org/worg/org-tutorials/org-google-sync.html
-  - https://github.com/rjhorniii/ical2org
-  - https://orgmode.org/worg/org-translators.html
 **** [[id:b67dea45-0f1c-44b7-a76d-efc6dd1f2a75][Completion frameworks]]
 **** Checkboxes
 :PROPERTIES:
@@ -2414,15 +2428,8 @@ https://www.reddit.com/r/orgmode/comments/ux9f78/a_python_script_to_sync_from_go
 -
 - toggle whole tree https://lists.gnu.org/archive/html/emacs-orgmode/2013-09/msg00060.html
 **** Code and IDE
-https://www.reddit.com/r/emacs/comments/1i1exdt/hiding_inline_src_in_org/
+- inline source code formatting / hiding: https://www.reddit.com/r/emacs/comments/1i1exdt/hiding_inline_src_in_org/
 - tangle w/ org as commnets https://eschulte.github.io/babel-dev/DONE-tangle-entire-org-mode-file-in-comments.html
-- https://www.reddit.com/r/emacs/comments/1hbi751/passing_data_between_org_source_blocks_a/
-- noweb references from another file , syntax is <#~/repos/basecamp/basecamp.org:ansible-include-vars-yaml()#>
-  https://stackoverflow.com/questions/47058372/in-org-mode-how-to-call-code-block-to-evaluate-from-other-org-file/61580716#61580716
-- [[https://www.miskatonic.org/2016/10/03/orgexportbabelevaluate/][eval never export causes all header arguements to be ignored]]
-***** Running code blocks
-
->/dev/null 2>&1 to prevent popups from shell
 ***** Shell and bash IDE
 :PROPERTIES:
 :ID:       e5d344fd-3edb-4fc9-af5b-8827e9abdc68
@@ -2485,19 +2492,11 @@ ls
 https://orgmode.org/worg/org-tools/
 - From http://www.howardism.org/Technical/Emacs/literate-programming-tutorial.html
 - [[https://emacs.stackexchange.com/questions/17926/python-org-mode-source-block-output-is-always-none][for python outputs in babel]]
-  - http://kitchingroup.cheme.cmu.edu/blog/2016/05/29/Expanding-orgmode-py-to-get-better-org-python-integration/
-
 - http://emacs.stackexchange.com/questions/20949/formatting-output-of-inline-org-mode-source-blocks
 
-- [[https://www.gnu.org/software/emacs/manual/html_node/org/Blocks.html][notation to show/hide code blocks on startup]]
-- [[https://emacs.stackexchange.com/questions/7211/collapse-src-blocks-in-org-mode-by-default][stack: option to collapse code block with shortcut]]
-- https://www.reddit.com/r/emacs/comments/huiqt6/executeandnextsourceblock_in_org_babel/
-- https://emacs.stackexchange.com/questions/39032/tangle-the-same-src-block-to-different-files
-- https://www.reddit.com/r/orgmode/comments/5u8z2e/obasync_asynchronous_srcblock_execution_for/
 
-https://www.reddit.com/r/emacs/comments/huiqt6/executeandnextsourceblock_in_org_babel/
-- https://emacs.stackexchange.com/questions/3785/how-to-specify-default-header-arguments-in-orgmode-code-blocks
-- https://www.reddit.com/r/orgmode/comments/ptzcbj/modify_the_src_blocks_markers_to_much_more_eyes/
+
+- https://www.reddit.com/r/emacs/comments/huiqt6/executeandnextsourceblock_in_org_babel/
 - 15.8 Extracting Source Code
   - https://emacs.stackexchange.com/questions/46479/how-to-set-a-tangled-parent-directory-for-each-subtree-in-org-mode
   - https://emacs.stackexchange.com/questions/20001/is-it-possible-to-read-user-input-from-stdin-while-tangling-a-source-block
@@ -3136,7 +3135,6 @@ https://emacs.stackexchange.com/questions/48526/how-do-i-delete-all-blank-lines-
 :ID:       7f4e49a0-6139-43e5-9162-15e683f2ce4d
 :END:
 - [[id:c5b813eb-f76b-4377-a483-ee6c932b4aa7][General writing and typesetting module]]
-*** [[id:B171BCE2-2FF8-45C6-8958-8799B349E1B0][Org-Mode in basecamp-private]]
 *** Local YAS
 :PROPERTIES:
 :ID:       4ce165ef-2b82-4dcb-b3ba-09fc3d2f4898
@@ -4263,105 +4261,6 @@ Stale =.elc= files silently override =.el= source — Emacs's =load= prefers byt
 
 (setq org-hide-block-startup t)
 
-#+end_src
-
-****** Tangle preamble inserter
-Auto-inserts an AUTO-GENERATED preamble into each tangled output file. Uses Emacs =comment-start= via =set-auto-mode= to detect the correct comment syntax for any file type. Special handling for =.md= (HTML comment after YAML frontmatter) and skip for =.json= / extensionless files.
-
-#+begin_src emacs-lisp
-(defun jg/tangle-comment-char (file)
-  "Return comment prefix for FILE using Emacs major-mode comment syntax.
-Returns a string prefix, the symbol 'md for markdown, or nil to skip."
-  (let ((ext (file-name-extension file)))
-    (cond
-     ((equal ext "md") 'md)
-     ((equal ext "json") nil)
-     ((null ext) nil)
-     (t (let (result)
-          (with-temp-buffer
-            (let ((buffer-file-name file))
-              (ignore-errors (set-auto-mode))
-              (when (and (boundp 'comment-start) comment-start)
-                (setq result (concat (string-trim-right comment-start) " ")))))
-          (or result "# "))))))
-
-(defun jg/insert-tangle-header (file source-org timestamp author)
-  "Insert or replace preamble in FILE identifying it as auto-generated.
-SOURCE-ORG is the originating org file path, TIMESTAMP is a date string,
-AUTHOR is the author name.  Does nothing for .json and extensionless files.
-For .md files inserts an HTML comment after the YAML frontmatter closing ---."
-  (let ((comment (jg/tangle-comment-char file)))
-    (unless (null comment)
-      (let ((orig-mode (file-modes file)))
-        (set-file-modes file #o644)
-        (if (eq comment 'md)
-            ;; .md: one-line HTML comment placed after YAML frontmatter
-            (let* ((marker "<!-- AUTO-GENERATED")
-                   (note (concat marker " — do not edit directly.\n"
-                                 "     Source:  " source-org "\n"
-                                 "     Tangled: " timestamp " -->\n")))
-              (with-temp-buffer
-                (insert-file-contents file)
-                ;; Remove existing note (idempotency)
-                (goto-char (point-min))
-                (when (search-forward marker nil t)
-                  (beginning-of-line)
-                  (let ((start (point)))
-                    (search-forward "-->" nil t)
-                    (forward-line 1)
-                    (delete-region start (point))))
-                ;; Find closing --- of YAML frontmatter and insert after it
-                (goto-char (point-min))
-                (when (looking-at "---")
-                  (forward-line 1)
-                  (when (re-search-forward "^---" nil t)
-                    (forward-line 1)
-                    (insert note)))
-                (write-region (point-min) (point-max) file nil 'quiet)))
-          ;; All other files: block comment at top (or after shebang)
-          (let* ((sep (make-string 60 ?=))
-                 (header (concat comment sep "\n"
-                                 comment "AUTO-GENERATED — DO NOT EDIT DIRECTLY\n"
-                                 comment "Edits will be overwritten on next org-babel tangle.\n"
-                                 comment "\n"
-                                 comment "Source:  " source-org "\n"
-                                 comment "Author:  " author "\n"
-                                 comment "Tangled: " timestamp "\n"
-                                 comment sep "\n"
-                                 "\n")))
-            (with-temp-buffer
-              (insert-file-contents file)
-              ;; Remove existing preamble (idempotency)
-              (goto-char (point-min))
-              (when (search-forward (concat comment sep) nil t)
-                (goto-char (point-min))
-                (let ((shebang (looking-at "#!")))
-                  (when shebang (forward-line 1))
-                  (let ((start (point)))
-                    (when (search-forward (concat comment sep) nil t)
-                      (forward-line 1)
-                      (when (looking-at "\n") (forward-line 1))
-                      (delete-region start (point))))))
-              ;; Insert preamble
-              (goto-char (point-min))
-              (when (looking-at "#!") (forward-line 1))
-              (insert header)
-              (write-region (point-min) (point-max) file nil 'quiet))))
-        (set-file-modes file orig-mode)))))
-
-(defun jg/tangle-with-header-advice (orig-fun &rest args)
-  "Around advice for org-babel-tangle that inserts preamble headers.
-Intercepts all callers — org-auto-tangle, M-x org-babel-tangle, skill, etc."
-  (let* ((source-org (buffer-file-name))
-         (timestamp  (format-time-string "%Y-%m-%d %H:%M:%S"))
-         (author     (or (user-full-name) "Jeff Szymanski"))
-         (files      (apply orig-fun args)))
-    (when source-org
-      (dolist (f files)
-        (jg/insert-tangle-header (expand-file-name f) source-org timestamp author)))
-    files))
-
-(advice-add 'org-babel-tangle :around #'jg/tangle-with-header-advice)
 #+end_src
 
 ****** Toggle collapse blocks
@@ -7016,6 +6915,7 @@ Do not check out the same branch in both the main repo and a worktree simultaneo
 #+begin_src emacs-lisp
 (setq claude-code-ide-use-side-window nil)
 (setq claude-code-ide-use-ide-diff nil)
+(setq claude-code-ide-cli-extra-flags "--dangerously-skip-permissions")
 #+end_src
 
 - TAB in vterm inserts file paths via Emacs completion (vertico) — see [[file:emacs.org::*vterm][vterm]]
@@ -7510,6 +7410,7 @@ Move all tangled skills/agents to standalone files in =~/.claude/=. Currently ta
 - Agents for reformatting / linting
 - [[https://github.com/xleddyl/claude-watch][claude-watch]]
 - Pre-mortem mode for devils-advocate: blind agent assumes the proposition already failed and explains why (Gary Klein). Flag on =/devils-advocate= or separate =/pre-mortem= skill.
+- Use [[https://github.com/rougier/notebook-mode][svg-tag-mode / notebook-mode]] to visually distinguish tangled vs non-tangled src blocks (e.g., SVG badge overlay showing tangle target path). Discussed in claude session =5d1e0398=.
 ***** Reference                                                      :nohelm:
 - [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]
 - Comprehensive guides

@@ -1,12 +1,3 @@
-; ============================================================
-; AUTO-GENERATED — DO NOT EDIT DIRECTLY
-; Edits will be overwritten on next org-babel tangle.
-; 
-; Source:  /home/jeszyman/repos/emacs/emacs.org
-; Author:  Jeffrey Szymanski
-; Tangled: 2026-03-23 07:15:57
-; ============================================================
-
 ;; Base Emacs
 ;; - Frozen Emacs: =pkill -USR2 emacs=
 
@@ -660,102 +651,6 @@ Requires pdfannots to be installed and on PATH."
 (setq safe-local-variable-values '((org-confirm-elisp-link-function . nil)))
 
 (setq org-hide-block-startup t)
-;; Tangle preamble inserter
-;; Auto-inserts an AUTO-GENERATED preamble into each tangled output file. Uses Emacs =comment-start= via =set-auto-mode= to detect the correct comment syntax for any file type. Special handling for =.md= (HTML comment after YAML frontmatter) and skip for =.json= / extensionless files.
-
-(defun jg/tangle-comment-char (file)
-  "Return comment prefix for FILE using Emacs major-mode comment syntax.
-Returns a string prefix, the symbol 'md for markdown, or nil to skip."
-  (let ((ext (file-name-extension file)))
-    (cond
-     ((equal ext "md") 'md)
-     ((equal ext "json") nil)
-     ((null ext) nil)
-     (t (let (result)
-          (with-temp-buffer
-            (let ((buffer-file-name file))
-              (ignore-errors (set-auto-mode))
-              (when (and (boundp 'comment-start) comment-start)
-                (setq result (concat (string-trim-right comment-start) " ")))))
-          (or result "# "))))))
-
-(defun jg/insert-tangle-header (file source-org timestamp author)
-  "Insert or replace preamble in FILE identifying it as auto-generated.
-SOURCE-ORG is the originating org file path, TIMESTAMP is a date string,
-AUTHOR is the author name.  Does nothing for .json and extensionless files.
-For .md files inserts an HTML comment after the YAML frontmatter closing ---."
-  (let ((comment (jg/tangle-comment-char file)))
-    (unless (null comment)
-      (let ((orig-mode (file-modes file)))
-        (set-file-modes file #o644)
-        (if (eq comment 'md)
-            ;; .md: one-line HTML comment placed after YAML frontmatter
-            (let* ((marker "<!-- AUTO-GENERATED")
-                   (note (concat marker " — do not edit directly.\n"
-                                 "     Source:  " source-org "\n"
-                                 "     Tangled: " timestamp " -->\n")))
-              (with-temp-buffer
-                (insert-file-contents file)
-                ;; Remove existing note (idempotency)
-                (goto-char (point-min))
-                (when (search-forward marker nil t)
-                  (beginning-of-line)
-                  (let ((start (point)))
-                    (search-forward "-->" nil t)
-                    (forward-line 1)
-                    (delete-region start (point))))
-                ;; Find closing --- of YAML frontmatter and insert after it
-                (goto-char (point-min))
-                (when (looking-at "---")
-                  (forward-line 1)
-                  (when (re-search-forward "^---" nil t)
-                    (forward-line 1)
-                    (insert note)))
-                (write-region (point-min) (point-max) file nil 'quiet)))
-          ;; All other files: block comment at top (or after shebang)
-          (let* ((sep (make-string 60 ?=))
-                 (header (concat comment sep "\n"
-                                 comment "AUTO-GENERATED — DO NOT EDIT DIRECTLY\n"
-                                 comment "Edits will be overwritten on next org-babel tangle.\n"
-                                 comment "\n"
-                                 comment "Source:  " source-org "\n"
-                                 comment "Author:  " author "\n"
-                                 comment "Tangled: " timestamp "\n"
-                                 comment sep "\n"
-                                 "\n")))
-            (with-temp-buffer
-              (insert-file-contents file)
-              ;; Remove existing preamble (idempotency)
-              (goto-char (point-min))
-              (when (search-forward (concat comment sep) nil t)
-                (goto-char (point-min))
-                (let ((shebang (looking-at "#!")))
-                  (when shebang (forward-line 1))
-                  (let ((start (point)))
-                    (when (search-forward (concat comment sep) nil t)
-                      (forward-line 1)
-                      (when (looking-at "\n") (forward-line 1))
-                      (delete-region start (point))))))
-              ;; Insert preamble
-              (goto-char (point-min))
-              (when (looking-at "#!") (forward-line 1))
-              (insert header)
-              (write-region (point-min) (point-max) file nil 'quiet))))
-        (set-file-modes file orig-mode)))))
-
-(defun jg/tangle-with-header-advice (orig-fun &rest args)
-  "Around advice for org-babel-tangle that inserts preamble headers.
-Intercepts all callers — org-auto-tangle, M-x org-babel-tangle, skill, etc."
-  (let* ((source-org (buffer-file-name))
-         (timestamp  (format-time-string "%Y-%m-%d %H:%M:%S"))
-         (author     (or (user-full-name) "Jeff Szymanski"))
-         (files      (apply orig-fun args)))
-    (when source-org
-      (dolist (f files)
-        (jg/insert-tangle-header (expand-file-name f) source-org timestamp author)))
-    files))
-
-(advice-add 'org-babel-tangle :around #'jg/tangle-with-header-advice)
 ;; Toggle collapse blocks
 
 (defvar org-blocks-hidden nil)
@@ -2775,6 +2670,7 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
                  (display-buffer-same-window))))
 (setq claude-code-ide-use-side-window nil)
 (setq claude-code-ide-use-ide-diff nil)
+(setq claude-code-ide-cli-extra-flags "--dangerously-skip-permissions")
 ;; Ediff workarounds                                              :nohelm:
 
 ;; # Problem: claude-code-ide diff overrides the claude window in i3.
