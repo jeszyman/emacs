@@ -3761,9 +3761,13 @@ Three backup mechanisms are active, each covering a different failure mode:
 ; y or n instead of yes or no
 (setopt use-short-answers t)
 
-;; Minibuffer prompts follow the selected frame, so any frame can answer
-;; a blocking y/n prompt instead of hunting for the originating frame
-(setq minibuffer-follows-selected-frame t)
+;; Minibuffer prompts appear in the currently-selected frame, so you
+;; don't have to hunt for the frame that triggered the prompt
+(setq minibuffer-follows-selected-frame nil)
+
+;; Never prompt for a TAGS file — we use LSP/eglot, not etags
+(setq tags-file-name "")
+(setq tags-table-list nil)
 
 ;; Don't prompt about active processes on exit
 (setq confirm-kill-processes nil)
@@ -4095,9 +4099,7 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
       #+END_SRC
 ***** .TODO
 #+begin_src emacs-lisp
-(setq org-todo-keyword-faces
-      (quote (("TODO" :background "red")
-              ("NEXT" :foreground "black" :background "yellow"))))
+;; org-todo-keyword-faces moved to work.org agenda coloring block
 
 ;; keep TODO state timestamps in drawer
 (setq org-log-into-drawer t)
@@ -4420,7 +4422,7 @@ https://chatgpt.com/c/670d4cb7-5c08-8005-bec8-a2800e4bd0c4
 ;;https://stackoverflow.com/questions/28351465/emacs-orgmode-do-not-insert-line-between-headers
 
 
-(setq org-enforce-todo-checkbox-dependencies t)
+(setq org-enforce-todo-checkbox-dependencies nil)
 ;; don't adapt indentation to header level
 (setq org-adapt-indentation nil)
 
@@ -4518,7 +4520,8 @@ When called with two prefix arguments, ARG, run the original function without pr
   "Open the link at point.
 Use a new window in Brave if ARG is non-nil and the link is a URL.
 Open in a new Emacs frame if ARG is non-nil for ID or file links.
-On citations, use jg/citar-open-smart (PDF > DOI > URL)."
+On citations, use jg/citar-open-smart (PDF > DOI > URL).
+With prefix arg on citations, skip PDF and open DOI > URL."
   (interactive "P")
   (let* ((context (org-element-context))
          (etype (org-element-type context))
@@ -4526,10 +4529,10 @@ On citations, use jg/citar-open-smart (PDF > DOI > URL)."
          (raw-link (org-element-property :raw-link context))
          (link-path (org-element-property :path context)))
     (cond
-     ;; Citation: smart open (PDF > DOI > URL)
+     ;; Citation: smart open (PDF > DOI > URL); C-u skips PDF
      ((memq etype '(citation citation-reference))
       (let ((key (org-element-property :key context)))
-        (jg/citar-open-smart key)))
+        (jg/citar-open-smart key arg)))
      ;; Prefix arg: special handling for links
      ((and arg link-type)
       (cond
@@ -5526,12 +5529,13 @@ https://github.com/gregsexton/ob-ipython/issues/28
         (browse-url (concat "https://doi.org/" doi))
       (message "No DOI found for %s" citekey))))
 
-(defun jg/citar-open-smart (citekey)
-  "Open CITEKEY: existing PDF if available, else DOI, else URL."
+(defun jg/citar-open-smart (citekey &optional skip-pdf)
+  "Open CITEKEY: existing PDF if available, else DOI, else URL.
+With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (let* ((files-ht (citar-get-files citekey))
          (file-list (when (hash-table-p files-ht)
                       (let (all) (maphash (lambda (_k v) (setq all (append v all))) files-ht) all)))
-         (existing (seq-filter #'file-exists-p file-list))
+         (existing (unless skip-pdf (seq-filter #'file-exists-p file-list)))
          (doi (citar-get-value "doi" citekey))
          (url (citar-get-value "url" citekey)))
     (cond
@@ -6697,8 +6701,16 @@ Config: [[file:~/repos/emacs/emacs.org::*whisper][Package configuration > whispe
                   (with-current-buffer my/whisper--vterm-target
                     (vterm-send-string text)
                     (unless my/whisper--no-return
+                      ;; Claude Code needs a delay between text and return
+                      ;; (matches claude-code-ide-send-prompt pattern)
+                      (sit-for 0.1)
                       (vterm-send-return))))
-                (erase-buffer))))
+                (erase-buffer)
+                ;; Reset state here — whisper-after-insert-hook won't fire
+                ;; when transcription goes to vterm (buffer is erased)
+                (setq my/whisper--vterm-target nil
+                      my/whisper--no-return nil
+                      whisper-insert-text-at-point t))))
   ;; Restore state after each run
   (add-hook 'whisper-after-insert-hook
             (lambda ()
@@ -6860,564 +6872,6 @@ https://github.com/joaotavora/yasnippet/issues/998
 #+end_src
 - https://github.com/TomoeMami/org-repeat-by-cron.el
 
-
-**** claude-code
-:PROPERTIES:
-:ID:       0e00557e-a0a4-460f-8941-555e11ee2d88
-:END:
-[[id:d536d279-9088-4ade-ba9d-7bd5b516f668][Claude build ideas]]
-[[shell:brave-browser --app=https://claude.ai/settings/usage][Claude usage dashboard]]
-- In CLAUDE.md / MEMORY.md, reference org positions by heading name (e.g. "Org Item Structures"), not line number or level stars. Heading names are stable across edits and level changes; line numbers go stale instantly.
-- Do not pre-build static directory trees or file maps for Claude's benefit — CLAUDE.md + MEMORY.md already cover the files needed for ~90% of tasks, and =ls= / =org_outline= resolve the rest in seconds. Static maps go stale and duplicate discoverable state. Instead, invest in feedback memories for workflow patterns, gotchas, and preferences that can't be derived from the codebase.
-- Keep CLAUDE.md and MEMORY.md lean — all content loads every turn, so bloat costs tokens, speed, and instruction-following quality. Prune stale rules, avoid duplicating guidance across both files, and push detail into linked topic files that are fetched on demand.
-- Remote control: enabled via =~/.claude/policy-limits.json= (set =allow_remote_control.allowed= to =true=). Default is =false=, which blocks =claude remote-control= with an org policy error even for individual users.
-***** Markdown formatting for Claude files                           :nohelm:
-What Claude actually uses in =CLAUDE.md=, =MEMORY.md=, agents, and skills:
-- *Headings* (=##=) — used to locate relevant sections; clear names matter more than hierarchy depth
-- *Inline code* (backticks) — parsed as literal/executable; =conda run -n basecamp snakemake= is actionable, prose descriptions are slower
-- *Bold* (=**text**=) — weighted higher when scanning; useful for =**never**= / =**always**= rules
-- *Bullet lists* — preferred for instructions; each bullet is a discrete rule. Prose paragraphs are harder to extract rules from
-- *Tables* — useful for structured mappings (machine names, env names, comparisons). Faster lookup than scanning bullets
-- *Fenced code blocks with language tags* — treated as ready-to-run command templates; more explicit than inline backticks for multi-line commands
-
-No special behavior from: YAML frontmatter (only meaningful in memory files), HTML, blockquotes, numbered lists (no different from bullets unless ordering matters), or markdown links (not auto-followed).
-***** Protocol: parallel Claude Code session via worktree [/]
-Claude Code enforces one session per directory. To run a second session on the same repo, create a git worktree so each session has its own directory and branch.
-- [ ] Create the worktree and branch: =git worktree add -b <branch-name> <directory-path>=
-  - =-b= creates a new branch; omit it only if the branch already exists
-  - =<directory-path>= is where the checkout lives on disk (e.g. =../myrepo-feature=)
-  - =<branch-name>= is the git branch checked out in that worktree
-- [ ] Start a Claude Code session in the worktree: =cd <directory-path> && claude=
-  - For the IDE, see [[https://github.com/manzaltu/claude-code-ide.el?tab=readme-ov-file#multiple-claude-code-instances-on-one-project][claude-code-ide multiple instances]]
-- [ ] Do work, commit as needed
-- [ ] When done, merge or cherry-pick changes back to the original branch
-- [ ] Before removing, run closeout in the worktree session to persist memory and plans
-- [ ] Remove the worktree: =git worktree remove <directory-path>=
-Do not check out the same branch in both the main repo and a worktree simultaneously.
-
-*Session persistence caveat:* Claude Code sessions are keyed by directory path. When a worktree is removed, the session cannot be resumed (=--continue= fails — no directory). The conversation history survives as a =.jsonl= in =~/.claude/projects/-<path-slug>/= but is not loadable. *The primary way to carry context forward is through committed plans and specs* (e.g. =docs/superpowers/plans/*.md=, =docs/superpowers/specs/*.md=) — these persist in the repo on the branch and a new session on main can pick up where the worktree session left off by reading them. Additionally: (1) run closeout in the worktree session before removal (persists memory), (2) merge the branch, (3) copy any relevant memory files from the worktree's project dir to the main project's memory dir.
-- Agents: =--max-turns= vs time limit
-- Subagents can only dispatch Claude models (opus, sonnet, haiku) — no way to route to non-Claude models (OpenAI, Gemini, etc.) from within Claude Code. For multi-model evaluation, use external tools (API scripts, Gemini CLI) alongside.
-***** Use-package                                                    :nohelm:
-
-#+begin_src emacs-lisp
-(use-package claude-code-ide
-  :vc (:url "https://github.com/manzaltu/claude-code-ide.el" :rev :newest)
-  :demand t
-  :config
-  (claude-code-ide-emacs-tools-setup)
-  ;; Switch to claude buffer in the current window
-  (add-to-list 'display-buffer-alist
-               '("\\*claude-code\\["
-                 (display-buffer-same-window))))
-#+end_src
-
-#+begin_src emacs-lisp
-(setq claude-code-ide-use-side-window nil)
-(setq claude-code-ide-use-ide-diff nil)
-(setq claude-code-ide-cli-extra-flags "--dangerously-skip-permissions")
-#+end_src
-
-- TAB in vterm inserts file paths via Emacs completion (vertico) — see [[file:emacs.org::*vterm][vterm]]
-- [ ] Integrate across machines — consider symlinking =~/.claude/=
-
-***** Ediff workarounds                                              :nohelm:
-
-# Problem: claude-code-ide diff overrides the claude window in i3.
-# Root cause: claude-code-ide hardcodes ediff-window-setup-function to
-# 'ediff-setup-windows-plain via setq immediately before calling ediff-buffers,
-# so global setq has no effect.
-# Fix: :before advice on ediff-buffers runs after claude-code-ide's setq but
-# before ediff reads it.
-
-#+begin_src emacs-lisp
-(advice-add 'ediff-buffers :before
-            (lambda (&rest _)
-              (setq ediff-window-setup-function 'ediff-setup-windows-multiframe)))
-#+end_src
-
-# To kill a stuck ediff session and clear red highlighting:
-
-#+begin_src emacs-lisp :tangle no
-(progn
-  (when (and (boundp 'ediff-session-registry) ediff-session-registry)
-    (mapc (lambda (buf)
-            (when (buffer-live-p buf)
-              (with-current-buffer buf
-                (condition-case nil (ediff-quit t) (error nil)))))
-          ediff-session-registry))
-  (mapc (lambda (b)
-          (when (string-match-p "\\*ediff\\|\\*Ediff" (buffer-name b))
-            (kill-buffer b)))
-        (buffer-list))
-  (mapc (lambda (b)
-          (with-current-buffer b
-            (remove-overlays (point-min) (point-max) 'face 'ediff-current-diff-A)
-            (remove-overlays (point-min) (point-max) 'face 'ediff-current-diff-B)
-            (remove-overlays (point-min) (point-max) 'face 'ediff-fine-diff-A)
-            (remove-overlays (point-min) (point-max) 'face 'ediff-fine-diff-B)
-            (remove-overlays (point-min) (point-max) 'face 'ediff-odd-diff-A)
-            (remove-overlays (point-min) (point-max) 'face 'ediff-odd-diff-B)))
-        (buffer-list)))
-#+end_src
-
-***** Local components                                               :nohelm:
-
-- *CLAUDE.md* — instruction files; loaded in full (no line limit)
-  - Global: [[file:~/.claude/CLAUDE.md]]
-  - Project: =.claude/CLAUDE.md= — committed to repo
-- *Memory* (=MEMORY.md=) — facts Claude accumulates across sessions; first 200 lines loaded; link to topic files for overflow; complements CLAUDE.md (policy vs. learned knowledge)
-  - Project memory: [[file:~/.claude/projects/-home-jeszyman-repos-org/memory/MEMORY.md]]
-- *Settings*
-  - =~/.claude/settings.json= — global; hooks registration, allowedTools, deny rules
-  - =.claude/settings.local.json= — project-local, gitignored; where per-session approved/denied tool permissions are written
-- *Agents* — single =.md= file with YAML frontmatter; isolated context (no conversation awareness); cheaper models supported (Haiku); remove by deleting file
-  - Global dir: [[file:~/.claude/agents/]]
-  - Example: [[file:~/.claude/agents/org-capture.md]]
-- *Hooks* — shell script + entry in =settings.json=; =PreToolUse= can block (exit 2); *removal requires deleting both the script and the settings.json entry*
-  - Global dir: [[file:~/.claude/hooks/]]
-  - [[file:~/.claude/hooks/protect-cal.sh]] =PreToolUse= — blocks =cal.org= edits
-  - [[file:~/.claude/hooks/save-before-edit.sh]] =PreToolUse= — saves open Emacs buffer before Claude edits any =.org= file on disk
-  - [[file:~/.claude/hooks/protect-shared-mounts.sh]] =PreToolUse= — blocks writes to shared cloud mounts (Box except =private/=, GCS); reading allowed
-  - [[file:~/.claude/hooks/cheaply.sh]] =UserPromptSubmit= — detects keyword =cheaply= in prompt; injects conciseness instructions into context
-  - [[file:~/.claude/hooks/ding-if-long.sh]] =Stop= — plays notification sound if response took >30s
-  - [[file:~/.claude/hooks/devils-advocate-reminder.sh]] =PostToolUse= (Skill) — injects reminder to run devils-advocate after planning skills (brainstorming, writing-plans, executing-plans)
-- *Skills* — directory with =SKILL.md= + supporting files; runs in main Claude context (full conversation awareness); remove by deleting directory
-  - Global dir: [[file:~/.claude/skills/]]
-  - Example: [[file:~/.claude/skills/org-edit/]]
-- *MCP* — external service integrations (Gmail, Google Calendar active); add via Anthropic console or =/mcp add=; useful candidates: Context7 (live library docs), Playwright (browser automation)
-- *Plugins* — [[file:~/.claude/plugins/]]
-- *Worktrees* — isolated git branch for risky restructuring; invoke by saying "work in a worktree"
-***** Skills                                                         :nohelm:
-****** Skill vs Agent
-
-|                  | Skill                                   | Agent                            |
-|------------------+-----------------------------------------+----------------------------------|
-| Execution        | Main Claude instance                    | Isolated subprocess              |
-| Conversation ctx | Full access                             | None (only what is passed to it) |
-| Session effect   | Can change behavior for rest of session | One-shot                         |
-| Structure        | Directory (=SKILL.md= + support files)  | Single =.md= file                |
-| Removal          | Delete directory                        | Delete =.md= file                |
-| Best for         | Context-dependent tasks, procedures     | Self-contained tasks             |
-
-****** Skill structure
-
-- =SKILL.md= — required, filename is case-sensitive
-- Supporting files go in subdirs: =references/=, =scripts/=, =assets/=; symlinks OK; use kebab-case
-- Progressive disclosure:
-  - YAML frontmatter always loaded (keep description <1024 chars; include explicit trigger phrases)
-  - Body loaded when Claude determines skill is relevant
-  - Linked files navigated by Claude as needed
-
-#+begin_src yaml
----
-name: skill-name-kebab-case   # must match folder name; no capitals or spaces
-description: What it does. Use when user asks to [trigger phrases].
----
-#+end_src
-
-- When writing skills with phase gates, decisions, or checklists, use the UI primitives below rather than plain text prompts — see [[*Skill UI primitives][Skill UI primitives]]
-- [[https://github.com/anthropics/skills/tree/main/skills][Anthropic skill examples]]
-- [[https://github.com/obra/superpowers/tree/main/skills][Community skills (obra/superpowers)]]
-- [[https://resources.anthropic.com/hubfs/The-Complete-Guide-to-Building-Skill-for-Claude.pdf][Complete guide to building skills (PDF)]]
-
-****** Skill UI primitives
-
-Interactive UI tools available inside skills (deferred — fetched via =ToolSearch= on first use). *When building skills, prefer these over plain text prompts.*
-
-******* AskUserQuestion — clickable menus
-- 2–4 options per question, user always gets an automatic "Other" for free text
-- =header= — short chip/tag label (max 12 chars)
-- =description= — explanation text per option
-- =preview= — side-by-side comparison pane; renders markdown in monospace box. Use for code snippets, ASCII mockups, config examples. Single-select only.
-- =multiSelect: true= — checkboxes instead of radio buttons; multiple selections allowed
-- Batch: up to 4 questions in a single call, each with its own header and options
-- Users can attach free-text notes to any selection
-
-******* TaskCreate / TaskUpdate — checkbox progress
-- Create tasks upfront; set =in_progress= when starting (shows spinner), =completed= when done
-- =activeForm= — controls spinner text (e.g. "Running tests...")
-- =metadata= — arbitrary key-value pairs attached to tasks
-- =addBlocks= / =addBlockedBy= — dependency chains between tasks (task B can't start until task A completes)
-- Status workflow: =pending= → =in_progress= → =completed= (or =deleted=)
-
-******* EnterWorktree / ExitWorktree — isolated git worktree
-- Creates worktree inside =.claude/worktrees/= with a new branch based on HEAD
-- Session working directory switches to the worktree
-- ExitWorktree: =keep= (preserve for later) or =remove= (clean delete)
-- Useful for risky restructuring or parallel feature work
-
-******* Other interfaces
-- *EnterPlanMode / ExitPlanMode* — dedicated plan review UI with approval flow
-- *CronCreate* — scheduled recurring prompts (session-only, 3-day auto-expire)
-- *NotebookEdit* — Jupyter notebook cell editing (code/markdown)
-- *skill-creator* plugin skill — create, modify, and eval-test skills. Invoke with =Skill("skill-creator:skill-creator")=.
-
-****** Skill ideas
-
-- Refactor and annotate: apply project style guides
-
-****** Skill design patterns                                         :nohelm:
-
-- *Skips are signal* — when a user skips a proposed action (KB insert, refactor suggestion, etc.), treat it as knowledge about what they already know or don't value, not just a pass. Track skip categories during a session and stop proposing similar actions. Discovered during [[id:7F3A2B8E-1D4C-4E9A-B6F5-8C2D9E0A3B7F][mindjack]] smoke test.
-- *Worth-it gate* — before investing time in brainstorming/designing something, do a quick assessment: is this idea novel enough? Already solved? Worth the ROI? Present a brief take and let the user confirm before proceeding with full design exploration.
-
-***** Settings reference                                             :nohelm:
-
-Two files control permissions and hooks. Both use the same JSON schema; scope
-differs by location.
-
-| File                          | Scope                        | Git        |
-|-------------------------------+------------------------------+------------|
-| =~/.claude/settings.json=     | All projects on this machine | —          |
-| =.claude/settings.json=       | This project (shareable)     | committed  |
-| =.claude/settings.local.json= | This project (local only)    | gitignored |
-
-Project settings merge with global; project-level =allow= adds to global, =deny=
-overrides. =settings.local.json= is where Claude writes runtime approvals.
-
-#+begin_src json
-{
-  // ── allowedTools ──────────────────────────────────────────────────────────
-  // Tools Claude may call without ever prompting. Distinct from permissions
-  // (which control what happens when you're asked). Rarely needed; prefer
-  // permissions.allow for fine-grained control.
-  "allowedTools": [
-    "Skill"              // allow invoking skills without prompt
-  ],
-
-  // ── permissions ───────────────────────────────────────────────────────────
-  "permissions": {
-
-    // allow: auto-approve matching tool calls — no prompt shown
-    "allow": [
-
-      // Bash: match on the command prefix
-      "Bash(head:*)",              // read-only: head
-      "Bash(grep:*)",              // read-only: grep
-      "Bash(emacsclient:*)",       // emacs server calls
-      "Bash(chmod +x:*)",          // make scripts executable
-
-      // WebFetch: match on domain
-      "WebFetch(domain:raw.githubusercontent.com)",
-
-      // WebSearch: no argument — allows all web searches
-      "WebSearch",
-
-      // Edit: match on file_path (exact file or glob)
-      "Edit(file_path:/home/jeszyman/repos/emacs/emacs.org)",  // specific file
-      "Edit(file_path:/home/jeszyman/repos/myproject/*)",      // whole repo
-
-      // Write: same pattern as Edit, for creating new files
-      "Write(file_path:/home/jeszyman/repos/myproject/*)",
-
-      // MCP tools: use the full tool name as shown in /context
-      "mcp__claude_ai_Gmail__gmail_search_messages",
-      "mcp__claude_ai_Google_Calendar__gcal_list_events",
-
-      // Skills: allow specific skill invocations without prompt
-      "Skill(org-edit)"
-    ],
-
-    // deny: block matching tool calls — Claude cannot proceed even if asked
-    // Useful for protecting auto-generated or sensitive files.
-    // Deny takes precedence over allow.
-    "deny": [
-      "Write(file_path:/home/jeszyman/.claude/hooks/*)",       // protect hooks
-      "Edit(file_path:/home/jeszyman/.claude/settings.json)"   // protect global settings
-    ]
-  },
-
-  // ── hooks ─────────────────────────────────────────────────────────────────
-  // Shell commands that fire at lifecycle events.
-  // Removal requires deleting BOTH the script and its entry here.
-  "hooks": {
-
-    // PreToolUse: fires before a tool call; exit 2 blocks the action
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write",   // regex matched against tool name
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/jeszyman/.claude/hooks/protect-cal.sh"
-          }
-        ]
-      }
-    ],
-
-    // Other available events (not currently used):
-    // PreCompact  — fires before context compaction; stdout injected into summary
-    // SessionStart — fires on session open/resume; stdout added to context
-    // Stop         — fires when Claude finishes a response
-    // UserPromptSubmit — fires on every user prompt; no matcher support
-    // PostToolUse  — fires after a successful tool call
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'Reminder: dry-run Snakemake before executing'"
-          }
-        ]
-      }
-    ]
-  }
-}
-#+end_src
-
-***** Org-mode navigation MCP tools                                  :nohelm:
-
-MCP tools use deferred (lazy) loading in Claude Code — they appear as
-"available deferred tools" at session start and are fetched on first use via
-=ToolSearch=. Warnings about unavailable MCP tools on startup are expected
-and do not indicate a failure.
-
-Four tools that give Claude structural org-mode navigation — outline first,
-then drill to a subtree by ID or heading name, or query across files with
-org-ql. Much more token-efficient than reading whole files.
-
-These tools run as elisp inside the live Emacs session via [[https://github.com/stevemolitor/claude-code-ide.el][claude-code-ide.el]]: Claude Code sends JSON-RPC requests over a socket, which dispatch to functions like =claude-code-ide-org-outline= that call native org-mode APIs (=org-map-entries=, =org-id-find=, etc.) directly. This means they operate with full org-mode context — no subprocess overhead, no parsing from scratch.
-
-#+begin_src emacs-lisp
-(defun claude-code-ide-org-outline (file-path &optional depth)
-  "Return heading-only outline of FILE-PATH up to DEPTH levels."
-  (claude-code-ide-mcp-server-with-session-context nil
-    (let ((max-depth (or depth 3)))
-      (with-current-buffer (find-file-noselect file-path)
-        (let (headings)
-          (org-map-entries
-           (lambda ()
-             (when (<= (org-current-level) max-depth)
-               (push (concat (make-string (org-current-level) ?*)
-                             " "
-                             (substring-no-properties (org-get-heading t t t t)))
-                     headings))))
-          (string-join (nreverse headings) "\n"))))))
-#+end_src
-
-#+begin_src emacs-lisp
-(defun claude-code-ide-org-subtree-by-id (org-id)
-  "Return full subtree content for heading with ORG-ID."
-  (claude-code-ide-mcp-server-with-session-context nil
-    (require 'org-id)
-    (let ((marker (org-id-find org-id 'marker)))
-      (if marker
-          (with-current-buffer (marker-buffer marker)
-            (goto-char marker)
-            (substring-no-properties
-             (buffer-substring (point)
-                               (save-excursion (org-end-of-subtree t) (point)))))
-        (format "No heading found with id: %s" org-id)))))
-#+end_src
-
-#+begin_src emacs-lisp
-(defun claude-code-ide-org-subtree-by-heading (file-path heading)
-  "Return subtree content for first heading matching HEADING in FILE-PATH."
-  (claude-code-ide-mcp-server-with-session-context nil
-    (with-current-buffer (find-file-noselect file-path)
-      (goto-char (point-min))
-      (if (re-search-forward (format "^\\*+ %s" (regexp-quote heading)) nil t)
-          (progn
-            (beginning-of-line)
-            (substring-no-properties
-             (buffer-substring (point)
-                               (save-excursion (org-end-of-subtree t) (point)))))
-        (format "No heading matching '%s' found in %s" heading file-path)))))
-#+end_src
-
-#+begin_src emacs-lisp
-(defun claude-code-ide-org-ql-query (files query &optional include-file)
-  "Run org-ql QUERY across FILES (space-separated paths).
-Returns matching heading titles with org-id when present, optionally prefixed with filename."
-  (claude-code-ide-mcp-server-with-session-context nil
-    (require 'org-ql)
-    (let* ((file-list (split-string files " " t))
-           (show-file (if (null include-file) t include-file))
-           (parsed-query (car (read-from-string query))))
-      (mapcar
-       (lambda (e)
-         (let* ((h (org-element-property :raw-value e))
-                (marker (org-element-property :org-hd-marker e))
-                (f (buffer-file-name (marker-buffer marker)))
-                (id (with-current-buffer (marker-buffer marker)
-                      (goto-char marker)
-                      (org-entry-get (point) "ID")))
-                (id-str (if id (concat " [id:" id "]") ""))
-                (file-str (if show-file (concat (file-name-nondirectory f) ": ") "")))
-           (concat file-str h id-str)))
-       (org-ql-select file-list parsed-query
-         :action 'element-with-markers)))))
-#+end_src
-
-#+begin_src emacs-lisp
-(defun claude-code-ide-org-refile-subtree (file-path source-heading target-heading &optional as-sibling source-id target-id)
-  "Move subtree SOURCE-HEADING relative to TARGET-HEADING in FILE-PATH.
-By default pastes as the last child of target. With AS-SIBLING non-nil,
-pastes after the target subtree at the same level instead.
-SOURCE-ID and TARGET-ID are optional org-id UUIDs for disambiguation.
-When provided, the heading is located by ID instead of text search.
-If text search finds multiple matches and no ID is provided, errors
-with a list of matches (line numbers and levels) for disambiguation.
-Saves the buffer on success."
-  (claude-code-ide-mcp-server-with-session-context nil
-    (with-current-buffer (find-file-noselect file-path)
-      (org-with-wide-buffer
-       (let* ((case-fold-search nil)
-              (heading-re (lambda (h) (format "^\\*+ %s\\([ \t]\\|$\\)" (regexp-quote h))))
-              (find-by-id (lambda (id)
-                            (goto-char (point-min))
-                            (when (re-search-forward
-                                   (format "^[ \t]*:ID:[ \t]+%s" (regexp-quote id)) nil t)
-                              (org-back-to-heading t)
-                              (point))))
-              (find-unique (lambda (heading id label)
-                             (if id
-                                 (or (funcall find-by-id id)
-                                     (error "%s ID '%s' not found" label id))
-                               (goto-char (point-min))
-                               (let ((positions nil))
-                                 (while (re-search-forward (funcall heading-re heading) nil t)
-                                   (save-excursion
-                                     (beginning-of-line)
-                                     (push (list (line-number-at-pos)
-                                                 (org-current-level)
-                                                 (org-get-heading t t t t))
-                                           positions)))
-                                 (setq positions (nreverse positions))
-                                 (cond
-                                  ((null positions)
-                                   (error "%s heading '%s' not found" label heading))
-                                  ((= 1 (length positions))
-                                   (goto-char (point-min))
-                                   (re-search-forward (funcall heading-re heading) nil t)
-                                   (beginning-of-line)
-                                   (point))
-                                  (t
-                                   (error "%s heading '%s' is ambiguous (%d matches). Provide an ID to disambiguate. Matches: %s"
-                                          label heading (length positions)
-                                          (mapconcat (lambda (p)
-                                                       (format "L%d (level %d: %s)"
-                                                               (nth 0 p) (nth 1 p) (nth 2 p)))
-                                                     positions ", "))))))))
-         (let ((src-pos (funcall find-unique source-heading source-id "Source"))
-               (tgt-pos (funcall find-unique target-heading target-id "Target")))
-           (goto-char src-pos)
-           (org-cut-subtree)
-           ;; Re-find target after cut (positions shifted)
-           (let ((tgt-pos2 (if target-id
-                               (funcall find-by-id target-id)
-                             (progn (goto-char (point-min))
-                                    (re-search-forward (funcall heading-re target-heading) nil t)
-                                    (beginning-of-line)
-                                    (point)))))
-             (goto-char tgt-pos2)
-             (let ((target-level (org-current-level)))
-               (org-end-of-subtree t)
-               (unless (bolp) (newline))
-               (if as-sibling
-                   (org-paste-subtree target-level)
-                 (org-paste-subtree (1+ target-level)))))
-           (save-buffer)
-           (format "Moved '%s' %s '%s'"
-                   source-heading
-                   (if as-sibling "after" "under")
-                   target-heading))))))))
-#+end_src
-
-#+begin_src emacs-lisp
-(with-eval-after-load 'claude-code-ide
-  (claude-code-ide-make-tool
-   :function #'claude-code-ide-org-outline
-   :name "org_outline"
-   :description "Get a heading-only outline of an org file at a given depth. Use this FIRST to orient before reading any subtree. Returns just the heading hierarchy, no body text — very token-efficient."
-   :args '((:name "file_path"
-                  :type string
-                  :description "Absolute path to the org file")
-           (:name "depth"
-                  :type number
-                  :description "Maximum heading depth to show (1-6, default 3)"
-                  :optional t)))
-
-  (claude-code-ide-make-tool
-   :function #'claude-code-ide-org-subtree-by-id
-   :name "org_subtree_by_id"
-   :description "Get the full content of an org subtree by its org-id UUID. Use after finding the ID from an outline or prior search."
-   :args '((:name "org_id"
-                  :type string
-                  :description "The org-id UUID of the heading to retrieve")))
-
-  (claude-code-ide-make-tool
-   :function #'claude-code-ide-org-subtree-by-heading
-   :name "org_subtree_by_heading"
-   :description "Get the full content of an org subtree by searching for a heading name. Returns content from the first matching heading."
-   :args '((:name "file_path"
-                  :type string
-                  :description "Absolute path to the org file")
-           (:name "heading"
-                  :type string
-                  :description "Heading text to search for (exact text, not regex)")))
-
-  (claude-code-ide-make-tool
-   :function #'claude-code-ide-org-ql-query
-   :name "org_ql_query"
-   :description "Query org files using org-ql predicates. Returns matching heading titles with their file. Common predicates: (todo \"TODO\"), (tags \"tag\"), (heading \"text\"), (and ...), (or ...)."
-   :args '((:name "files"
-                  :type string
-                  :description "Space-separated list of absolute org file paths to search")
-           (:name "query"
-                  :type string
-                  :description "org-ql query string, e.g. \"(todo \\\"TODO\\\")\" or \"(and (tags \\\"focus\\\") (todo \\\"INPROCESS\\\"))\"")
-           (:name "include_file"
-                  :type boolean
-                  :description "Prefix results with filename (default true)"
-                  :optional t)))
-
-  (claude-code-ide-make-tool
-   :function #'claude-code-ide-org-refile-subtree
-   :name "org_refile_subtree"
-   :description "Move an org subtree (by exact heading title) relative to another heading in the same file. Default: paste as last child of target. With as_sibling=true: paste after target at same level. Errors on ambiguous heading names — provide source_id/target_id to disambiguate."
-   :args '((:name "file_path"
-                  :type string
-                  :description "Absolute path to the org file")
-           (:name "source_heading"
-                  :type string
-                  :description "Exact heading title of the subtree to move (no stars, no tags)")
-           (:name "target_heading"
-                  :type string
-                  :description "Exact heading title of the destination parent or sibling reference")
-           (:name "as_sibling"
-                  :type boolean
-                  :description "If true, paste after target at same level rather than as a child"
-                  :optional t)
-           (:name "source_id"
-                  :type string
-                  :description "Org-id UUID of the source heading, for disambiguation when multiple headings share the same title"
-                  :optional t)
-           (:name "target_id"
-                  :type string
-                  :description "Org-id UUID of the target heading, for disambiguation when multiple headings share the same title"
-                  :optional t))))
-#+end_src
-
-- Development: add a =claude-code-ide-org-subtree-by-tag= tool — retrieve full subtree content for all headings matching a given tag, using =org-map-entries= with a tag matcher. Current =org_ql_query= returns heading titles only; this tool would return full content per match. Needed so Claude can do tag-based module lookup without falling back to emacsclient.
-***** TODO Detangle all skills and agents from org source
-Move all tangled skills/agents to standalone files in =~/.claude/=. Currently tangled from org-babel blocks in work.org, emacs.org, science.org, latex.org. Remove =:tangle= directives from org source, strip =AUTO-GENERATED= preamble from target files, keep org headings as documentation only. Affected: 4 agents (idea-mod, org-hygiene, org-mod-dev, org-sleeper), 11 skills (tangle, moonshot, idea-mod, project-mod, mindjack, biopipe, scopus-search, bioinfo-dev, kb-consolidate, emacsdev-mod, paper-ingest), plus 2 presentation-formatter support files from latex.org.
-***** Ideas                                                          :nohelm:
-- Session linking to org (attempted 2026-03-17, abandoned): tried building =claude-session:= org links that resume sessions via =claude --resume <id>=. Problems: (1) CLI doesn't guard against multiple sessions in same directory — silently launches a second, causing interleaved messages; (2) sessions are project-scoped (stored per-project in =~/.claude/projects/=), so cross-project resume/fork fails with "no conversation found"; (3) =--fork-session= works but only from the matching project dir. Revisit if claude-code-ide adds native resume-by-ID support. See also [[id:d536d279-9088-4ade-ba9d-7bd5b516f668][Claude build ideas]] in private.org.
-- Batch refactor burn at end of week credits
-- Agents for reformatting / linting
-- [[https://github.com/xleddyl/claude-watch][claude-watch]]
-- Pre-mortem mode for devils-advocate: blind agent assumes the proposition already failed and explains why (Gary Klein). Flag on =/devils-advocate= or separate =/pre-mortem= skill.
-- Use [[https://github.com/rougier/notebook-mode][svg-tag-mode / notebook-mode]] to visually distinguish tangled vs non-tangled src blocks (e.g., SVG badge overlay showing tangle target path). Discussed in claude session =5d1e0398=.
-***** Reference                                                      :nohelm:
-- [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]
-- Comprehensive guides
-  - [[https://www.reddit.com/r/ClaudeCode/comments/1rohbj0/what_to_include_in_claudemd_and_what_not/][CLAUDE.md coding standards (Reddit)]]
-  - [[https://www.reddit.com/r/ClaudeAI/comments/1oivjvm/claude_code_is_a_beast_tips_from_6_months_of/][Tips from 6 months of use (Reddit)]]
-  - [[https://github.com/shanraisshan/claude-code-best-practice][claude-code-best-practice]]
-  - [[https://github.com/solatis/claude-config/][solatis/claude-config]]
 
 *** anki-editor
 :PROPERTIES:
