@@ -2369,6 +2369,10 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
             (org-display-inline-images t t))
           (message "File created and linked..."))
       (message "You're in a not saved buffer! Save it first!"))))
+;; ox-gfm
+
+(use-package ox-gfm
+  :after org)
 ;; ox-pandoc
 
 (use-package ox-pandoc

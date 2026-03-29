@@ -6460,6 +6460,13 @@ https://chatgpt.com/c/6841f0e8-c080-8005-a3ed-fc6d67a76e19
 https://github.com/LionyxML/ros
 
 [[file:./resources/test3.png][test3.png]]
+**** ox-gfm
+
+#+begin_src emacs-lisp
+(use-package ox-gfm
+  :after org)
+#+end_src
+
 **** ox-pandoc
 #+begin_src emacs-lisp
 
