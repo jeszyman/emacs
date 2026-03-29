@@ -259,9 +259,13 @@
 ; y or n instead of yes or no
 (setopt use-short-answers t)
 
-;; Minibuffer prompts follow the selected frame, so any frame can answer
-;; a blocking y/n prompt instead of hunting for the originating frame
-(setq minibuffer-follows-selected-frame t)
+;; Minibuffer prompts appear in the currently-selected frame, so you
+;; don't have to hunt for the frame that triggered the prompt
+(setq minibuffer-follows-selected-frame nil)
+
+;; Never prompt for a TAGS file — we use LSP/eglot, not etags
+(setq tags-file-name "")
+(setq tags-table-list nil)
 
 ;; Don't prompt about active processes on exit
 (setq confirm-kill-processes nil)
@@ -526,9 +530,7 @@ Requires pdfannots to be installed and on PATH."
           "study"))
 ;; .TODO
 
-(setq org-todo-keyword-faces
-      (quote (("TODO" :background "red")
-              ("NEXT" :foreground "black" :background "yellow"))))
+;; org-todo-keyword-faces moved to work.org agenda coloring block
 
 ;; keep TODO state timestamps in drawer
 (setq org-log-into-drawer t)
@@ -777,7 +779,7 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 (setq org-id-link-to-org-use-id 'use-existing)
 ;;https://stackoverflow.com/questions/28351465/emacs-orgmode-do-not-insert-line-between-headers
 
-(setq org-enforce-todo-checkbox-dependencies t)
+(setq org-enforce-todo-checkbox-dependencies nil)
 ;; don't adapt indentation to header level
 (setq org-adapt-indentation nil)
 
@@ -851,7 +853,8 @@ When called with two prefix arguments, ARG, run the original function without pr
   "Open the link at point.
 Use a new window in Brave if ARG is non-nil and the link is a URL.
 Open in a new Emacs frame if ARG is non-nil for ID or file links.
-On citations, use jg/citar-open-smart (PDF > DOI > URL)."
+On citations, use jg/citar-open-smart (PDF > DOI > URL).
+With prefix arg on citations, skip PDF and open DOI > URL."
   (interactive "P")
   (let* ((context (org-element-context))
          (etype (org-element-type context))
@@ -859,10 +862,10 @@ On citations, use jg/citar-open-smart (PDF > DOI > URL)."
          (raw-link (org-element-property :raw-link context))
          (link-path (org-element-property :path context)))
     (cond
-     ;; Citation: smart open (PDF > DOI > URL)
+     ;; Citation: smart open (PDF > DOI > URL); C-u skips PDF
      ((memq etype '(citation citation-reference))
       (let ((key (org-element-property :key context)))
-        (jg/citar-open-smart key)))
+        (jg/citar-open-smart key arg)))
      ;; Prefix arg: special handling for links
      ((and arg link-type)
       (cond
@@ -1637,12 +1640,13 @@ skipped and nothing is inserted for it."
         (browse-url (concat "https://doi.org/" doi))
       (message "No DOI found for %s" citekey))))
 
-(defun jg/citar-open-smart (citekey)
-  "Open CITEKEY: existing PDF if available, else DOI, else URL."
+(defun jg/citar-open-smart (citekey &optional skip-pdf)
+  "Open CITEKEY: existing PDF if available, else DOI, else URL.
+With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (let* ((files-ht (citar-get-files citekey))
          (file-list (when (hash-table-p files-ht)
                       (let (all) (maphash (lambda (_k v) (setq all (append v all))) files-ht) all)))
-         (existing (seq-filter #'file-exists-p file-list))
+         (existing (unless skip-pdf (seq-filter #'file-exists-p file-list)))
          (doi (citar-get-value "doi" citekey))
          (url (citar-get-value "url" citekey)))
     (cond
@@ -2565,8 +2569,16 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
                   (with-current-buffer my/whisper--vterm-target
                     (vterm-send-string text)
                     (unless my/whisper--no-return
+                      ;; Claude Code needs a delay between text and return
+                      ;; (matches claude-code-ide-send-prompt pattern)
+                      (sit-for 0.1)
                       (vterm-send-return))))
-                (erase-buffer))))
+                (erase-buffer)
+                ;; Reset state here — whisper-after-insert-hook won't fire
+                ;; when transcription goes to vterm (buffer is erased)
+                (setq my/whisper--vterm-target nil
+                      my/whisper--no-return nil
+                      whisper-insert-text-at-point t))))
   ;; Restore state after each run
   (add-hook 'whisper-after-insert-hook
             (lambda ()
@@ -2657,245 +2669,3 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
   :ensure t  ; If the file is already in your load-path
   :config
   (global-org-repeat-by-cron-mode))
-;; Use-package                                                    :nohelm:
-
-(use-package claude-code-ide
-  :vc (:url "https://github.com/manzaltu/claude-code-ide.el" :rev :newest)
-  :demand t
-  :config
-  (claude-code-ide-emacs-tools-setup)
-  ;; Switch to claude buffer in the current window
-  (add-to-list 'display-buffer-alist
-               '("\\*claude-code\\["
-                 (display-buffer-same-window))))
-(setq claude-code-ide-use-side-window nil)
-(setq claude-code-ide-use-ide-diff nil)
-(setq claude-code-ide-cli-extra-flags "--dangerously-skip-permissions")
-;; Ediff workarounds                                              :nohelm:
-
-;; # Problem: claude-code-ide diff overrides the claude window in i3.
-;; # Root cause: claude-code-ide hardcodes ediff-window-setup-function to
-;; # 'ediff-setup-windows-plain via setq immediately before calling ediff-buffers,
-;; # so global setq has no effect.
-;; # Fix: :before advice on ediff-buffers runs after claude-code-ide's setq but
-;; # before ediff reads it.
-
-(advice-add 'ediff-buffers :before
-            (lambda (&rest _)
-              (setq ediff-window-setup-function 'ediff-setup-windows-multiframe)))
-;; Org-mode navigation MCP tools                                  :nohelm:
-
-;; MCP tools use deferred (lazy) loading in Claude Code — they appear as
-;; "available deferred tools" at session start and are fetched on first use via
-;; =ToolSearch=. Warnings about unavailable MCP tools on startup are expected
-;; and do not indicate a failure.
-
-;; Four tools that give Claude structural org-mode navigation — outline first,
-;; then drill to a subtree by ID or heading name, or query across files with
-;; org-ql. Much more token-efficient than reading whole files.
-
-;; These tools run as elisp inside the live Emacs session via [[https://github.com/stevemolitor/claude-code-ide.el][claude-code-ide.el]]: Claude Code sends JSON-RPC requests over a socket, which dispatch to functions like =claude-code-ide-org-outline= that call native org-mode APIs (=org-map-entries=, =org-id-find=, etc.) directly. This means they operate with full org-mode context — no subprocess overhead, no parsing from scratch.
-
-(defun claude-code-ide-org-outline (file-path &optional depth)
-  "Return heading-only outline of FILE-PATH up to DEPTH levels."
-  (claude-code-ide-mcp-server-with-session-context nil
-    (let ((max-depth (or depth 3)))
-      (with-current-buffer (find-file-noselect file-path)
-        (let (headings)
-          (org-map-entries
-           (lambda ()
-             (when (<= (org-current-level) max-depth)
-               (push (concat (make-string (org-current-level) ?*)
-                             " "
-                             (substring-no-properties (org-get-heading t t t t)))
-                     headings))))
-          (string-join (nreverse headings) "\n"))))))
-(defun claude-code-ide-org-subtree-by-id (org-id)
-  "Return full subtree content for heading with ORG-ID."
-  (claude-code-ide-mcp-server-with-session-context nil
-    (require 'org-id)
-    (let ((marker (org-id-find org-id 'marker)))
-      (if marker
-          (with-current-buffer (marker-buffer marker)
-            (goto-char marker)
-            (substring-no-properties
-             (buffer-substring (point)
-                               (save-excursion (org-end-of-subtree t) (point)))))
-        (format "No heading found with id: %s" org-id)))))
-(defun claude-code-ide-org-subtree-by-heading (file-path heading)
-  "Return subtree content for first heading matching HEADING in FILE-PATH."
-  (claude-code-ide-mcp-server-with-session-context nil
-    (with-current-buffer (find-file-noselect file-path)
-      (goto-char (point-min))
-      (if (re-search-forward (format "^\\*+ %s" (regexp-quote heading)) nil t)
-          (progn
-            (beginning-of-line)
-            (substring-no-properties
-             (buffer-substring (point)
-                               (save-excursion (org-end-of-subtree t) (point)))))
-        (format "No heading matching '%s' found in %s" heading file-path)))))
-(defun claude-code-ide-org-ql-query (files query &optional include-file)
-  "Run org-ql QUERY across FILES (space-separated paths).
-Returns matching heading titles with org-id when present, optionally prefixed with filename."
-  (claude-code-ide-mcp-server-with-session-context nil
-    (require 'org-ql)
-    (let* ((file-list (split-string files " " t))
-           (show-file (if (null include-file) t include-file))
-           (parsed-query (car (read-from-string query))))
-      (mapcar
-       (lambda (e)
-         (let* ((h (org-element-property :raw-value e))
-                (marker (org-element-property :org-hd-marker e))
-                (f (buffer-file-name (marker-buffer marker)))
-                (id (with-current-buffer (marker-buffer marker)
-                      (goto-char marker)
-                      (org-entry-get (point) "ID")))
-                (id-str (if id (concat " [id:" id "]") ""))
-                (file-str (if show-file (concat (file-name-nondirectory f) ": ") "")))
-           (concat file-str h id-str)))
-       (org-ql-select file-list parsed-query
-         :action 'element-with-markers)))))
-(defun claude-code-ide-org-refile-subtree (file-path source-heading target-heading &optional as-sibling source-id target-id)
-  "Move subtree SOURCE-HEADING relative to TARGET-HEADING in FILE-PATH.
-By default pastes as the last child of target. With AS-SIBLING non-nil,
-pastes after the target subtree at the same level instead.
-SOURCE-ID and TARGET-ID are optional org-id UUIDs for disambiguation.
-When provided, the heading is located by ID instead of text search.
-If text search finds multiple matches and no ID is provided, errors
-with a list of matches (line numbers and levels) for disambiguation.
-Saves the buffer on success."
-  (claude-code-ide-mcp-server-with-session-context nil
-    (with-current-buffer (find-file-noselect file-path)
-      (org-with-wide-buffer
-       (let* ((case-fold-search nil)
-              (heading-re (lambda (h) (format "^\\*+ %s\\([ \t]\\|$\\)" (regexp-quote h))))
-              (find-by-id (lambda (id)
-                            (goto-char (point-min))
-                            (when (re-search-forward
-                                   (format "^[ \t]*:ID:[ \t]+%s" (regexp-quote id)) nil t)
-                              (org-back-to-heading t)
-                              (point))))
-              (find-unique (lambda (heading id label)
-                             (if id
-                                 (or (funcall find-by-id id)
-                                     (error "%s ID '%s' not found" label id))
-                               (goto-char (point-min))
-                               (let ((positions nil))
-                                 (while (re-search-forward (funcall heading-re heading) nil t)
-                                   (save-excursion
-                                     (beginning-of-line)
-                                     (push (list (line-number-at-pos)
-                                                 (org-current-level)
-                                                 (org-get-heading t t t t))
-                                           positions)))
-                                 (setq positions (nreverse positions))
-                                 (cond
-                                  ((null positions)
-                                   (error "%s heading '%s' not found" label heading))
-                                  ((= 1 (length positions))
-                                   (goto-char (point-min))
-                                   (re-search-forward (funcall heading-re heading) nil t)
-                                   (beginning-of-line)
-                                   (point))
-                                  (t
-                                   (error "%s heading '%s' is ambiguous (%d matches). Provide an ID to disambiguate. Matches: %s"
-                                          label heading (length positions)
-                                          (mapconcat (lambda (p)
-                                                       (format "L%d (level %d: %s)"
-                                                               (nth 0 p) (nth 1 p) (nth 2 p)))
-                                                     positions ", "))))))))
-         (let ((src-pos (funcall find-unique source-heading source-id "Source"))
-               (tgt-pos (funcall find-unique target-heading target-id "Target")))
-           (goto-char src-pos)
-           (org-cut-subtree)
-           ;; Re-find target after cut (positions shifted)
-           (let ((tgt-pos2 (if target-id
-                               (funcall find-by-id target-id)
-                             (progn (goto-char (point-min))
-                                    (re-search-forward (funcall heading-re target-heading) nil t)
-                                    (beginning-of-line)
-                                    (point)))))
-             (goto-char tgt-pos2)
-             (let ((target-level (org-current-level)))
-               (org-end-of-subtree t)
-               (unless (bolp) (newline))
-               (if as-sibling
-                   (org-paste-subtree target-level)
-                 (org-paste-subtree (1+ target-level)))))
-           (save-buffer)
-           (format "Moved '%s' %s '%s'"
-                   source-heading
-                   (if as-sibling "after" "under")
-                   target-heading))))))))
-(with-eval-after-load 'claude-code-ide
-  (claude-code-ide-make-tool
-   :function #'claude-code-ide-org-outline
-   :name "org_outline"
-   :description "Get a heading-only outline of an org file at a given depth. Use this FIRST to orient before reading any subtree. Returns just the heading hierarchy, no body text — very token-efficient."
-   :args '((:name "file_path"
-                  :type string
-                  :description "Absolute path to the org file")
-           (:name "depth"
-                  :type number
-                  :description "Maximum heading depth to show (1-6, default 3)"
-                  :optional t)))
-
-  (claude-code-ide-make-tool
-   :function #'claude-code-ide-org-subtree-by-id
-   :name "org_subtree_by_id"
-   :description "Get the full content of an org subtree by its org-id UUID. Use after finding the ID from an outline or prior search."
-   :args '((:name "org_id"
-                  :type string
-                  :description "The org-id UUID of the heading to retrieve")))
-
-  (claude-code-ide-make-tool
-   :function #'claude-code-ide-org-subtree-by-heading
-   :name "org_subtree_by_heading"
-   :description "Get the full content of an org subtree by searching for a heading name. Returns content from the first matching heading."
-   :args '((:name "file_path"
-                  :type string
-                  :description "Absolute path to the org file")
-           (:name "heading"
-                  :type string
-                  :description "Heading text to search for (exact text, not regex)")))
-
-  (claude-code-ide-make-tool
-   :function #'claude-code-ide-org-ql-query
-   :name "org_ql_query"
-   :description "Query org files using org-ql predicates. Returns matching heading titles with their file. Common predicates: (todo \"TODO\"), (tags \"tag\"), (heading \"text\"), (and ...), (or ...)."
-   :args '((:name "files"
-                  :type string
-                  :description "Space-separated list of absolute org file paths to search")
-           (:name "query"
-                  :type string
-                  :description "org-ql query string, e.g. \"(todo \\\"TODO\\\")\" or \"(and (tags \\\"focus\\\") (todo \\\"INPROCESS\\\"))\"")
-           (:name "include_file"
-                  :type boolean
-                  :description "Prefix results with filename (default true)"
-                  :optional t)))
-
-  (claude-code-ide-make-tool
-   :function #'claude-code-ide-org-refile-subtree
-   :name "org_refile_subtree"
-   :description "Move an org subtree (by exact heading title) relative to another heading in the same file. Default: paste as last child of target. With as_sibling=true: paste after target at same level. Errors on ambiguous heading names — provide source_id/target_id to disambiguate."
-   :args '((:name "file_path"
-                  :type string
-                  :description "Absolute path to the org file")
-           (:name "source_heading"
-                  :type string
-                  :description "Exact heading title of the subtree to move (no stars, no tags)")
-           (:name "target_heading"
-                  :type string
-                  :description "Exact heading title of the destination parent or sibling reference")
-           (:name "as_sibling"
-                  :type boolean
-                  :description "If true, paste after target at same level rather than as a child"
-                  :optional t)
-           (:name "source_id"
-                  :type string
-                  :description "Org-id UUID of the source heading, for disambiguation when multiple headings share the same title"
-                  :optional t)
-           (:name "target_id"
-                  :type string
-                  :description "Org-id UUID of the target heading, for disambiguation when multiple headings share the same title"
-                  :optional t))))
