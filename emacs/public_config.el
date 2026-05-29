@@ -4,12 +4,15 @@
 (remove-hook 'before-save-hook #'org-table-recalculate-buffer-tables)
 (advice-add 'revert-buffer :around
   (lambda (orig &rest args)
-  (advice-mapc (lambda (f props) (message "%s %s" (car props) f)) 'revert-buffer)
     (if (derived-mode-p 'org-mode)
         (org-fold-save-outline-visibility t
           (apply orig args))
       (apply orig args)))
   '((name . org/preserve-outline-visibility)))
+;; Performance
+;; GC tuning is handled by gcmh (see Package configuration). =read-process-output-max= raises how much Emacs reads from a subprocess per cycle, which helps vterm, the Claude Code MCP websocket, and LSP throughput.
+
+(setq read-process-output-max (* 1024 1024)) ;; 1 MB
 ;; Dired
 ;; - whenever you open a new directory in Dired, the old Dired buffer is automatically killed
 
@@ -863,9 +866,19 @@ With prefix arg on citations, skip PDF and open DOI > URL."
          (link-path (org-element-property :path context)))
     (cond
      ;; Citation: smart open (PDF > DOI > URL); C-u skips PDF
+     ;; Works anywhere in [cite:@key] — not just after the @
      ((memq etype '(citation citation-reference))
-      (let ((key (org-element-property :key context)))
-        (jg/citar-open-smart key arg)))
+      (let ((key (if (eq etype 'citation-reference)
+                     (org-element-property :key context)
+                   ;; cursor on [cite: prefix — scan forward for first @key
+                   (save-excursion
+                     (let ((begin (org-element-property :begin context))
+                           (end   (org-element-property :end   context)))
+                       (goto-char begin)
+                       (when (re-search-forward "@\\([-[:alnum:]_:.]+\\)" end t)
+                         (match-string-no-properties 1)))))))
+        (when key
+          (jg/citar-open-smart key arg))))
      ;; Prefix arg: special handling for links
      ((and arg link-type)
       (cond
@@ -990,16 +1003,11 @@ TABLE-NAME is the name of the table identified as #+name."
             (with-temp-buffer
               (insert table-content)
               (goto-char (point-min))
-              (let ((urls (org-table-to-lisp)))
+              (let ((urls (mapcar #'car (org-table-to-lisp))))
                 (if (not urls)
                     (message "No URLs found in the table with name %s" table-name)
-                  (let ((first-url (car (car urls))))
-                    (start-process "brave-browser" nil "brave-browser" "--new-window" first-url)
-                    (sit-for 2)  ;; Wait for the new window to open
-                    (dolist (url-row (cdr urls))
-                      (start-process "brave-browser" nil "brave-browser" (car url-row))
-                      (sit-for 0.5)))  ;; Delay between each URL
-                  (message "Opened URLs from table with name %s" table))))))))))
+                  (apply #'start-process "brave-browser" nil "brave-browser" "--new-window" urls)
+                  (message "Opened URLs from table with name %s" table-name))))))))))
 ;; Agenda
 
 (global-set-key "\C-ca" 'org-agenda)
@@ -1343,56 +1351,6 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 ;; 2. C-u C-c C-c on checkbox: cycles through [ ] -> [-] -> [X] -> [ ]
 ;; 3. C-c C-x c: always cycles through all three states
 ;; 4. C-c C-c on non-checkbox: normal org-ctrl-c-ctrl-c behavior
-;; org-sleeper
-
-;; Emacs idle timer trigger for the org-sleeper autonomous linter. One-shot idle timer fires after 600s of idle, launches the gate script, and a process sentinel re-arms a new timer when the run finishes. The =process-live-p= guard prevents pile-up if the timer fires while a run is active.
-
-(defvar my/org-sleeper-process nil
-  "Process object for the current org-sleeper run.")
-
-(defun my/org-sleeper-rearm ()
-  "Schedule next org-sleeper run after 600s idle."
-  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
-
-(defun my/org-sleeper-trigger ()
-  "Launch org-sleeper gate script if no run is active, re-arm on exit."
-  (if (and my/org-sleeper-process
-           (process-live-p my/org-sleeper-process))
-      ;; Previous run still active — re-arm to try again later
-      (my/org-sleeper-rearm)
-    (setq my/org-sleeper-process
-          (start-process "org-sleeper" nil
-            "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))
-    (set-process-sentinel my/org-sleeper-process
-      (lambda (_proc _event) (my/org-sleeper-rearm)))))
-
-(when (string= (system-name) "jeff-beast")
-  (my/org-sleeper-rearm))
-;; org-sleeper
-
-;; Emacs idle timer trigger for the org-sleeper autonomous linter. One-shot idle timer fires after 600s of idle, launches the gate script, and a process sentinel re-arms a new timer when the run finishes. The =process-live-p= guard prevents pile-up if the timer fires while a run is active.
-
-(defvar my/org-sleeper-process nil
-  "Process object for the current org-sleeper run.")
-
-(defun my/org-sleeper-rearm ()
-  "Schedule next org-sleeper run after 600s idle."
-  (run-with-idle-timer 600 nil #'my/org-sleeper-trigger))
-
-(defun my/org-sleeper-trigger ()
-  "Launch org-sleeper gate script if no run is active, re-arm on exit."
-  (if (and my/org-sleeper-process
-           (process-live-p my/org-sleeper-process))
-      ;; Previous run still active — re-arm to try again later
-      (my/org-sleeper-rearm)
-    (setq my/org-sleeper-process
-          (start-process "org-sleeper" nil
-            "/bin/bash" (expand-file-name "~/repos/org/scripts/org-sleeper.sh")))
-    (set-process-sentinel my/org-sleeper-process
-      (lambda (_proc _event) (my/org-sleeper-rearm)))))
-
-(when (string= (system-name) "jeff-beast")
-  (my/org-sleeper-rearm))
 ;; Editing text
 
 ;;https://emacs.stackexchange.com/questions/12701/kill-a-line-deletes-the-line-but-leaves-a-blank-newline-character
@@ -1406,6 +1364,14 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 (setq bibtex-completion-bibliography "~/repos/org/bib.bib"
       bibtex-completion-library-path "~/library"
       bibtex-completion-notes-path "~/repo/org/notes")
+;; Stop bibtex-mode's stealthy idle re-parsing of the large bib.bib. bibtex-mode
+;; creates the idle timer in its body then runs this hook, which cancels it; the
+;; `unless bibtex-parse-idle-timer' guard in bibtex-mode then prevents recreation.
+;; (citar/org-cite/reftex keep their own caches, so nothing depends on it.)
+(add-hook 'bibtex-mode-hook
+          (lambda ()
+            (when (timerp bibtex-parse-idle-timer)
+              (cancel-timer bibtex-parse-idle-timer))))
 ;; get-bibtex-from-doi
 
 (defun get-bibtex-from-doi (dois-string)
@@ -1480,6 +1446,14 @@ skipped and nothing is inserted for it."
 (set-buffer-file-coding-system 'utf-8)
 (prefer-coding-system 'utf-8)
 (set-language-environment "UTF-8")
+
+(defun jg/force-utf8-on-revert ()
+  "Ensure org buffers revert as UTF-8.
+Prevents Syncthing mid-write race from setting no-conversion."
+  (when (derived-mode-p 'org-mode)
+    (setq-local coding-system-for-read 'utf-8-unix)))
+
+(add-hook 'before-revert-hook #'jg/force-utf8-on-revert)
 ;; Alpha key
 
 (global-set-key (kbd "C-x a") (lambda () (interactive) (insert "α")))
@@ -1876,6 +1850,7 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
         ess-use-auto-complete t
         ess-use-company t
         inferior-ess-own-frame t
+        inferior-ess-r-program (expand-file-name "~/miniconda3/envs/basecamp/bin/R")
         inferior-ess-same-window nil)
   :mode (("/R/.*\\.q\\'"       . ess-r-mode)
          ("\\.[rR]\\'"         . ess-r-mode)
@@ -1936,6 +1911,14 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (defun my-org-mode-flycheck-hook ()
     (when (derived-mode-p 'prog-mode) ;; Check if it's a programming mode
       (flycheck-mode 1))))
+;; Use-package
+
+(use-package gcmh
+  :init
+  (setq gcmh-idle-delay 'auto
+        gcmh-high-cons-threshold (* 128 1024 1024))
+  :config
+  (gcmh-mode 1))
 ;; Helm
 ;; - [[id:96c0f509-c06b-4e48-8f28-019cd2ca1a38][Helm reference header]]
 
@@ -1962,8 +1945,8 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings)
   (setq helm-org-ignore-autosaves t)
   ;; The default (helm) completion style is case-sensitive even with
-  ;; helm-case-fold-search 'smart.  Use basic+substring instead.
-  (setq helm-org-completion-styles '(basic substring))
+  ;; helm-case-fold-search 'smart.  Include orderless for multi-word matching.
+  (setq helm-org-completion-styles '(orderless basic substring))
 (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings)
 
 (with-eval-after-load 'org
@@ -2003,7 +1986,7 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 ;; Suggested keys (optional)
 ;; C-c C-w is org’s default refile; bind jump to C-c j
 (defun jg/helm-org-nohelm-filter (candidates)
-  "Filter :nohelm: tagged headings and org-id link headings from helm-org."
+  "Filter :nohelm: tagged headings, org-id link headings, and cal.org from helm-org."
   (cl-remove-if
    (lambda (cand)
      (let ((marker (get-text-property 0 'helm-realvalue cand)))
@@ -2012,7 +1995,8 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
            (save-excursion
              (goto-char marker)
              (or (member "nohelm" (org-get-local-tags))
-                 (string-match-p "\\[\\[id:" (org-get-heading t t t t))))))))
+                 (string-match-p "\\[\\[id:" (org-get-heading t t t t))
+                 (string-match-p "/cal\\.org\\'" (buffer-file-name))))))))
    candidates))
 
 (advice-add 'helm-org--get-candidates-in-file :filter-return
@@ -2138,21 +2122,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
       (funcall orig-fn body params))))
 (advice-add 'org-babel-execute:mermaid :around #'my/ob-mermaid-suppress-zenuml)
 ;; (advice-remove 'org-babel-execute:mermaid #'my/ob-mermaid-suppress-zenuml)
-;; open-chatgtp-query-in-new-browser-window
-
-;; - Make a ChatGPT query from emacs
-;;   - https://chatgpt.com/c/d4f18f6b-2f09-4a69-93f1-8f8ab5b39cb0
-
-(defun open-chatgpt-query-in-new-browser-window (query &optional use-gpt-4)
-  "Send a QUERY to ChatGPT and open the result in a new browser window.
-With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
-  (interactive "sEnter your ChatGPT query: \nP")
-  (let* ((model (if use-gpt-4 "gpt-4" "gpt-4-turbo"))
-         (url (concat "https://chat.openai.com/?q=" (url-hexify-string query)
-                      "&model=" model)))
-    (start-process "brave-browser" nil "brave-browser" "--new-window" url)))
-
-(global-set-key (kbd "C-c C-g") 'open-chatgpt-query-in-new-browser-window)
 ;; Use-package
 
 (add-to-list 'load-path "/usr/local/share/emacs/site-lisp/mu4e")
@@ -2166,7 +2135,8 @@ With a prefix argument USE-GPT-4, use GPT-4 instead of GPT-4-turbo."
         mu4e-get-mail-command "mbsync -a"
         mu4e-mu-binary "/usr/local/bin/mu"
         mu4e-update-interval 300
-        mu4e-index-update-in-background t)
+        mu4e-index-update-in-background t
+        mu4e-hide-index-messages t)
 
   ;; Identity
   (setq user-full-name "Jeff Szymanski"
