@@ -827,7 +827,8 @@ When called with two prefix arguments, ARG, run the original function without pr
 ;; https://emacs.stackexchange.com/questions/23982/cleanup-org-mode-export-intermediary-file/24000#24000
 
 (with-eval-after-load 'org
-  (setq org-export-backends '(ascii html latex odt icalendar md org)))
+  (setq org-export-backends '(ascii html latex beamer odt icalendar md org))
+  (require 'ox-beamer))
 
 (setq-default cache-long-scans nil)
 (setq org-export-with-broken-links t)

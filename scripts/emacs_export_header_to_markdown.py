@@ -38,7 +38,7 @@ def generate_md_via_org(org_file, node_id):
         raise
 
 def extract_md_path(org_file, node_id):
-    command = f'''/usr/local/bin/emacs --batch -l "${{HOME}}/repos/basecamp/emacs/latex_init.el" --eval "(progn
+    command = f'''/usr/local/bin/emacs --batch -l "${{HOME}}/repos/latex/emacs/latex_init.el" --eval "(progn
         (require 'org)
         (require 'org-id)
         (find-file \\"{org_file}\\")
