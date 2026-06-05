@@ -4045,28 +4045,245 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 (setq org-startup-with-inline-images t)
 #+end_src
 
-***** Add persistant highlights
+***** Custom inline marks
+Registry-driven inline markup, modeled on John Kitchin's scimax-editmarks but rebuilt lean. One editorial comment mark (=<~ note ~>=) that renders muted and exports as a visible margin note, plus colored highlights — red =<{ ... }>= (the original), yellow =<y{ ... }y>=, green =<g{ ... }g>=. Each mark is a single row in =jg/org-marks=; adding a mark is a one-row change. Marks are single-line and must not cross an Org element boundary or nest.
+
+Faces, one per mark.
 #+begin_src emacs-lisp
-(defun org-add-persistent-highlights ()
-  "Add persistent highlighting for custom markers in Org mode."
-  (font-lock-add-keywords
-   nil
-   '(("<{\\(.*?\\)}>" ; Match the pattern <{...}>
-      (1 '(:background "firebrick") t)))))
+(defface jg/org-mark-comment-face
+  '((t :foreground "grey50" :slant italic))
+  "Face for inline editorial comments, <~ ... ~>.")
 
-(add-hook 'org-mode-hook #'org-add-persistent-highlights)
+(defface jg/org-mark-hl-red-face
+  '((t :background "firebrick" :foreground "white"))
+  "Face for red inline highlight, <{ ... }>.")
 
-(defun org-hide-markers-without-space ()
-  "Hide markers like << and >> in Org-mode without leaving empty space."
-  (font-lock-add-keywords
-   nil
-   '(("<{\\|}>"
-      (0 (progn (put-text-property (match-beginning 0) (match-end 0)
-                                   'display "")
-                'org-hide))))))
+(defface jg/org-mark-hl-yellow-face
+  '((t :background "#fff176" :foreground "black"))
+  "Face for yellow inline highlight, <y{ ... }y>.")
 
-(add-hook 'org-mode-hook #'org-hide-markers-without-space)
+(defface jg/org-mark-hl-green-face
+  '((t :background "#aed581" :foreground "black"))
+  "Face for green inline highlight, <g{ ... }g>.")
+#+end_src
 
+The registry: each row is (NAME :open :close :face :export).
+#+begin_src emacs-lisp
+(defvar jg/org-marks
+  '((comment   :open "<~"  :close "~>"  :face jg/org-mark-comment-face   :export jg/org-mark-export-comment)
+    (hl-red    :open "<{"  :close "}>"  :face jg/org-mark-hl-red-face    :export jg/org-mark-export-hl-red)
+    (hl-yellow :open "<y{" :close "}y>" :face jg/org-mark-hl-yellow-face :export jg/org-mark-export-hl-yellow)
+    (hl-green  :open "<g{" :close "}g>" :face jg/org-mark-hl-green-face  :export jg/org-mark-export-hl-green))
+  "Registry of custom inline Org marks.
+Each entry is (NAME :open STR :close STR :face FACE :export FN).  FN is
+called with (CONTENT BACKEND) and returns the replacement string emitted
+at export, normally an @@backend:...@@ snippet so Org passes backend code
+through untouched.  Marks are single-line and must not cross Org element
+boundaries or nest.")
+#+end_src
+
+In-buffer fontification with reveal-on-cursor: content carries the mark face; delimiters are hidden with =display ""= ONLY while point is outside the mark. While the cursor is inside (typing manually or in a yas field), the delimiters are shown, so the hiding never fights the live yas field overlay (the failure that broke snippet editing). Same idea as =org-appear= for emphasis markers.
+#+begin_src emacs-lisp
+(defvar-local jg/org-marks--reveal-region nil
+  "(BEG . END) whole-match bounds of the mark currently revealed.
+`jg/org-marks--display-spec' consults this so a mark's delimiters show
+while the cursor is within it and hide otherwise.")
+
+(defun jg/org-marks--display-spec ()
+  "Font-lock FACESPEC for a mark delimiter (group 1 or 3).
+Hide it with =display \"\"= unless its mark (the whole match) is the one
+under point, i.e. equals `jg/org-marks--reveal-region'."
+  (if (and jg/org-marks--reveal-region
+           (=  (match-beginning 0) (car jg/org-marks--reveal-region))
+           (=  (match-end 0)       (cdr jg/org-marks--reveal-region)))
+      '(face nil)
+    '(face nil display "")))
+
+(defun jg/org-marks--keywords ()
+  "Build font-lock keywords from `jg/org-marks'.
+Content is `.+?' (>=1 char) so an empty mark shows its delimiters; the
+delimiter display is point-aware via `jg/org-marks--display-spec'."
+  (mapcar
+   (lambda (mark)
+     (let* ((pl    (cdr mark))
+            (open  (regexp-quote (plist-get pl :open)))
+            (close (regexp-quote (plist-get pl :close)))
+            (face  (plist-get pl :face))
+            (re    (concat "\\(" open "\\)\\(.+?\\)\\(" close "\\)")))
+       `(,re
+         (1 (jg/org-marks--display-spec) prepend)
+         (2 ',face prepend)
+         (3 (jg/org-marks--display-spec) prepend))))
+   jg/org-marks))
+
+(defun jg/org-marks--mark-at-point ()
+  "Return (BEG . END) whole-match bounds of the mark containing point, else nil.
+Only the current line is scanned (marks are single-line)."
+  (let ((p (point)) found)
+    (save-excursion
+      (let ((eol (line-end-position)))
+        (dolist (mark jg/org-marks)
+          (unless found
+            (let ((re (concat (regexp-quote (plist-get (cdr mark) :open))
+                              ".+?"
+                              (regexp-quote (plist-get (cdr mark) :close)))))
+              (goto-char (line-beginning-position))
+              (while (and (not found) (re-search-forward re eol t))
+                (when (and (<= (match-beginning 0) p) (<= p (match-end 0)))
+                  (setq found (cons (match-beginning 0) (match-end 0))))))))))
+    found))
+
+(defun jg/org-marks-reveal ()
+  "Reveal the mark under point and re-hide the previously revealed one.
+On `post-command-hook' so cursor motion (not just edits) toggles delimiters."
+  (let ((cur (jg/org-marks--mark-at-point)))
+    (unless (equal cur jg/org-marks--reveal-region)
+      (let ((old jg/org-marks--reveal-region))
+        (setq jg/org-marks--reveal-region cur)
+        (when old (font-lock-flush (car old) (cdr old)))
+        (when cur (font-lock-flush (car cur) (cdr cur)))))))
+
+(defun jg/org-marks-setup ()
+  "Install custom inline-mark fontification + reveal-on-cursor in this buffer."
+  (let ((kw (jg/org-marks--keywords)))
+    (font-lock-remove-keywords nil kw)
+    (font-lock-add-keywords nil kw 'append))
+  (add-hook 'post-command-hook #'jg/org-marks-reveal nil t)
+  (when font-lock-mode (font-lock-flush)))
+#+end_src
+
+Export helpers: escape content per backend, wrap it.
+#+begin_src emacs-lisp
+(defun jg/org-marks--latex-escape (s)
+  "Escape LaTeX special characters in S in a single pass.
+Org does not escape the content of an @@latex:...@@ export snippet, so we
+must protect it ourselves before wrapping it in a LaTeX command."
+  (replace-regexp-in-string
+   "[\\{}$&#%_^~]"
+   (lambda (m)
+     (pcase m
+       ("\\" "\\textbackslash{}") ("{" "\\{") ("}" "\\}")
+       ("$" "\\$") ("&" "\\&") ("#" "\\#") ("%" "\\%") ("_" "\\_")
+       ("^" "\\textasciicircum{}") ("~" "\\textasciitilde{}")))
+   s t t))
+
+(defun jg/org-marks--latex-hl (rgb content &optional fg-rgb)
+  "Return an @@latex@@ colorbox of CONTENT in background RGB, optional FG-RGB text."
+  (let ((body (jg/org-marks--latex-escape content)))
+    (format "@@latex:\\colorbox[rgb]{%s}{%s}@@"
+            rgb
+            (if fg-rgb (format "\\textcolor[rgb]{%s}{%s}" fg-rgb body) body))))
+
+(defun jg/org-marks--html-hl (bg content &optional fg)
+  "Return an @@html@@ span of CONTENT with background BG, optional color FG."
+  (format "@@html:<span style=\"background-color:%s%s\">%s</span>@@"
+          bg (if fg (format ";color:%s" fg) "")
+          (org-html-encode-plain-text content)))
+#+end_src
+
+The per-mark export functions referenced by the registry.
+#+begin_src emacs-lisp
+(defun jg/org-mark-export-comment (content backend)
+  "Export a comment mark: a visible margin note in LaTeX/HTML, bracketed elsewhere."
+  (cond
+   ((org-export-derived-backend-p backend 'latex)
+    (format "@@latex:\\todo{%s}@@" (jg/org-marks--latex-escape content)))
+   ((org-export-derived-backend-p backend 'html)
+    (format "@@html:<span style=\"color:#d35400;font-style:italic\">[%s]</span>@@"
+            (org-html-encode-plain-text content)))
+   (t (format "[NOTE: %s]" content))))
+
+(defun jg/org-mark-export-hl-red (content backend)
+  "Export the red highlight mark."
+  (cond
+   ((org-export-derived-backend-p backend 'latex)
+    (jg/org-marks--latex-hl "0.70,0.13,0.13" content "1,1,1"))
+   ((org-export-derived-backend-p backend 'html)
+    (jg/org-marks--html-hl "#b22222" content "#ffffff"))
+   (t content)))
+
+(defun jg/org-mark-export-hl-yellow (content backend)
+  "Export the yellow highlight mark."
+  (cond
+   ((org-export-derived-backend-p backend 'latex)
+    (jg/org-marks--latex-hl "1,0.95,0.46" content))
+   ((org-export-derived-backend-p backend 'html)
+    (jg/org-marks--html-hl "#fff176" content))
+   (t content)))
+
+(defun jg/org-mark-export-hl-green (content backend)
+  "Export the green highlight mark."
+  (cond
+   ((org-export-derived-backend-p backend 'latex)
+    (jg/org-marks--latex-hl "0.68,0.84,0.50" content))
+   ((org-export-derived-backend-p backend 'html)
+    (jg/org-marks--html-hl "#aed581" content))
+   (t content)))
+#+end_src
+
+The export hook: rewrite marks to backend output before Org parses, skipping src/example/verbatim contexts and trimming the captured text.
+#+begin_src emacs-lisp
+(defun jg/org-marks--protected-p (pos)
+  "Non-nil if POS is in an Org context where marks must not be rewritten."
+  (save-excursion
+    (goto-char pos)
+    (or (memq (org-element-type (org-element-at-point))
+              '(src-block example-block export-block fixed-width
+                comment comment-block latex-environment keyword))
+        (memq (org-element-type (org-element-context))
+              '(code verbatim)))))
+
+(defun jg/org-marks-preprocess (backend)
+  "Rewrite custom inline marks to BACKEND output before Org parses the buffer."
+  (org-with-wide-buffer
+   (dolist (mark jg/org-marks)
+     (let* ((pl  (cdr mark))
+            (efn (plist-get pl :export))
+            (re  (concat (regexp-quote (plist-get pl :open))
+                         "\\(.*?\\)"
+                         (regexp-quote (plist-get pl :close)))))
+       (goto-char (point-min))
+       (while (re-search-forward re nil t)
+         ;; Capture span + content BEFORE calling protected-p / the export
+         ;; function -- both run `org-element'/regexp code that clobbers the
+         ;; match data, so replace-match would rewrite the wrong region.
+         (let* ((mbeg    (match-beginning 0))
+                (mend    (match-end 0))
+                (content (string-trim (match-string 1))))
+           (if (jg/org-marks--protected-p mbeg)
+               (goto-char mend)
+             (let ((rep (funcall efn content backend)))
+               (delete-region mbeg mend)
+               (goto-char mbeg)
+               (insert rep)))))))))
+#+end_src
+
+Wire it up, migrate off the old hardcoded highlight functions, and add =todonotes= to the LaTeX preamble for the comment mark's margin notes.
+#+begin_src emacs-lisp
+(remove-hook 'org-mode-hook #'org-add-persistent-highlights)
+(remove-hook 'org-mode-hook #'org-hide-markers-without-space)
+
+(add-hook 'org-mode-hook #'jg/org-marks-setup)
+(add-hook 'org-export-before-processing-functions #'jg/org-marks-preprocess)
+
+(with-eval-after-load 'ox-latex
+  (add-to-list 'org-latex-packages-alist '("" "todonotes" nil) t))
+
+;; Org always tangles a final newline, but the inline-mark snippets must end
+;; exactly at the body or expansion inserts a stray line break on field exit.
+;; Strip the trailing newline from these snippet files after every tangle.
+(defun jg/org-marks-strip-yas-newline ()
+  "Strip trailing newlines from a freshly tangled inline-mark snippet file."
+  (when (and buffer-file-name
+             (string-match-p "/public_yasnippets/org-mode/org\\.\\(hl\\|hy\\|hg\\|note\\)\\'"
+                             buffer-file-name))
+    (goto-char (point-max))
+    (skip-chars-backward "\n")
+    (when (< (point) (point-max))
+      (delete-region (point) (point-max))
+      (save-buffer))))
+
+(add-hook 'org-babel-post-tangle-hook #'jg/org-marks-strip-yas-newline)
 #+end_src
 ****** org.hl                                                           :yas:
 #+begin_src bash :comment no :tangle ~/repos/basecamp/emacs/public_yasnippets/org-mode/org.hl
@@ -4077,7 +4294,34 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 # --
 <\{$1\}>
 #+end_src
-<{test}>
+****** org.note                                                         :yas:
+#+begin_src bash :comment no :tangle ~/repos/basecamp/emacs/public_yasnippets/org-mode/org.note
+# -*- mode: snippet -*-
+# key: org.note
+# expand-env: ((yas-indent-line 'none))
+# condition: 'auto
+# --
+<~$1~>
+#+end_src
+****** org.hy                                                           :yas:
+#+begin_src bash :comment no :tangle ~/repos/basecamp/emacs/public_yasnippets/org-mode/org.hy
+# -*- mode: snippet -*-
+# key: org.hy
+# expand-env: ((yas-indent-line 'none))
+# condition: 'auto
+# --
+<y\{$1\}y>
+#+end_src
+****** org.hg                                                           :yas:
+#+begin_src bash :comment no :tangle ~/repos/basecamp/emacs/public_yasnippets/org-mode/org.hg
+# -*- mode: snippet -*-
+# key: org.hg
+# expand-env: ((yas-indent-line 'none))
+# condition: 'auto
+# --
+<g\{$1\}g>
+#+end_src
+<~ this is a comment ~> and <{red}> <y{yellow}y> <g{green}g> highlights.
 ***** Tags
 
 
@@ -4161,6 +4405,7 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
         ("\\.org\\'" . emacs)
         ("\\.sty\\'" . emacs)
         ("\\.sh\\'" . emacs)
+        ("\\.smk\\'" . emacs)
         ("\\.tex\\'" . emacs)
         ("\\.\\(yaml\\|yml\\|txt\\|md\\|conf\\|list\\|tex\\)\\'" .
          (lambda (file path)
@@ -6519,6 +6764,15 @@ https://github.com/LionyxML/ros
 (defcustom snakemake-indent-value-offset nil
   "Offset for field values that the line below the field key."
   :type 'integer)
+
+;; snakemake org-babel blocks are tangle-only (they build Snakefiles); there is
+;; no ob-snakemake providing an execute function. Without this stub, exporting
+;; any file containing a snakemake block warns "No org-babel-execute function
+;; for snakemake." A no-op execute fn declares the language non-evaluable and
+;; silences the export warning. (:eval no header-arg does NOT suppress it.)
+(defun org-babel-execute:snakemake (body params)
+  "No-op: snakemake blocks are tangle-only and never executed by babel."
+  nil)
 #+end_src
 **** Tree-sitter
 #+begin_src emacs-lisp
