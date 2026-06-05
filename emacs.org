@@ -4344,6 +4344,60 @@ Wire it up, migrate off the old hardcoded highlight functions, and add =todonote
 
 (add-hook 'org-babel-post-tangle-hook #'jg/org-marks-strip-yas-newline)
 #+end_src
+
+Imposing a mark on existing text: the yas keys insert a fresh mark as you type, but to wrap text you have ALREADY written, select it and use =jg/org-mark-region= (reads the type) or the =C-c m= transient (one key per type). Both wrap the active region in the chosen mark's delimiters using the same registry; with no region they insert an empty mark, point inside. The region is captured before the transient opens, so transient's own keymap can't lose it.
+#+begin_src emacs-lisp
+(require 'transient)
+
+(defvar jg/org-mark--region nil
+  "(BEG . END) captured when the mark transient opens; consumed by the next apply.")
+
+(defun jg/org-mark-apply (type)
+  "Wrap the region in inline mark TYPE, or insert an empty TYPE mark at point.
+Prefers the region captured by `jg/org-mark-dispatch', else the live region."
+  (let* ((pl    (cdr (assq type jg/org-marks)))
+         (open  (plist-get pl :open))
+         (close (plist-get pl :close))
+         (reg   (or jg/org-mark--region
+                    (and (use-region-p) (cons (region-beginning) (region-end))))))
+    (setq jg/org-mark--region nil)
+    (if reg
+        (let ((beg (car reg)) (end (cdr reg)))
+          (goto-char end) (insert close)
+          (goto-char beg) (insert open)
+          (goto-char (+ end (length open) (length close))))
+      (insert open close)
+      (backward-char (length close)))))
+
+(defun jg/org-mark-region (type)
+  "Impose inline mark TYPE on the region (or insert an empty one).  Reads TYPE."
+  (interactive
+   (list (intern (completing-read
+                  "Mark: " (mapcar (lambda (m) (symbol-name (car m))) jg/org-marks) nil t))))
+  (jg/org-mark-apply type))
+
+(transient-define-prefix jg/org-mark-transient ()
+  "Impose an inline mark on the region (or insert one)."
+  [["Highlight"
+    ("h" "red"    (lambda () (interactive) (jg/org-mark-apply 'hl-red)))
+    ("y" "yellow" (lambda () (interactive) (jg/org-mark-apply 'hl-yellow)))
+    ("g" "green"  (lambda () (interactive) (jg/org-mark-apply 'hl-green)))]
+   ["Other"
+    ("i" "strong" (lambda () (interactive) (jg/org-mark-apply 'strong)))
+    ("x" "strike" (lambda () (interactive) (jg/org-mark-apply 'strike)))
+    ("b" "key"    (lambda () (interactive) (jg/org-mark-apply 'key)))
+    ("c" "note"   (lambda () (interactive) (jg/org-mark-apply 'comment)))]])
+
+(defun jg/org-mark-dispatch ()
+  "Capture the active region (if any) and open the inline-mark transient."
+  (interactive)
+  (setq jg/org-mark--region (and (use-region-p)
+                                 (cons (region-beginning) (region-end))))
+  (jg/org-mark-transient))
+
+(with-eval-after-load 'org
+  (define-key org-mode-map (kbd "C-c m") #'jg/org-mark-dispatch))
+#+end_src
 ****** org.hl                                                           :yas:
 #+begin_src bash :comment no :tangle ~/repos/basecamp/emacs/public_yasnippets/org-mode/org.hl
 # -*- mode: snippet -*-
