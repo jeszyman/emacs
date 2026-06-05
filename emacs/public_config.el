@@ -481,25 +481,52 @@ Requires pdfannots to be installed and on PATH."
 (setq org-startup-folded t)
 (setq org-startup-with-inline-images t)
 ;; Custom inline marks
-;; Registry-driven inline markup, modeled on John Kitchin's scimax-editmarks but rebuilt lean. One editorial comment mark (=<~ note ~>=) that renders muted and exports as a visible margin note, plus colored highlights — red =<{ ... }>= (the original), yellow =<y{ ... }y>=, green =<g{ ... }g>=. Each mark is a single row in =jg/org-marks=; adding a mark is a one-row change. Marks are single-line and must not cross an Org element boundary or nest.
+;; Registry-driven inline markup (modeled on John Kitchin's scimax-editmarks, rebuilt lean). Each mark wraps text as =<SIGIL{ text }SIGIL>= (sigil empty for the original red highlight; the comment uses =<~ text ~>=). Type the Invoke key and it auto-expands; the delimiters show while the cursor is inside a mark and hide when you move away (reveal-on-cursor, so the hiding never fights the live yasnippet field). Each mark is a single row in =jg/org-marks=; adding a mark is a one-row change. Marks are single-line and must not cross an Org element boundary or nest.
+
+;; | Type             | Invoke   | Sigil  | Role                | Export (LaTeX / HTML)             |
+;; |------------------+----------+--------+---------------------+-----------------------------------|
+;; | highlight red    | org.hl   | (none) | everyday marker     | colorbox / background span        |
+;; | highlight yellow | org.hy   | y      | everyday marker     | colorbox / background span        |
+;; | highlight green  | org.hg   | g      | everyday marker     | colorbox / background span        |
+;; | strong           | org.hi   | i      | loud / urgent       | bright colorbox / background span |
+;; | strike           | org.hx   | x      | cut / delete / done | sout / s                          |
+;; | key              | org.hb   | b      | emphasis / key term | bold colored / strong             |
+;; | note             | org.note | ~      | aside, recedes      | todo margin note / orange span    |
+
+;; In-buffer styling: red/yellow/green highlights are highlighter-pen (muted fill + matching underline); strong is a bright amber fill; strike is a red strike-through; key is bold blue ink; note is muted slate-grey italic.
 
 ;; Faces, one per mark.
 
 (defface jg/org-mark-comment-face
-  '((t :foreground "grey50" :slant italic))
-  "Face for inline editorial comments, <~ ... ~>.")
+  '((t :foreground "#5c6370" :slant italic))
+  "Comment / note, <~ ... ~>: muted slate-grey, recedes.")
 
+;; Highlights use a highlighter-pen look: a muted fill of the hue plus a
+;; brighter underline of the same hue -- reads like a marker swipe on a dark
+;; theme, and the underline keeps it legible where a flat dark fill would not.
 (defface jg/org-mark-hl-red-face
-  '((t :background "firebrick" :foreground "white"))
-  "Face for red inline highlight, <{ ... }>.")
+  '((t :background "#3d1f22" :underline (:color "#e06c75" :style line)))
+  "Red highlight, <{ ... }>.")
 
 (defface jg/org-mark-hl-yellow-face
-  '((t :background "#fff176" :foreground "black"))
-  "Face for yellow inline highlight, <y{ ... }y>.")
+  '((t :background "#3d3d1f" :underline (:color "#fff176" :style line)))
+  "Yellow highlight, <y{ ... }y>.")
 
 (defface jg/org-mark-hl-green-face
-  '((t :background "#aed581" :foreground "black"))
-  "Face for green inline highlight, <g{ ... }g>.")
+  '((t :background "#243d1f" :underline (:color "#aed581" :style line)))
+  "Green highlight, <g{ ... }g>.")
+
+(defface jg/org-mark-strong-face
+  '((t :background "#ffd54f" :foreground "black"))
+  "Strong / loud highlight -- classic bright fill, <i{ ... }i>.")
+
+(defface jg/org-mark-strike-face
+  '((t :strike-through "#e06c75" :foreground "#9aa0a6"))
+  "Strike: cut / delete / done, <x{ ... }x>.")
+
+(defface jg/org-mark-key-face
+  '((t :foreground "#61afef" :weight bold))
+  "Key term / emphasis -- bold colored ink, no fill, <b{ ... }b>.")
 
 ;; The registry: each row is (NAME :open :close :face :export).
 
@@ -507,7 +534,10 @@ Requires pdfannots to be installed and on PATH."
   '((comment   :open "<~"  :close "~>"  :face jg/org-mark-comment-face   :export jg/org-mark-export-comment)
     (hl-red    :open "<{"  :close "}>"  :face jg/org-mark-hl-red-face    :export jg/org-mark-export-hl-red)
     (hl-yellow :open "<y{" :close "}y>" :face jg/org-mark-hl-yellow-face :export jg/org-mark-export-hl-yellow)
-    (hl-green  :open "<g{" :close "}g>" :face jg/org-mark-hl-green-face  :export jg/org-mark-export-hl-green))
+    (hl-green  :open "<g{" :close "}g>" :face jg/org-mark-hl-green-face  :export jg/org-mark-export-hl-green)
+    (strong    :open "<i{" :close "}i>" :face jg/org-mark-strong-face    :export jg/org-mark-export-strong)
+    (strike    :open "<x{" :close "}x>" :face jg/org-mark-strike-face    :export jg/org-mark-export-strike)
+    (key       :open "<b{" :close "}b>" :face jg/org-mark-key-face       :export jg/org-mark-export-key))
   "Registry of custom inline Org marks.
 Each entry is (NAME :open STR :close STR :face FACE :export FN).  FN is
 called with (CONTENT BACKEND) and returns the replacement string emitted
@@ -651,6 +681,35 @@ must protect it ourselves before wrapping it in a LaTeX command."
     (jg/org-marks--html-hl "#aed581" content))
    (t content)))
 
+(defun jg/org-mark-export-strong (content backend)
+  "Export the strong / loud highlight (bright fill)."
+  (cond
+   ((org-export-derived-backend-p backend 'latex)
+    (jg/org-marks--latex-hl "1,0.835,0.31" content "0,0,0"))
+   ((org-export-derived-backend-p backend 'html)
+    (jg/org-marks--html-hl "#ffd54f" content "#000000"))
+   (t content)))
+
+(defun jg/org-mark-export-strike (content backend)
+  "Export the strike mark (cut / delete / done)."
+  (cond
+   ((org-export-derived-backend-p backend 'latex)
+    (format "@@latex:\\sout{%s}@@" (jg/org-marks--latex-escape content)))
+   ((org-export-derived-backend-p backend 'html)
+    (format "@@html:<s>%s</s>@@" (org-html-encode-plain-text content)))
+   (t content)))
+
+(defun jg/org-mark-export-key (content backend)
+  "Export the key / emphasis mark (bold colored ink)."
+  (cond
+   ((org-export-derived-backend-p backend 'latex)
+    (format "@@latex:\\textbf{\\textcolor[rgb]{0.38,0.686,0.937}{%s}}@@"
+            (jg/org-marks--latex-escape content)))
+   ((org-export-derived-backend-p backend 'html)
+    (format "@@html:<strong style=\"color:#61afef\">%s</strong>@@"
+            (org-html-encode-plain-text content)))
+   (t content)))
+
 ;; The export hook: rewrite marks to backend output before Org parses, skipping src/example/verbatim contexts and trimming the captured text.
 
 (defun jg/org-marks--protected-p (pos)
@@ -704,7 +763,7 @@ must protect it ourselves before wrapping it in a LaTeX command."
 (defun jg/org-marks-strip-yas-newline ()
   "Strip trailing newlines from a freshly tangled inline-mark snippet file."
   (when (and buffer-file-name
-             (string-match-p "/public_yasnippets/org-mode/org\\.\\(hl\\|hy\\|hg\\|note\\)\\'"
+             (string-match-p "/public_yasnippets/org-mode/org\\.\\(h[a-z]\\|note\\)\\'"
                              buffer-file-name))
     (goto-char (point-max))
     (skip-chars-backward "\n")
