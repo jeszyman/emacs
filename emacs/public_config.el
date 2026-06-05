@@ -776,6 +776,7 @@ must protect it ourselves before wrapping it in a LaTeX command."
 ;; Imposing a mark on existing text: the yas keys insert a fresh mark as you type, but to wrap text you have ALREADY written, select it and use =jg/org-mark-region= (reads the type) or the =C-c m= transient (one key per type). Both wrap the active region in the chosen mark's delimiters using the same registry; with no region they insert an empty mark, point inside. The region is captured before the transient opens, so transient's own keymap can't lose it.
 
 (require 'transient)
+(require 'key-chord)
 
 (defvar jg/org-mark--region nil
   "(BEG . END) captured when the mark transient opens; consumed by the next apply.")
@@ -823,8 +824,10 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
                                  (cons (region-beginning) (region-end))))
   (jg/org-mark-transient))
 
+;; Bound as a key-chord (HH) rather than C-c m, which a minor-mode map shadowed.
+;; require here because this block tangles before the key-chord package setup.
 (with-eval-after-load 'org
-  (define-key org-mode-map (kbd "C-c m") #'jg/org-mark-dispatch))
+  (key-chord-define org-mode-map "HH" #'jg/org-mark-dispatch))
 ;; Tags
 
         (setq
