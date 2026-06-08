@@ -2244,6 +2244,11 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 (use-package exec-path-from-shell
   :ensure t
   :config
+  ;; Login shell only ("-l"), NOT interactive ("-i"). With "-i" bash tries to
+  ;; grab a controlling terminal, which fails noisily when Emacs runs as a
+  ;; daemon: "cannot set terminal process group / no job control / not a
+  ;; terminal". "-l" sources the login profile and is enough for PATH/TEXINPUTS.
+  (setq exec-path-from-shell-arguments '("-l"))
   (add-to-list 'exec-path-from-shell-variables "TEXINPUTS")
   (exec-path-from-shell-initialize))
 ;; expand-region
