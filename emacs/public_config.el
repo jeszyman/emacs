@@ -2636,6 +2636,16 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   :ensure t
   :config
   (org-edna-mode 1))
+;; org-glossary
+;; [[https://github.com/tecosaur/org-glossary][github: tecosaur/org-glossary]]
+;; - org-cite-style management of glossary/acronyms/index terms: defined under a =* Acronyms= description list per document, referenced in prose, expanded on export.
+;; - Auto-detects terms in body text; headings are excluded by default (=org-glossary-autodetect-in-headings= is nil), so heading text stays literal for forced short forms.
+;; - Default export does its own "long (short)" first-use expansion, so no LaTeX package is required. The LaTeX =acronym= package is kept loaded as a manual backup for edge cases; see [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][Emacs LaTeX setup]] in latex.org.
+;; - Load only. Enable live term display in a document with ~M-x org-glossary-mode~; export works without the minor mode.
+
+(use-package org-glossary
+  :after org
+  :vc (:url "https://github.com/tecosaur/org-glossary" :vc-backend Git))
 ;; org-include-inline
 ;; [[https://github.com/yibie/org-include-inline][github: yibie/org-include-inline]]
 ;; - UUID-based includes work; CUSTOM_ID does not; export from UUID breaks
