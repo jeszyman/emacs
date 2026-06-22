@@ -2725,6 +2725,9 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 (use-package org-glossary
   :after org
   :vc (:url "https://github.com/tecosaur/org-glossary" :vc-backend Git))
+
+(setq org-glossary-toplevel-only t) ; only top-level * Glossary/* Acronyms; nil matched stray nested headings and crashed on global-terms scan
+(add-hook 'org-mode-hook #'org-glossary-mode)
 ;; org-include-inline
 ;; [[https://github.com/yibie/org-include-inline][github: yibie/org-include-inline]]
 ;; - UUID-based includes work; CUSTOM_ID does not; export from UUID breaks

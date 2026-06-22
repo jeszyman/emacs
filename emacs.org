@@ -6889,6 +6889,9 @@ Suppress zenuml/core stderr popup on every mermaid eval.
 (use-package org-glossary
   :after org
   :vc (:url "https://github.com/tecosaur/org-glossary" :vc-backend Git))
+
+(setq org-glossary-toplevel-only t) ; only top-level * Glossary/* Acronyms; nil matched stray nested headings and crashed on global-terms scan
+(add-hook 'org-mode-hook #'org-glossary-mode)
 #+end_src
 
 **** [[id:45e28300-51fd-4ce7-aed1-15dca15022d4][Org-mode]]
