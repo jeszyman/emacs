@@ -575,16 +575,16 @@ For more information, refer to the manual:
 
 #+BEGIN: clocktable :scope file :maxlevel 6 :match "tagin" :tstart "<2024-10-01>" :tend "<2024-10-03>" :fileskip0 t
 #+CAPTION: Clock summary at [2024-10-14 Mon 12:14]
-| Headline                   | Time   |      |      |      |      |
-|----------------------------+--------+------+------+------+------|
-| *Total time*               | *0:16* |      |      |      |      |
-|----------------------------+--------+------+------+------+------|
-| Basecamp                   | 0:16   |      |      |      |      |
-| \_  Org-mode guide         |        | 0:16 |      |      |      |
-| \_    Clock table          |        |      | 0:16 |      |      |
-| \_      Clock table events |        |      |      | 0:16 |      |
-| \_        Included event 1 |        |      |      |      | 0:08 |
-| \_        Included event 2 |        |      |      |      | 0:08 |
+| Headline                   | Time |      |      |      |      |
+|----------------------------+------+------+------+------+------|
+| *Total time*                 | *0:16* |      |      |      |      |
+|----------------------------+------+------+------+------+------|
+| Basecamp                   | 0:16 |      |      |      |      |
+| \_  Org-mode guide         |      | 0:16 |      |      |      |
+| \_    Clock table          |      |      | 0:16 |      |      |
+| \_      Clock table events |      |      |      | 0:16 |      |
+| \_        Included event 1 |      |      |      |      | 0:08 |
+| \_        Included event 2 |      |      |      |      | 0:08 |
 #+END:
 
 ***** Clock table events
@@ -1262,10 +1262,10 @@ active process."
 
 Project-specific elisp lives in org-babel blocks in the project's =.org= file and tangles to an =emacs/= subdirectory within that repo. This keeps literate source in =.org= and runnable output in a predictable location. Examples:
 
-| Repo  | Org source    | Tangle target                                 |
-|-------+---------------+-----------------------------------------------|
-| org   | =work.org=    | =./emacs/work.el=                             |
-| org   | =private.org= | =./emacs/private_config.el=                   |
+| Repo  | Org source  | Tangle target                             |
+|-------+-------------+-------------------------------------------|
+| org   | =work.org=    | =./emacs/work.el=                           |
+| org   | =private.org= | =./emacs/private_config.el=                 |
 | emacs | =emacs.org=   | =./emacs/init.el=, =./emacs/public_config.el= |
 
 When a project has elisp that should load on buffer open or provides helper functions, tangle it to =<repo>/emacs/<name>.el= rather than embedding it inline in the org file's local variables.
@@ -3678,9 +3678,9 @@ Code that needs to be tangled both here and into custom inits for batch export
 **** On-save hooks and backup
 Three backup mechanisms are active, each covering a different failure mode:
 
-| Mechanism      | Location                       | Trigger                        | Naming                           | Recovery use                                |
-|----------------+--------------------------------+--------------------------------+----------------------------------+---------------------------------------------|
-| Backup files   | =~/.emacs.d/backup-save-list/= | Each =save-buffer=             | =!path!to!file~= (up to 20 kept) | Recover from bad saves or destructive edits |
+| Mechanism      | Location                     | Trigger                        | Naming                         | Recovery use                                |
+|----------------+------------------------------+--------------------------------+--------------------------------+---------------------------------------------|
+| Backup files   | =~/.emacs.d/backup-save-list/= | Each =save-buffer=               | =!path!to!file~= (up to 20 kept) | Recover from bad saves or destructive edits |
 | Auto-save      | =~/.emacs.d/auto-save-list/=   | Periodic (idle timer / crash)  | =#!path!to!file#=                | Recover from crashes or unsaved work        |
 | Version backup | =~/.emacs.d/backup-save-list/= | First save of VC-tracked files | =!path!to!file.~N~= (numbered)   | Recover older revisions                     |
 
@@ -4043,6 +4043,7 @@ https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 (require 'org)
 (setq org-startup-folded t)
 (setq org-startup-with-inline-images t)
+(setq org-hide-emphasis-markers t)
 #+end_src
 
 ***** Custom inline marks
@@ -6888,7 +6889,7 @@ Suppress zenuml/core stderr popup on every mermaid eval.
 #+begin_src emacs-lisp
 (use-package org-glossary
   :after org
-  :vc (:url "https://github.com/tecosaur/org-glossary" :vc-backend Git))
+  :vc (:url "https://github.com/tecosaur/org-glossary" :vc-backend Git :rev :newest))
 
 (setq org-glossary-toplevel-only t) ; only top-level * Glossary/* Acronyms; nil matched stray nested headings and crashed on global-terms scan
 (add-hook 'org-mode-hook #'org-glossary-mode)
@@ -7602,11 +7603,20 @@ case "$TERM" in
 (custom-set-faces
  '(default ((t (:family "Hack" :height 114 :weight light)))))
 
+(defun jg/apply-org-emphasis-faces ()
+  "Bold, distinct colors for inline =verbatim= and ~code~.
+Run after `load-theme' so the theme (manoj-dark sets org-verbatim to
+grey70) does not clobber these."
+  (set-face-attribute 'org-verbatim nil :weight 'bold :foreground "#b58900")
+  (set-face-attribute 'org-code     nil :weight 'bold :foreground "#cf833a"))
+
 (add-hook 'emacs-startup-hook
           (lambda ()
-            (load-theme 'manoj-dark t)))
+            (load-theme 'manoj-dark t)
+            (jg/apply-org-emphasis-faces)))
 
 (load-theme 'manoj-dark t)
+(jg/apply-org-emphasis-faces)
 
 #+end_src
 **** Declare Babel languages
