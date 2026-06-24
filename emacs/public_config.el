@@ -173,9 +173,9 @@
 ;; On-save hooks and backup
 ;; Three backup mechanisms are active, each covering a different failure mode:
 
-;; | Mechanism      | Location                       | Trigger                        | Naming                           | Recovery use                                |
-;; |----------------+--------------------------------+--------------------------------+----------------------------------+---------------------------------------------|
-;; | Backup files   | =~/.emacs.d/backup-save-list/= | Each =save-buffer=             | =!path!to!file~= (up to 20 kept) | Recover from bad saves or destructive edits |
+;; | Mechanism      | Location                     | Trigger                        | Naming                         | Recovery use                                |
+;; |----------------+------------------------------+--------------------------------+--------------------------------+---------------------------------------------|
+;; | Backup files   | =~/.emacs.d/backup-save-list/= | Each =save-buffer=               | =!path!to!file~= (up to 20 kept) | Recover from bad saves or destructive edits |
 ;; | Auto-save      | =~/.emacs.d/auto-save-list/=   | Periodic (idle timer / crash)  | =#!path!to!file#=                | Recover from crashes or unsaved work        |
 ;; | Version backup | =~/.emacs.d/backup-save-list/= | First save of VC-tracked files | =!path!to!file.~N~= (numbered)   | Recover older revisions                     |
 
@@ -480,6 +480,7 @@ Requires pdfannots to be installed and on PATH."
 (require 'org)
 (setq org-startup-folded t)
 (setq org-startup-with-inline-images t)
+(setq org-hide-emphasis-markers t)
 ;; Custom inline marks
 ;; Registry-driven inline markup (modeled on John Kitchin's scimax-editmarks, rebuilt lean). Each mark wraps text as =<SIGIL{ text }SIGIL>= (sigil empty for the original red highlight; the comment uses =<~ text ~>=). Type the Invoke key and it auto-expands; the delimiters show while the cursor is inside a mark and hide when you move away (reveal-on-cursor, so the hiding never fights the live yasnippet field). Each mark is a single row in =jg/org-marks=; adding a mark is a one-row change. Marks are single-line and must not cross an Org element boundary or nest.
 
@@ -1819,6 +1820,62 @@ BLOCK-NAME is the name of the block to execute."
                (not (buffer-modified-p target-buffer))
                (not (get-file-buffer file)))
       (kill-buffer target-buffer))))
+;; org-dot-render-all-formats
+;; Render every Graphviz =dot= src block in the current Org buffer to all formats (SVG, PDF, PNG) — each a native =dot -T<fmt>= render of the one DOT source, so the PDF is true vector and nothing is re-rasterised from the SVG. Output goes to each block's =:file= basename; blocks marked =:eval no= are skipped unless called with a prefix arg. Use for a diagram that needs an inline-previewable SVG/PNG and a vector PDF for LaTeX/beamer from a single source.
+
+(defun org-dot-render-all-formats (&optional force formats)
+  "Render every Graphviz `dot' src block in the current Org buffer to FORMATS.
+
+Each dot block that carries a :file header is the single source of truth; its
+body is rendered natively (`dot -T<fmt>') to the :file basename with each
+extension in FORMATS (default: svg, pdf, png).  No format-to-format conversion
+happens — every output is an independent native render of the DOT, so the PDF is
+true vector and nothing is re-rasterised from the SVG.  PNG is rendered at
+300 dpi.  Output directories are created as needed and inline images refreshed.
+
+Blocks marked :eval no / :eval never are skipped unless FORCE (interactively, a
+prefix arg) is non-nil — this protects hand-maintained or export-frozen diagrams
+from being silently re-rendered."
+  (interactive "P")
+  (let* ((formats (or formats '("svg" "pdf" "png")))
+         (default-directory (file-name-directory (buffer-file-name)))
+         (n 0) (skipped 0))
+    (org-element-map (org-element-parse-buffer) 'src-block
+      (lambda (sb)
+        (when (string-equal "dot" (org-element-property :language sb))
+          (let* ((info (org-babel-get-src-block-info t sb))
+                 (params (nth 2 info))
+                 (file (cdr (assq :file params)))
+                 (noeval (member (cdr (assq :eval params)) '("no" "never")))
+                 (body (org-element-property :value sb)))
+            (cond
+             ((not (and file body)) nil)
+             ((and noeval (not force)) (setq skipped (1+ skipped)))
+             (t
+              (let ((stem (file-name-sans-extension file)))
+                (when-let ((dir (file-name-directory stem)))
+                  (make-directory dir t))
+                (dolist (fmt formats)
+                  (let* ((out (expand-file-name (concat stem "." fmt)))
+                         (args (append (list (concat "-T" fmt))
+                                       (when (string-equal fmt "png") '("-Gdpi=300"))
+                                       (list "-o" out)))
+                         (rc (with-temp-buffer
+                               (insert body)
+                               (apply #'call-process-region (point-min) (point-max)
+                                      "dot" nil nil nil args))))
+                    (unless (eq rc 0)
+                      (error "dot -T%s failed (exit %s) on %s" fmt rc file))))
+                (when (member "pdf" formats)
+                  (let* ((pdfout (expand-file-name (concat stem ".pdf")))
+                         (tmp (concat (file-name-sans-extension pdfout) "-crop.pdf")))
+                    (when (and (file-exists-p pdfout)
+                               (eq 0 (call-process "pdfcrop" nil nil nil pdfout tmp)))
+                      (rename-file tmp pdfout t))))
+                (setq n (1+ n)))))))))
+    (when (derived-mode-p 'org-mode) (org-redisplay-inline-images))
+    (message "org-dot-render-all-formats: %d rendered, %d skipped (:eval no) → %s"
+             n skipped (string-join formats ", "))))
 ;; find-duplicate-lines
 
 (defun find-duplicate-lines ()
@@ -2724,7 +2781,7 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 
 (use-package org-glossary
   :after org
-  :vc (:url "https://github.com/tecosaur/org-glossary" :vc-backend Git))
+  :vc (:url "https://github.com/tecosaur/org-glossary" :vc-backend Git :rev :newest))
 
 (setq org-glossary-toplevel-only t) ; only top-level * Glossary/* Acronyms; nil matched stray nested headings and crashed on global-terms scan
 (add-hook 'org-mode-hook #'org-glossary-mode)
