@@ -542,6 +542,30 @@ After =C-c C-v C-t=, both =tangled/file_a.zsh= and =tangled/file_b.zsh= contain 
 References:
 - [[https://emacs.stackexchange.com/questions/39032/tangle-the-same-src-block-to-different-files][Tangle the same src block to different files (Stack Exchange)]]
 
+*** Render a Graphviz =dot= block to inline SVG
+:PROPERTIES:
+:ID:       1dffb4c8-4e60-431e-bbf1-fad1e7e8cf47
+:END:
+
+Evaluating a =dot= source block with =C-c C-c= renders to its =:file= target, and the output format follows the file extension, so a =.svg= target renders SVG in a single step and displays inline (Emacs needs =librsvg=; verify with =(image-type-available-p 'svg)=). SVG stays vector and needs no =:cmdline -Gdpi=; use =C-c C-v C-t= to also tangle a standalone =.dot=.
+
+#+begin_example
+,#+begin_src dot :file diagram.svg :tangle diagram.dot
+digraph G {
+    rankdir=LR;
+    node [shape=box, style="rounded,filled", fillcolor="#bbdefb"];
+    A -> B -> C;
+}
+,#+end_src
+#+end_example
+
+Headless equivalent (cron, VM, or any no-Emacs context), from the tangled =.dot=: =dot -Tsvg diagram.dot -o diagram.svg=.
+
+For =pdflatex= export, target =:file diagram.pdf= instead (=dot -Tpdf=): native vector, no =\includesvg= or Inkscape.
+
+References:
+- [[https://graphviz.org/docs/outputs/][Graphviz output formats]]
+
 *** INCLUDE
 :PROPERTIES:
 :ID:       c2184fd3-8358-47c4-9d26-a2db3f94e875
@@ -6948,8 +6972,57 @@ Suppress zenuml/core stderr popup on every mermaid eval.
   :after org
   :vc (:url "https://github.com/tecosaur/org-glossary" :vc-backend Git :rev :newest))
 
-(setq org-glossary-toplevel-only t) ; only top-level * Glossary/* Acronyms; nil matched stray nested headings and crashed on global-terms scan
-(add-hook 'org-mode-hook #'org-glossary-mode)
+(setq org-glossary-toplevel-only t) ; top-level * Glossary/* Acronyms only; nil triggers an args-out-of-range crash in org-glossary's any-level scan (separate bug)
+
+;; Fix org-glossary's factorial dependency registration (2026-06-26). Upstream
+;; org-glossary--register-buffer-dependencies threaded a per-PATH already-seen
+;; list, enumerating every simple PATH in the dependency graph — O(N!) when N
+;; global-terms files mutually depend (global-terms applies to every buffer, so
+;; the graph is complete), which hung Emacs at startup. A global visited set
+;; makes it O(N + edges). Keep org-glossary-global-terms (work.org) pointed at
+;; files that actually define top-level * Glossary/* Acronyms sections.
+(with-eval-after-load 'org-glossary
+  (defun org-glossary--register-buffer-dependencies (&optional path-spec visited)
+    "Watch all definition dependencies of PATH-SPEC for updates.
+Patched: VISITED is a global hash-set of already-processed path-specs."
+    (let* ((path-spec (or path-spec (org-glossary--complete-path-spec)))
+           (visited (or visited (make-hash-table :test #'equal))))
+      (puthash path-spec t visited)
+      (let* ((term-cache (cdr (assoc path-spec org-glossary--terms-cache)))
+             (included (plist-get term-cache :included))
+             (extras (mapcar #'org-glossary--parse-include-value
+                             (plist-get term-cache :extra-term-sources))))
+        (org-glossary--deregister-buffer-dependencies path-spec)
+        (dolist (dep-pspec (delete path-spec (nconc extras included)))
+          (if-let ((dep-files (assoc dep-pspec org-glossary--path-dependencies)))
+              (unless (member path-spec dep-files)
+                (push path-spec (cdr dep-files)))
+            (push (list dep-pspec path-spec) org-glossary--path-dependencies))
+          (unless (gethash dep-pspec visited)
+            (org-glossary--register-buffer-dependencies dep-pspec visited)))))))
+
+;; Auto-enable org-glossary-mode, EXCEPT in files where its interactive
+;; (jit-lock) term fontification wedges Emacs. cal.org (auto-generated ical2org
+;; calendar) is the known offender — its repetitive content hangs fontification,
+;; while normal large prose is fine (career.org, 1.1 MB, works). The factorial
+;; startup hang is separately fixed by the override above. Add basenames to the
+;; exclude list as you find others.
+(defvar jg/org-glossary-exclude-files '("cal.org")
+  "Basenames of org files where `org-glossary-mode' must NOT auto-enable.")
+(defun jg/org-glossary-mode-maybe ()
+  "Enable `org-glossary-mode' unless the file is in `jg/org-glossary-exclude-files'."
+  (when (and buffer-file-name
+             (not (member (file-name-nondirectory buffer-file-name)
+                          jg/org-glossary-exclude-files)))
+    (org-glossary-mode 1)))
+;; Auto-enable LEFT OFF. The factorial startup hang is fixed by the override
+;; above, but auto-enabling globally is impractical here: org-alert force-opens
+;; every agenda file at startup, so this hook fontifies many large files at once
+;; and pegs the CPU for a long while — and cal.org's calendar content hangs
+;; fontification outright. Enable per-document with M-x org-glossary-mode (fast
+;; and correct on normal files). The defun/exclude-list above are kept for manual
+;; use and a possible future display-triggered enable.
+;; (add-hook 'org-mode-hook #'jg/org-glossary-mode-maybe)
 #+end_src
 
 **** [[id:45e28300-51fd-4ce7-aed1-15dca15022d4][Org-mode]]
@@ -7859,6 +7932,8 @@ Retired — breaks org-table column alignment (prettified symbol width ≠ origi
 - [[https://github.com/SenkiReign/org-grapher][org-grapher]]
 - [[https://github.com/ndwarshuis/org-ml][org-ml]] — functional org-mode API
 - Toggle inline images for links with a description — nothing works so far
+- Tag-addressed remote babel: declare a host-to-tag map once per file (a keyword like =#+TARGET: /ssh:host: (tag)=), then a heading's tags auto-supply =:dir= so shell blocks and =:tangle= run on that host over TRAMP, plus rewriting relative =:tangle= paths onto the remote prefix. Native org already gives =:dir= / =:header-args:= property inheritance; the tag indirection and remote-tangle rewriting are the add-on. Pattern from [[https://github.com/kpassapk/devops.el][kpassapk/devops.el]]. Caveat: the repo wires it as global =advice-add= on =org-babel-execute-src-block= (fires on every block everywhere); lift it as an explicit command or =:header-args= setter instead.
+- Per-project command library: a =tools.org= of named babel blocks at a project root, auto-ingested into the Library of Babel on find-file (with clean unload so entries do not bleed across projects), then called by name via =#+call:= for reusable ops one-liners. From [[https://github.com/kpassapk/devops.el][kpassapk/devops.el]] (devops-lob.el). Best fit: per-repo pipeline/conda one-liners currently re-typed each session.
 
 *** Buffer and window management
 - Minor annoyance: switch-to-buffer Agenda as normal buffer file
