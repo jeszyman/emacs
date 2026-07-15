@@ -7107,7 +7107,7 @@ Suppress zenuml/core stderr popup on every mermaid eval.
   :after org
   :vc (:url "https://github.com/tecosaur/org-glossary" :vc-backend Git :rev :newest))
 
-(setq org-glossary-toplevel-only t) ; top-level * Glossary/* Acronyms only; nil triggers an args-out-of-range crash in org-glossary's any-level scan (separate bug)
+(setq org-glossary-toplevel-only nil) ; scan Glossary/Acronyms/Index/Text-Subst headings at any level. nil is safe only while no scanned file has an EMPTY such heading, since an empty one crashes collection with args-out-of-range. The Sci-Repo template scaffold heading was renamed Glossary to Terminology to keep it empty-safe. Caveat: nil also strips any non-glossary heading literally named Index/Acronyms from that file's own export (emseq.org has snakemake Index sections).
 
 ;; Fix org-glossary's factorial dependency registration (2026-06-26). Upstream
 ;; org-glossary--register-buffer-dependencies threaded a per-PATH already-seen
