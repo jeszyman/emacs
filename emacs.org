@@ -668,6 +668,85 @@ CLOCK: [2024-10-02 Wed 12:00]--[2024-10-02 Wed 12:08] =>  0:08
 #+end_src
 
 [[elisp:(hrm-help-transient)]]
+*** Per-subtree TODO keyword sets with an inherited property
+:PROPERTIES:
+:ID:       7d2b4233-a7e0-43d4-bec6-50f6fa947bce
+:END:
+
+When =org-todo-keywords= holds several independent sequences (a GTD workflow, a funding-status sequence, an ideas sequence, an extinguish-habit sequence), the =C-c C-t= fast-selection popup shows every keyword from every sequence by default. That is noise on a heading that only ever uses one of them. This recipe scopes the popup per subtree via an inherited =:TODO_SET:= property, with a configurable default set for headings that carry no property.
+
+Define the sequences, then a name-to-position map and a default. The default is what appears when a heading (and its ancestors) carry no =:TODO_SET:=; keeping it at just the workflow set makes every specialized sequence opt-in.
+
+#+begin_example
+,#+begin_src emacs-lisp
+(setq org-todo-keywords
+      '((sequence "TODO(t)" "INPROCESS(p!)" "|" "DONE(d)" "CANCELED(c@)")
+        (sequence "IDEA(i)" "UPCOMING(u)" "|" "NOT-FUNDED(o)" "FUNDED(f)")
+        (sequence "CLEAN(k)" "LAPSED(l!)" "|")))
+
+(defvar jg/todo-set-names
+  '(("gtd" . 1) ("funding" . 2) ("extinguish" . 3))
+  "Map a :TODO_SET: name to a 1-indexed group in `org-todo-keywords'.")
+
+(defvar jg/todo-set-default '("gtd")
+  "Set name(s) shown when a heading has no :TODO_SET: property.")
+,#+end_src
+#+end_example
+
+The filter reads =:TODO_SET:= with inheritance (the =t= argument to =org-entry-get=), falls back to the default when absent, and rebuilds =org-todo-key-alist= to keep only the named groups. Advise =org-fast-todo-selection= so the popup honors it; plain =S-<left>/<right>= cycling is unaffected and still reaches every keyword.
+
+#+begin_example
+,#+begin_src emacs-lisp
+(defun jg/org-filter-todo-alist-by-set (alist set-numbers)
+  "Keep only groups in SET-NUMBERS (1-indexed) from ALIST."
+  (let ((group-num 0) (include nil) result)
+    (dolist (entry alist)
+      (cond
+       ((eq (car entry) :startgroup)
+        (setq group-num (1+ group-num)
+              include (member group-num set-numbers))
+        (when include (push entry result)))
+       ((eq (car entry) :endgroup)
+        (when include (push entry result)) (setq include nil))
+       (t (when include (push entry result)))))
+    (nreverse result)))
+
+(defun jg/org-todo-filter-by-set (orig-fn &rest args)
+  "Scope the C-c C-t popup to the heading's :TODO_SET: (inherited)."
+  (let* ((set-str (org-entry-get nil "TODO_SET" t))
+         (tokens (if set-str (split-string set-str) jg/todo-set-default))
+         (nums (delq nil (mapcar (lambda (tok)
+                                   (cdr (assoc tok jg/todo-set-names)))
+                                 tokens)))
+         (org-todo-key-alist
+          (jg/org-filter-todo-alist-by-set org-todo-key-alist nums)))
+    (apply orig-fn args)))
+
+(advice-add 'org-fast-todo-selection :around #'jg/org-todo-filter-by-set)
+,#+end_src
+#+end_example
+
+Opt a subtree into a non-default set by setting the property once on a parent; it inherits to all children. Space-separated names combine sets.
+
+#+begin_example
+,** Grants
+:PROPERTIES:
+:TODO_SET: gtd funding
+:END:
+Children show GTD and funding keywords, but not extinguish.
+#+end_example
+
+Because the property inherits, a single tag on a container heading covers its whole subtree, and a batch pass can apply it to every heading carrying a given tag without touching bodies:
+
+#+begin_example
+,#+begin_src emacs-lisp
+(let ((org-use-tag-inheritance nil))     ; direct-tagged headings only
+  (org-map-entries
+   (lambda () (org-set-property "TODO_SET" "gtd ideas"))
+   "+ideas" 'file))
+,#+end_src
+#+end_example
+
 *** Appendices
 **** Cookbook CSS style
 :PROPERTIES:
@@ -3379,6 +3458,55 @@ graph TD
 #+RESULTS:
 [[file:/tmp/emacs-config-map.png]]
 
+**** Package configuration entries
+
+New packages go in =*** Package configuration=, alphabetically by package name.
+
+Structure for a package entry:
+
+#+begin_src org
+,**** package-name
+,***** Use-package
+,#+begin_src emacs-lisp
+(use-package package-name
+  :config
+  ...)
+,#+end_src
+#+end_src
+
+- Use =**** PackageName= for the top-level entry.
+- Use =***** Use-package= as the subheading containing the =use-package= block.
+- Add links to documentation, GitHub, or relevant Stack Exchange answers above the block.
+- If there is only one block and no notes needed, the =*****= subheading may be omitted.
+
+**** Base Emacs section conventions
+
+The =*** Base Emacs= section uses this subheading structure (alphabetical):
+
+- =**** Core settings= - foundational: eval depth, shell, encoding, browser, short answers
+- =**** Appearance= - frame, bars, lines, syntax, faces, themes
+- =**** Buffers and files= - backup, auto-save, save hooks
+- =**** Dired= - dired-specific settings
+- =**** Key bindings= - global keybindings, cua-mode
+- =**** Shell and terminal= - shell, comint, ansi-term, tramp
+- =**** Text editing= - editing behavior, read-only regions, utility functions
+- =**** Org-mode= - all org settings (large subsection, see below)
+
+Place new settings in the most specific matching category. Use =**** Miscellaneous= only as a last resort; prefer creating a named category.
+
+**** Org-mode subsection conventions
+
+Within =**** Org-mode= (under Base Emacs), subheadings are =*****= level. Nested specifics use =******=. The existing structure:
+
+- =***** Startup=
+- =***** Tags=
+- =***** .TODO=
+- =***** Opening things=
+- =***** Source code and tangle= (with =******= sub-items for babel languages, header args, etc.)
+- =***** Export=
+- =***** Agenda=
+- etc.
+
 *** Initialization
 :PROPERTIES:
 :ID:       2750378f-d025-4f26-87c4-99ea711942c9
@@ -4946,9 +5074,12 @@ When called with two prefix arguments, ARG, run the original function without pr
                    (t
                     link)))) ; Assume it's a file link directly usable by `find-file-noselect`
     (if (markerp location)
-        (with-current-buffer (marker-buffer location)
+        (progn
           (select-frame (make-frame))
-          (goto-char location))
+          (switch-to-buffer (marker-buffer location))
+          (goto-char location)
+          (org-fold-show-context 'link-search)
+          (recenter-top-bottom 0))
       (select-frame (make-frame))
       (find-file link))))
 
@@ -6277,13 +6408,16 @@ Kernelspecs live at =~/.local/share/jupyter/kernels/<name>/kernel.json=. They st
 (use-package cape
   :ensure t
   :after corfu
-  :config
-  (defun my/cape-org-setup ()
-    (add-to-list 'completion-at-point-functions #'cape-dabbrev)
-    (add-to-list 'completion-at-point-functions #'cape-file)
-    (add-to-list 'completion-at-point-functions #'cape-dict)
-    (add-to-list 'completion-at-point-functions #'cape-tex))
-  (add-hook 'org-mode-hook #'my/cape-org-setup))
+  :init
+  ;; cape-dabbrev is wrapped to drop pure org-heading star runs (**, ***, …),
+  ;; which dabbrev otherwise emits as tokens since * has symbol syntax.
+  (add-hook 'completion-at-point-functions
+            (cape-capf-predicate
+             #'cape-dabbrev
+             (lambda (cand) (not (string-match-p "\\`\\*+\\'" cand)))))
+  (add-hook 'completion-at-point-functions #'cape-file)
+  (add-hook 'completion-at-point-functions #'cape-dict)
+  (add-hook 'completion-at-point-functions #'cape-tex))
 #+end_src
 
 **** Dabbrev
@@ -6618,7 +6752,8 @@ https://github.com/magnars/expand-region.el
              (goto-char marker)
              (or (member "nohelm" (org-get-local-tags))
                  (string-match-p "\\[\\[id:" (org-get-heading t t t t))
-                 (string-match-p "/cal\\.org\\'" (buffer-file-name))))))))
+                 (let ((f (buffer-file-name (buffer-base-buffer))))
+                   (and f (string-match-p "/cal\\.org\\'" f)))))))))
    candidates))
 
 (advice-add 'helm-org--get-candidates-in-file :filter-return

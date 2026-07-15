@@ -1184,9 +1184,12 @@ When called with two prefix arguments, ARG, run the original function without pr
                    (t
                     link)))) ; Assume it's a file link directly usable by `find-file-noselect`
     (if (markerp location)
-        (with-current-buffer (marker-buffer location)
+        (progn
           (select-frame (make-frame))
-          (goto-char location))
+          (switch-to-buffer (marker-buffer location))
+          (goto-char location)
+          (org-fold-show-context 'link-search)
+          (recenter-top-bottom 0))
       (select-frame (make-frame))
       (find-file link))))
 
@@ -2200,13 +2203,16 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 (use-package cape
   :ensure t
   :after corfu
-  :config
-  (defun my/cape-org-setup ()
-    (add-to-list 'completion-at-point-functions #'cape-dabbrev)
-    (add-to-list 'completion-at-point-functions #'cape-file)
-    (add-to-list 'completion-at-point-functions #'cape-dict)
-    (add-to-list 'completion-at-point-functions #'cape-tex))
-  (add-hook 'org-mode-hook #'my/cape-org-setup))
+  :init
+  ;; cape-dabbrev is wrapped to drop pure org-heading star runs (**, ***, …),
+  ;; which dabbrev otherwise emits as tokens since * has symbol syntax.
+  (add-hook 'completion-at-point-functions
+            (cape-capf-predicate
+             #'cape-dabbrev
+             (lambda (cand) (not (string-match-p "\\`\\*+\\'" cand)))))
+  (add-hook 'completion-at-point-functions #'cape-file)
+  (add-hook 'completion-at-point-functions #'cape-dict)
+  (add-hook 'completion-at-point-functions #'cape-tex))
 ;; Dabbrev
 
 ;; Dynamic abbreviation completion
@@ -2487,7 +2493,8 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
              (goto-char marker)
              (or (member "nohelm" (org-get-local-tags))
                  (string-match-p "\\[\\[id:" (org-get-heading t t t t))
-                 (string-match-p "/cal\\.org\\'" (buffer-file-name))))))))
+                 (let ((f (buffer-file-name (buffer-base-buffer))))
+                   (and f (string-match-p "/cal\\.org\\'" f)))))))))
    candidates))
 
 (advice-add 'helm-org--get-candidates-in-file :filter-return
@@ -2783,8 +2790,57 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   :after org
   :vc (:url "https://github.com/tecosaur/org-glossary" :vc-backend Git :rev :newest))
 
-(setq org-glossary-toplevel-only t) ; only top-level * Glossary/* Acronyms; nil matched stray nested headings and crashed on global-terms scan
-(add-hook 'org-mode-hook #'org-glossary-mode)
+(setq org-glossary-toplevel-only t) ; top-level * Glossary/* Acronyms only; nil triggers an args-out-of-range crash in org-glossary's any-level scan (separate bug)
+
+;; Fix org-glossary's factorial dependency registration (2026-06-26). Upstream
+;; org-glossary--register-buffer-dependencies threaded a per-PATH already-seen
+;; list, enumerating every simple PATH in the dependency graph — O(N!) when N
+;; global-terms files mutually depend (global-terms applies to every buffer, so
+;; the graph is complete), which hung Emacs at startup. A global visited set
+;; makes it O(N + edges). Keep org-glossary-global-terms (work.org) pointed at
+;; files that actually define top-level * Glossary/* Acronyms sections.
+(with-eval-after-load 'org-glossary
+  (defun org-glossary--register-buffer-dependencies (&optional path-spec visited)
+    "Watch all definition dependencies of PATH-SPEC for updates.
+Patched: VISITED is a global hash-set of already-processed path-specs."
+    (let* ((path-spec (or path-spec (org-glossary--complete-path-spec)))
+           (visited (or visited (make-hash-table :test #'equal))))
+      (puthash path-spec t visited)
+      (let* ((term-cache (cdr (assoc path-spec org-glossary--terms-cache)))
+             (included (plist-get term-cache :included))
+             (extras (mapcar #'org-glossary--parse-include-value
+                             (plist-get term-cache :extra-term-sources))))
+        (org-glossary--deregister-buffer-dependencies path-spec)
+        (dolist (dep-pspec (delete path-spec (nconc extras included)))
+          (if-let ((dep-files (assoc dep-pspec org-glossary--path-dependencies)))
+              (unless (member path-spec dep-files)
+                (push path-spec (cdr dep-files)))
+            (push (list dep-pspec path-spec) org-glossary--path-dependencies))
+          (unless (gethash dep-pspec visited)
+            (org-glossary--register-buffer-dependencies dep-pspec visited)))))))
+
+;; Auto-enable org-glossary-mode, EXCEPT in files where its interactive
+;; (jit-lock) term fontification wedges Emacs. cal.org (auto-generated ical2org
+;; calendar) is the known offender — its repetitive content hangs fontification,
+;; while normal large prose is fine (career.org, 1.1 MB, works). The factorial
+;; startup hang is separately fixed by the override above. Add basenames to the
+;; exclude list as you find others.
+(defvar jg/org-glossary-exclude-files '("cal.org")
+  "Basenames of org files where `org-glossary-mode' must NOT auto-enable.")
+(defun jg/org-glossary-mode-maybe ()
+  "Enable `org-glossary-mode' unless the file is in `jg/org-glossary-exclude-files'."
+  (when (and buffer-file-name
+             (not (member (file-name-nondirectory buffer-file-name)
+                          jg/org-glossary-exclude-files)))
+    (org-glossary-mode 1)))
+;; Auto-enable LEFT OFF. The factorial startup hang is fixed by the override
+;; above, but auto-enabling globally is impractical here: org-alert force-opens
+;; every agenda file at startup, so this hook fontifies many large files at once
+;; and pegs the CPU for a long while — and cal.org's calendar content hangs
+;; fontification outright. Enable per-document with M-x org-glossary-mode (fast
+;; and correct on normal files). The defun/exclude-list above are kept for manual
+;; use and a possible future display-triggered enable.
+;; (add-hook 'org-mode-hook #'jg/org-glossary-mode-maybe)
 ;; org-include-inline
 ;; [[https://github.com/yibie/org-include-inline][github: yibie/org-include-inline]]
 ;; - UUID-based includes work; CUSTOM_ID does not; export from UUID breaks
