@@ -3637,6 +3637,12 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 
 #+end_src
 
+Store =file:= links as absolute paths so LaTeX/beamer export resolves =\includegraphics= from the aux build dir, not the org file's directory.
+#+begin_src emacs-lisp
+(setq org-link-file-path-type 'absolute)
+
+#+end_src
+
 #+begin_src emacs-lisp
 (advice-add 'revert-buffer :around
   (lambda (orig &rest args)
@@ -7158,6 +7164,27 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
 ;; and correct on normal files). The defun/exclude-list above are kept for manual
 ;; use and a possible future display-triggered enable.
 ;; (add-hook 'org-mode-hook #'jg/org-glossary-mode-maybe)
+
+;; Show org-glossary term definitions in the echo area when point idles on
+;; a term. org-glossary attaches the definition as a help-echo text
+;; property; help-at-pt surfaces it in the minibuffer (no eldoc or
+;; org-eldoc dependency, neither of which is wired for org here).
+(setq help-at-pt-display-when-idle t)
+(help-at-pt-set-timer)
+
+;; Stop flyspell from flagging org-glossary-defined terms such as the
+;; acronym MSI. A flyspell overlay's help-echo ("mouse-2: correct word at
+;; point") shadows org-glossary's text-property help-echo at the same
+;; position, so the definition never reaches the minibuffer. Returning
+;; non-nil from flyspell-incorrect-hook suppresses the overlay for any
+;; term org-glossary already knows.
+(defun jg/flyspell-skip-glossary-terms (beg end _poss)
+  "Return non-nil so flyspell does NOT flag an org-glossary-defined term."
+  (and (bound-and-true-p org-glossary-mode)
+       (fboundp 'org-glossary--quicklookup)
+       (org-glossary--quicklookup (buffer-substring-no-properties beg end))
+       t))
+(add-hook 'flyspell-incorrect-hook #'jg/flyspell-skip-glossary-terms)
 #+end_src
 
 **** [[id:45e28300-51fd-4ce7-aed1-15dca15022d4][Org-mode]]

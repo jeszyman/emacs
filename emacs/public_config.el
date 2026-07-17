@@ -1,12 +1,11 @@
 ;; Base Emacs
-;; :PROPERTIES:
-;; :ID:       d0bcde8b-8e88-4f37-8a4a-3942507a8f10
-;; :header-args:emacs-lisp: :tangle ./emacs/public_config.el :comments org
-;; :END:
 ;; - Frozen Emacs: =pkill -USR2 emacs=
 
 (remove-hook 'before-save-hook #'org-table-recalculate-buffer-tables)
 
+;; Store =file:= links as absolute paths so LaTeX/beamer export resolves =\includegraphics= from the aux build dir, not the org file's directory.
+
+(setq org-link-file-path-type 'absolute)
 (advice-add 'revert-buffer :around
   (lambda (orig &rest args)
     (if (derived-mode-p 'org-mode)
@@ -14,54 +13,44 @@
           (apply orig args))
       (apply orig args)))
   '((name . org/preserve-outline-visibility)))
-
 ;; Performance
 ;; GC tuning is handled by gcmh (see Package configuration). =read-process-output-max= raises how much Emacs reads from a subprocess per cycle, which helps vterm, the Claude Code MCP websocket, and LSP throughput.
 
 (setq read-process-output-max (* 1024 1024)) ;; 1 MB
-
 ;; Dired
-;; :PROPERTIES:
-;; :ID:       b3bd2685-ea78-4097-ae4c-e4a5e7a422ea
-;; :END:
 ;; - whenever you open a new directory in Dired, the old Dired buffer is automatically killed
 
 (setq dired-kill-when-opening-new-dired-buffer t)
 (setq dired-dwim-target t)
 
-
 ;; - when listing files:
 
 (setq dired-listing-switches "-alh")
-
 
 ;;   -a → show all files, including dotfiles (. and ..).
 ;;   - -l → use long listing format (permissions, owner, size, modification time).
 ;;   -h → show file sizes in “human-readable” units (e.g. 1K, 2M, 3G).
 ;; - Open files using [[id:05e700d9-77cc-4aef-b310-164c267274d0][xdg-utils]]
 
-(defun my/dired-open-xdg ()
-  "Open file at point with xdg-open."
-  (interactive)
-  (let ((file (dired-get-file-for-visit)))
+    (defun my/dired-open-xdg ()
+      "Open file at point with xdg-open."
+      (interactive)
+      (let ((file (dired-get-file-for-visit)))
 	(start-process "xdg-open" nil "xdg-open" file)))
 
-;; Bind to a key in dired-mode
-(with-eval-after-load 'dired
-  (define-key dired-mode-map (kbd "E") #'my/dired-open-xdg))
-
+    ;; Bind to a key in dired-mode
+    (with-eval-after-load 'dired
+      (define-key dired-mode-map (kbd "E") #'my/dired-open-xdg))
 ;; Needed in --batch
 ;; Code that needs to be tangled both here and into custom inits for batch export
 ;; #+name need_in_batch
 
 (setq large-file-warning-threshold most-positive-fixnum) ; disable large file warning
 (setq-default cache-long-scans nil)
-
 ;; Comint
 
 (setq comint-scroll-to-bottom-on-output t
       comint-move-point-for-output t)
-
 ;; Appearance
 
 ; ---   General   --- ;
@@ -145,11 +134,9 @@
 ;https://emacs.stackexchange.com/questions/72483/how-to-define-consult-faces-generically-for-minibuffer-highlighting-that-fits-wi
 (global-hl-line-mode 1)
 (set-face-attribute 'highlight nil :background "#294F6E")
-
 ;; Tramp
 
 (setq tramp-default-method "ssh")
-
 
 (defadvice tramp-completion-handle-file-name-all-completions
   (around dotemacs-completion-docker activate)
@@ -165,7 +152,6 @@
 
 ; https://emacs.stackexchange.com/questions/29286/tramp-unable-to-open-some-files
 (setq tramp-copy-size-limit 10000000)
-
 ;; Key bindings
 
 ; ASCII Arrows
@@ -188,7 +174,6 @@
 		(lambda () (interactive) (next-line 10)))
 (global-set-key (kbd "C-S-p")
 		(lambda () (interactive) (next-line -10)))
-
 ;; On-save hooks and backup
 ;; Three backup mechanisms are active, each covering a different failure mode:
 
@@ -202,13 +187,11 @@
 ;; - *Auto-save files* (`auto-save-file-name-transforms`): Emacs periodically writes unsaved buffer state to =~/.emacs.d/auto-save-list/= using =#=-delimited naming. These are deleted on normal save but survive crashes. Recover with =M-x recover-file=.
 ;; - *Stale dirs*: =~/repos/org/auto-save-list/= and =~/repos/org/backups/= exist from an older config but are no longer written to. All active backups go to =~/.emacs.d/=.
 
-
 ;; Shorthand for save all buffers
 ;;  https://stackoverflow.com/questions/15254414/how-to-silently-save-all-buffers-in-emacs
 (defun save-all ()
   (interactive)
   (save-some-buffers t))
-
 
 ; ---   Saving And Backup   --- ;
 ; ----------------------------- ;
@@ -228,10 +211,8 @@
 
 (setq auto-save-visited-mode t) ; Visited files will be auto-saved
 
-
 (setq auto-save-file-name-transforms
       `((".*" ,(concat user-emacs-directory "auto-save-list/") t)))
-
 ;; Miscellaneous
 
 ; ---   Miscellaneous   --- ;
@@ -339,7 +320,6 @@
 ; ----------------- ;
 
 (setq require-final-newline nil)
-
 (defun toggle-theme ()
   "Toggle between dark and light themes."
   (interactive)
@@ -350,13 +330,8 @@
     (progn
       (disable-theme 'leuven)
       (load-theme 'manoj-dark t))))
-
 (setq create-lockfiles nil)
-
 ;; (open-texdoc-in-background)
-;; :PROPERTIES:
-;; :ID:       60651916-4ffa-458f-9084-1ade3d163ea0
-;; :END:
 
 (defun open-texdoc-in-background (docname)
   "Open a TEXDOC for DOCNAME in the background and close the terminal."
@@ -372,12 +347,10 @@
                    (string= signal "exited\n"))
            (kill-buffer (process-buffer process)))))
       (bury-buffer))))
-
 ;; PDF annotation
 ;; Extract highlights and comments from a PDF into a temporary org buffer.
 ;; When point is on an org-cite reference, resolves the PDF automatically via =citar=.
 ;; Requires =pdfannots= on PATH (=pip install pdfannots=).
-
 
 (defun my/pdf-from-cite-at-point ()
   "Return the PDF path for the org-cite key at point, or nil if not on a citation.
@@ -390,7 +363,6 @@ citar-get-files returns a hash-table keyed by citekey; extract the list with get
               (files (gethash key files-hash))
               (pdf (seq-find (lambda (f) (string-match-p "\\.pdf\\'" f)) files)))
     pdf))
-
 (defun my/extract-pdf-annotations (pdf-file)
   "Extract highlights and comments from PDF-FILE into a temporary org buffer.
 When point is on an org-cite reference, resolves the PDF automatically via citar.
@@ -408,7 +380,6 @@ Requires pdfannots to be installed and on PATH."
       (insert (format "#+title: Annotations: %s\n\n" (file-name-nondirectory pdf-file)))
       (insert output))
     (switch-to-buffer buf)))
-
 ;; Make header regions read-only via tag
 
 (defun org-mark-readonly ()
@@ -421,7 +392,6 @@ Requires pdfannots to be installed and on PATH."
      "read_only")
     (unless buf-mod
       (set-buffer-modified-p nil))))
-
 
 (defun org-remove-readonly ()
   (interactive)
@@ -436,7 +406,6 @@ Requires pdfannots to be installed and on PATH."
       (set-buffer-modified-p nil))))
 
 (add-hook 'org-mode-hook 'org-mark-readonly)
-
 ;; Protect text regions as read-only
 ;; https://chatgpt.com/c/fe962d8c-eb34-42fe-b362-032a61d8b728
 
@@ -451,7 +420,6 @@ Requires pdfannots to be installed and on PATH."
   (let ((inhibit-read-only t))
     (put-text-property start end 'read-only nil)
     (remove-text-properties start end '(font-lock-face nil))))
-
 ;; Shell
 
 (defun dont-ask-to-kill-shell-buffer ()
@@ -463,11 +431,9 @@ Requires pdfannots to be installed and on PATH."
                   kill-buffer-query-functions)))))
 
 (add-hook 'shell-mode-hook 'dont-ask-to-kill-shell-buffer)
-
 ;; cua-mode
 
 (cua-mode t)
-
 (defun jg/cua-paste-clean (orig-fun &rest args)
   "When called with C-u prefix, paste with line breaks replaced by spaces."
   (if current-prefix-arg
@@ -476,7 +442,6 @@ Requires pdfannots to be installed and on PATH."
     (apply orig-fun args)))
 
 (advice-add 'cua-paste :around #'jg/cua-paste-clean)
-
 ;; Emacs caches the X clipboard selection (gui--last-selected-text-clipboard)
 ;; and returns stale text when an external app overwrites CLIPBOARD after
 ;; Emacs last set it.  Fix: clear the cache before every paste so
@@ -492,7 +457,6 @@ Requires pdfannots to be installed and on PATH."
                          (not (string= text (or (car kill-ring) ""))))
                 (substring-no-properties text)))
           (error nil))))
-
 ;; remove-blank-lines
 
 (defun remove-blank-lines ()
@@ -501,7 +465,6 @@ Requires pdfannots to be installed and on PATH."
   (save-excursion
     (goto-char (point-min))
     (flush-lines "^[[:space:]]*$")))
-
 ;; Window navigation
 
 ;; Focus on another split in one step: switch to next window, then make it the
@@ -516,14 +479,12 @@ Requires pdfannots to be installed and on PATH."
 (global-set-key (kbd "C-x O") #'my/other-window-only)
 ;; key-chord "oo" for fast single-handed access
 (key-chord-define-global "OO" #'my/other-window-only)
-
 ;; Startup
 
 (require 'org)
 (setq org-startup-folded t)
 (setq org-startup-with-inline-images t)
 (setq org-hide-emphasis-markers t)
-
 ;; Custom inline marks
 ;; Registry-driven inline markup (modeled on John Kitchin's scimax-editmarks, rebuilt lean). Each mark wraps text as =<SIGIL{ text }SIGIL>= (sigil empty for the original red highlight; the comment uses =<~ text ~>=). Type the Invoke key and it auto-expands; the delimiters show while the cursor is inside a mark and hide when you move away (reveal-on-cursor, so the hiding never fights the live yasnippet field). Each mark is a single row in =jg/org-marks=; adding a mark is a one-row change. Marks are single-line and must not cross an Org element boundary or nest.
 
@@ -572,8 +533,6 @@ Requires pdfannots to be installed and on PATH."
   '((t :foreground "#61afef" :weight bold))
   "Key term / emphasis -- bold colored ink, no fill, <b{ ... }b>.")
 
-
-
 ;; The registry: each row is (NAME :open :close :face :export).
 
 (defvar jg/org-marks
@@ -590,8 +549,6 @@ called with (CONTENT BACKEND) and returns the replacement string emitted
 at export, normally an @@backend:...@@ snippet so Org passes backend code
 through untouched.  Marks are single-line and must not cross Org element
 boundaries or nest.")
-
-
 
 ;; In-buffer fontification with reveal-on-cursor: content carries the mark face; delimiters are hidden with =display ""= ONLY while point is outside the mark. While the cursor is inside (typing manually or in a yas field), the delimiters are shown, so the hiding never fights the live yas field overlay (the failure that broke snippet editing). Same idea as =org-appear= for emphasis markers.
 
@@ -662,8 +619,6 @@ On `post-command-hook' so cursor motion (not just edits) toggles delimiters."
   (add-hook 'post-command-hook #'jg/org-marks-reveal nil t)
   (when font-lock-mode (font-lock-flush)))
 
-
-
 ;; Export helpers: escape content per backend, wrap it.
 
 (defun jg/org-marks--latex-escape (s)
@@ -691,8 +646,6 @@ must protect it ourselves before wrapping it in a LaTeX command."
   (format "@@html:<span style=\"background-color:%s%s\">%s</span>@@"
           bg (if fg (format ";color:%s" fg) "")
           (org-html-encode-plain-text content)))
-
-
 
 ;; The per-mark export functions referenced by the registry.
 
@@ -762,8 +715,6 @@ must protect it ourselves before wrapping it in a LaTeX command."
             (org-html-encode-plain-text content)))
    (t content)))
 
-
-
 ;; The export hook: rewrite marks to backend output before Org parses, skipping src/example/verbatim contexts and trimming the captured text.
 
 (defun jg/org-marks--protected-p (pos)
@@ -800,8 +751,6 @@ must protect it ourselves before wrapping it in a LaTeX command."
                (goto-char mbeg)
                (insert rep)))))))))
 
-
-
 ;; Wire it up, migrate off the old hardcoded highlight functions, and add =todonotes= to the LaTeX preamble for the comment mark's margin notes.
 
 (remove-hook 'org-mode-hook #'org-add-persistent-highlights)
@@ -828,8 +777,6 @@ must protect it ourselves before wrapping it in a LaTeX command."
       (save-buffer))))
 
 (add-hook 'org-babel-post-tangle-hook #'jg/org-marks-strip-yas-newline)
-
-
 
 ;; Imposing a mark on existing text: the yas keys insert a fresh mark as you type, but to wrap text you have ALREADY written, select it and use =jg/org-mark-region= (reads the type) or the =C-c m= transient (one key per type). Both wrap the active region in the chosen mark's delimiters using the same registry; with no region they insert an empty mark, point inside. The region is captured before the transient opens, so transient's own keymap can't lose it.
 
@@ -886,48 +833,44 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
 ;; require here because this block tangles before the key-chord package setup.
 (with-eval-after-load 'org
   (key-chord-define org-mode-map "HH" #'jg/org-mark-dispatch))
-
 ;; Tags
 
-
-
-(setq
- org-tags-exclude-from-inheritance
- (list
-  "alert"
-  "biotool"
-  "biopipe"
-  "bimonthly"
-  "block"
-  "blk"
-  "flat"
-  "hierarchy"
-  "include"
-  "semimonthly"
-  "purpose"
-  "midGoal"
-  "nearGoal"
-  "focus"
-  "project"
-  "daily"
-  "dinner"
-  "kit"
-  "maint"
-  "manuscript"
-  "mod"
-  "monthly"
-  "poster"
-  "present"
-  "prog"
-  "report"
-  "routine"
-  "soln"
-  "weekly"
-  "write"
-  "sci_rep"
-  "stretch"
-  "study"))
-
+        (setq
+         org-tags-exclude-from-inheritance
+         (list
+	  "alert"
+          "biotool"
+          "biopipe"
+          "bimonthly"
+          "block"
+          "blk"
+          "flat"
+          "hierarchy"
+          "include"
+          "semimonthly"
+          "purpose"
+          "midGoal"
+          "nearGoal"
+          "focus"
+          "project"
+          "daily"
+          "dinner"
+	  "kit"
+          "maint"
+          "manuscript"
+          "mod"
+          "monthly"
+	  "poster"
+          "present"
+          "prog"
+          "report"
+          "routine"
+          "soln"
+          "weekly"
+          "write"
+          "sci_rep"
+          "stretch"
+          "study"))
 ;; .TODO
 
 ;; org-todo-keyword-faces moved to work.org agenda coloring block
@@ -945,7 +888,6 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
 (setq org-highest-priority 65)
 (setq org-lowest-priority 89)
 (setq org-default-priority 89)
-
 ;; open in same frame
 
 (setq org-link-frame-setup
@@ -954,9 +896,7 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
         (gnus . org-gnus-no-new-news)
         (file . find-file)  ;; Open files in the same frame
         (wl . wl)))
-
 ;; Set org-file-apps to use xdg-open for all file extensions
-
 
 (setq org-file-apps
       `((directory . "/usr/bin/gnome-terminal --working-directory=\"%s\"")
@@ -977,60 +917,45 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
                           "--socket-name" "/home/jeszyman/.emacs.d/server/server"
                           "-c" (expand-file-name file))))
         (t . "setsid -w xdg-open \"%s\"")))
-
 ;; ssh: link type
 
 ;; Opens a gnome-terminal SSH session. Usage: =[[ssh:jeff-beast][label]]=
-
 
 (org-link-set-parameters "ssh"
   :follow (lambda (path)
     (start-process "gnome-terminal-ssh" nil
                    "/usr/bin/gnome-terminal" "--" "ssh" path)))
-
 ;; Lists
 
 (setq org-cycle-include-plain-lists 'integrate)
 (setq org-list-indent-offset 0)
-
 ;; Inline images
 
 (setq org-display-inline-images t
       org-startup-with-inline-images t)
-
 ;; Tables
 
 ;; https://emacs.stackexchange.com/questions/22210/auto-update-org-tables-before-each-export
 ;; broke tangle?
 ;; (add-hook 'before-save-hook 'org-table-recalculate-buffer-tables)
-
 (setq org-startup-align-all-tables t)
 (setq org-startup-shrink-all-tables t)
-
 ;; org-image-actual-width
-;; :PROPERTIES:
-;; :ID:       a760d06b-c2b2-4b54-a0b6-375a13a20538
-;; :END:
 ;; When set as a list as below, 300 pixels will be the default, but another width can be specified through ATTR, e.g. #+ATTR_ORG: :width 800px
 
 (setq org-image-actual-width '(300))
-
 ;; Reload inline images after code eval
 
 (add-hook 'org-babel-after-execute-hook #'org-redisplay-inline-images)
-
 ;; LaTeX preview
 
 (setq org-format-latex-options (plist-put org-format-latex-options :scale 3))
-
 ;; Source code and tangle
 
 ;; Stale =.elc= files silently override =.el= source — Emacs's =load= prefers byte-compiled files. After tangling new code into a =.el= file, delete any corresponding =.elc= or recompile. The =public_config.elc= incident (2026-03-18) caused org MCP tools to silently not register for months because the =.elc= predated the registration code.
 
-
 ; For org 9.7
 (setq org-babel-tangle-remove-file-before-write 'auto)
-
 ;; Default header arguments
 ;; #+name: babel_default_header_args
 
@@ -1046,7 +971,6 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
                                       (:tangle . "no")
                                       (:tangle-mode . #o755)
 				      ))
-
 ;; General
 
 (setq
@@ -1069,12 +993,10 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
  ;;
  ;; Open src windows in current frames
  org-src-window-setup 'current-window)
-
 ;; disable confrmation for elisp execution of org src blocks
 (setq safe-local-variable-values '((org-confirm-elisp-link-function . nil)))
 
 (setq org-hide-block-startup t)
-
 ;; Toggle collapse blocks
 
 (defvar org-blocks-hidden nil)
@@ -1085,20 +1007,16 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
       (org-show-block-all)
     (org-hide-block-all))
   (setq-local org-blocks-hidden (not org-blocks-hidden)))
-
 ;; org-babel-min-lines-for-block-output
 ;; When executing a source block in org mode with the output set to verbatim, it will sometimes wrap the results in an #begin_example block, and sometimes it uses : symbols at the beginning of the line. Prevented with org-babel-src-preserve-indentation
 
 ;; https://emacs.stackexchange.com/questions/39390/force-org-to-use-instead-of-begin-example-for-source-block-output
 
-
 (setq org-babel-min-lines-for-block-output 1000)
-
 ;; Change noweb wrapper symbols
 
 (setq org-babel-noweb-wrap-start "<#"
       org-babel-noweb-wrap-end "#>")
-
 ;; Strip properties drawers from tangled output
 
 (defun jg/strip-properties-from-tangle ()
@@ -1113,7 +1031,6 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
   (save-buffer))
 
 (add-hook 'org-babel-post-tangle-hook #'jg/strip-properties-from-tangle)
-
 ;; Distinguish Org Edit Special buffers
 
 ;; Distinguish Org Edit Special buffers
@@ -1136,14 +1053,12 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
   (face-remap-add-relative 'default '(:background "#1b1f2d"))) ; pick your color
 
 (add-hook 'org-src-mode-hook #'my/org-src-buffer-setup)
-
 ;; Header views and cycling
 
 (setq org-show-hierarchy-above t)
 
 (setq org-fold-show-context-detail
       '((default . tree)))
-
 (setq
  org-show-context-detail
  '((agenda . ancestors)
@@ -1151,7 +1066,6 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
    (isearch . ancestors)
    (default . ancestors))
 )
-
 (defun org-hide-all-src-blocks ()
   "Hide all source blocks in the current Org buffer."
   (interactive)
@@ -1172,17 +1086,13 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
   ;; Ensure tags are aligned after all visibility changes
   (org-align-tags t)) ;; Pass `t` to align all tags in the buffer
 
-
 (global-set-key (kbd "C-c d") 'my-collapse-all-drawers)
 ;; You might want to remove the hook if you don't want this function to run every time you open an org file
 (add-hook 'org-mode-hook 'my-collapse-all-drawers)
-
 ;; No blank lines!
 
 (setq org-cycle-separator-lines 0)
 (setq yas-indent-line 'fixed)
-
-
 
 ;; https://chatgpt.com/c/670d4cb7-5c08-8005-bec8-a2800e4bd0c4
 
@@ -1194,11 +1104,9 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 ;;       (delete-char -1))))
 
 ;; (add-hook 'org-babel-post-tangle-hook #'my-remove-trailing-newlines-in-tangled-blocks)
-
 ;; General
 
 (setq org-confirm-shell-link-function nil)
-
 (with-eval-after-load 'org
         (add-to-list 'org-modules 'org-habit))
 
@@ -1215,7 +1123,6 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 (setq org-id-link-to-org-use-id 'use-existing)
 ;;https://stackoverflow.com/questions/28351465/emacs-orgmode-do-not-insert-line-between-headers
 
-
 (setq org-enforce-todo-checkbox-dependencies nil)
 ;; don't adapt indentation to header level
 (setq org-adapt-indentation nil)
@@ -1223,18 +1130,14 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 (setq org-support-shift-select t)
 (setq org-src-window-setup 'current-window)
 (setq org-export-async-debug nil)
-
 ;; ensures that any file with the .org extension will automatically open in org-mode
 (add-to-list 'auto-mode-alist '("\\.org\\'" . org-mode))
-
 ;; Make heading regex include tags
 (setq org-heading-regexp "^[[:space:]]*\\(\\*+\\)\\(?: +\\(.*?\\)\\)?[ \t]*\\(:[[:alnum:]_@#%:]+:\\)?[ \t]*$")
-
 ;; org-blank-before-new-entry
 ;; https://stackoverflow.com/questions/28351465/emacs-orgmode-do-not-insert-line-between-headers
 
 (setq org-blank-before-new-entry '((heading . nil) (plain-list-item . nil)))
-
 ;; my-org-tree-to-indirect-buffer
 
 (defun my-org-tree-to-indirect-buffer (&optional arg)
@@ -1249,11 +1152,7 @@ When called with two prefix arguments, ARG, run the original function without pr
   ;; after the current command cycle ensures we collapse last.
   (run-with-idle-timer 0 nil #'my-collapse-all-drawers))
 (define-key org-mode-map (kbd "C-c C-x b") 'my-org-tree-to-indirect-buffer)
-
 ;; Export
-;; :PROPERTIES:
-;; :ID:       8fb9a592-2ad4-44c4-a8d6-ce33f691c010
-;; :END:
 ;; #+name: orgmode_export_general
 
 ;; the below as nil fucks of export of inline code
@@ -1274,9 +1173,7 @@ When called with two prefix arguments, ARG, run the original function without pr
       org-export-with-section-numbers nil
       org-export-with-tags nil
       org-export-with-todo-keywords nil)
-
 (setq org-odt-preferred-output-format "docx")
-
 ;; Open URLs in new window with C-u C-c C-o
 
 (defun my-org-open-in-brave-new-window (link)
@@ -1341,9 +1238,7 @@ With prefix arg on citations, skip PDF and open DOI > URL."
 
 ;; Rebind C-c C-o in org mode to our custom function
 (define-key org-mode-map (kbd "C-c C-o") 'my-org-open-at-point)
-
 ;; Checkboxes
-
 
 ;; (defun org-toggle-checkbox-and-children ()
 ;;   "Toggle checkbox and all children checkboxes."
@@ -1374,7 +1269,6 @@ With prefix arg on citations, skip PDF and open DOI > URL."
 
 ;; ;; Bind it to a convenient key
 ;; (define-key org-mode-map (kbd "C-c x") 'org-toggle-checkbox-and-children)
-
 ;; Capture
 
 ;; Make C-o a prefix key
@@ -1383,7 +1277,6 @@ With prefix arg on citations, skip PDF and open DOI > URL."
 
 ;; Bind C-o c to org-capture
 (define-key jg-C-o-map (kbd "c") #'org-capture)
-
 ;; Documentation
 
 (with-eval-after-load 'ox-latex
@@ -1400,7 +1293,6 @@ With prefix arg on citations, skip PDF and open DOI > URL."
                  ("\\subsubsection{%s}" . "\\subsubsection{%s}")
                  ("\\paragraph{%s}" . "\\paragraph{%s}")
                  ("\\subparagraph{%s}" . "\\subparagraph{%s}"))))
-
 (with-eval-after-load 'ox-latex
   (add-to-list 'org-latex-classes
                '("documentation"
@@ -1417,7 +1309,6 @@ With prefix arg on citations, skip PDF and open DOI > URL."
                  ("\\subsubsection{%s}" . "\\subsubsection{%s}")
                  ("\\paragraph{%s}" . "\\paragraph{%s}")
                  ("\\subparagraph{%s}" . "\\subparagraph{%s}"))))
-
 ;; iCalendar
 
 (setq org-icalendar-with-timestamps 'active)
@@ -1431,13 +1322,10 @@ With prefix arg on citations, skip PDF and open DOI > URL."
 (setq org-icalendar-timezone "America/Chicago")
 (setq org-agenda-default-appointment-duration 30)
 (setq org-icalendar-combined-agenda-file "/tmp/org.ics")
-
 ;; Properties
 
 (setq org-use-property-inheritance t)
-
 ;; (browse-org-table-urls-by-name)
-
 
 (defun browse-org-table-urls-by-name (table-name)
   "Browse URLs listed in an Org-mode table identified by TABLE-NAME.
@@ -1465,7 +1353,6 @@ TABLE-NAME is the name of the table identified as #+name."
                     (message "No URLs found in the table with name %s" table-name)
                   (apply #'start-process "brave-browser" nil "brave-browser" "--new-window" urls)
                   (message "Opened URLs from table with name %s" table-name))))))))))
-
 ;; Agenda
 
 (global-set-key "\C-ca" 'org-agenda)
@@ -1493,9 +1380,7 @@ TABLE-NAME is the name of the table identified as #+name."
                 ;; Get all subdirectories (excluding . and ..) in ~/repos/
                 (directory-files "~/repos/" t "^[^.]+" t)))))
 
-
 (setq org-agenda-skip-unavailable-files t)
-
 
 (setq org-agenda-use-tag-inheritance t)
 ;;  http://stackoverflow.com/questions/36873727/make-org-agenda-full-screen
@@ -1509,14 +1394,9 @@ TABLE-NAME is the name of the table identified as #+name."
       (if (member tag entry-tags)
           (progn (outline-next-heading) (point))
         nil)))
-
 ;; Needed for no y/n prompt at linked agenda execution
 (setq org-confirm-elisp-link-function nil)
-
 ;; :plain link type
-;; :PROPERTIES:
-;; :ID:       0f1b7abb-233b-4e81-abcb-e424e9b860e4
-;; :END:
 ;; https://claude.ai/chat/c775f0eb-fa91-45b4-82d6-e1a0df8b5526
 ;; #+name: org_plain_links
 
@@ -1554,22 +1434,13 @@ TABLE-NAME is the name of the table identified as #+name."
 
 (with-eval-after-load 'org
   (require 'ol-plain))
-
 ;; org-image-actual-width
-;; :PROPERTIES:
-;; :ID:       a760d06b-c2b2-4b54-a0b6-375a13a20538
-;; :END:
 ;; When set as a list as below, 300 pixels will be the default, but another width can be specified through ATTR, e.g. #+ATTR_ORG: :width 800px
 
 (setq org-image-actual-width '(300))
-
 ;; Checkbox intermediate states!
-;; :PROPERTIES:
-;; :ID:       0f435c0d-0492-480c-8c25-3ddcd626e168
-;; :END:
 
 ;; https://claude.ai/chat/81ca7e51-65b4-4c0d-892b-a94861979890
-
 
 ;; Enhanced Org mode checkbox toggling with three states
 ;; States: [ ] (empty) -> [-] (partial/in-progress) -> [X] (done) -> [ ] (cycle)
@@ -1825,12 +1696,10 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 ;; 2. C-u C-c C-c on checkbox: cycles through [ ] -> [-] -> [X] -> [ ]
 ;; 3. C-c C-x c: always cycles through all three states
 ;; 4. C-c C-c on non-checkbox: normal org-ctrl-c-ctrl-c behavior
-
 ;; Editing text
 
 ;;https://emacs.stackexchange.com/questions/12701/kill-a-line-deletes-the-line-but-leaves-a-blank-newline-character
 (setq kill-whole-line t)
-
 ;; bibtex
 
 (setq reftex-default-bibliography '("~/repos/org/bib.bib"))
@@ -1840,7 +1709,6 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
 (setq bibtex-completion-bibliography "~/repos/org/bib.bib"
       bibtex-completion-library-path "~/library"
       bibtex-completion-notes-path "~/repo/org/notes")
-
 ;; Stop bibtex-mode's stealthy idle re-parsing of the large bib.bib. bibtex-mode
 ;; creates the idle timer in its body then runs this hook, which cancels it; the
 ;; `unless bibtex-parse-idle-timer' guard in bibtex-mode then prevents recreation.
@@ -1849,11 +1717,7 @@ If USE-THREE-STATES is non-nil, cycle through all three states."
           (lambda ()
             (when (timerp bibtex-parse-idle-timer)
               (cancel-timer bibtex-parse-idle-timer))))
-
 ;; get-bibtex-from-doi
-;; :PROPERTIES:
-;; :ID:       f22974c3-ff99-4da0-b253-35ced07588bf
-;; :END:
 
 (defun get-bibtex-from-doi (dois-string)
   "Get BibTeX entry or entries from one or more DOIs and insert them at point.
@@ -1913,7 +1777,6 @@ skipped and nothing is inserted for it."
             ;; Insert and format this one entry at point.
             (insert entry "\n\n")
             (bibtex-fill-entry)))))))
-
 ;; python.el
 ;; https://github.com/gregsexton/ob-ipython/issues/28
 
@@ -1923,7 +1786,6 @@ skipped and nothing is inserted for it."
   (lambda () (setq indent-tabs-mode nil)))
 
 (setq python-indent-guess-indent-offset-verbose nil)
-
 ;; UTF8
 
 (set-buffer-file-coding-system 'utf-8)
@@ -1937,15 +1799,10 @@ Prevents Syncthing mid-write race from setting no-conversion."
     (setq-local coding-system-for-read 'utf-8-unix)))
 
 (add-hook 'before-revert-hook #'jg/force-utf8-on-revert)
-
 ;; Alpha key
 
 (global-set-key (kbd "C-x a") (lambda () (interactive) (insert "α")))
-
 ;; org-execute-named-block-anywhere
-;; :PROPERTIES:
-;; :ID:       5ace2dd4-9dfb-41b9-a7ec-5ca32aaf94ae
-;; :END:
 ;; https://claude.ai/chat/c12f61f1-0d93-4658-8d52-be64f45a12e0
 
 (defun org-execute-named-block-anywhere (file block-name)
@@ -1970,7 +1827,6 @@ BLOCK-NAME is the name of the block to execute."
                (not (buffer-modified-p target-buffer))
                (not (get-file-buffer file)))
       (kill-buffer target-buffer))))
-
 ;; org-dot-render-all-formats
 ;; Render every Graphviz =dot= src block in the current Org buffer to all formats (SVG, PDF, PNG) — each a native =dot -T<fmt>= render of the one DOT source, so the PDF is true vector and nothing is re-rasterised from the SVG. Output goes to each block's =:file= basename; blocks marked =:eval no= are skipped unless called with a prefix arg. Use for a diagram that needs an inline-previewable SVG/PNG and a vector PDF for LaTeX/beamer from a single source.
 
@@ -2027,7 +1883,6 @@ from being silently re-rendered."
     (when (derived-mode-p 'org-mode) (org-redisplay-inline-images))
     (message "org-dot-render-all-formats: %d rendered, %d skipped (:eval no) → %s"
              n skipped (string-join formats ", "))))
-
 ;; find-duplicate-lines
 
 (defun find-duplicate-lines ()
@@ -2052,11 +1907,7 @@ from being silently re-rendered."
               (terpri)))
           (message "Duplicate lines found and listed in *Duplicate Lines* buffer."))
       (message "No duplicate lines found."))))
-
 ;; run-latex-at-point
-;; :PROPERTIES:
-;; :ID:       3975a173-ac71-4c02-b032-ef215329ca59
-;; :END:
 ;; - https://chatgpt.com/c/66f5c68c-8c4c-8005-b7c6-14665eadb848
 ;; - https://chatgpt.com/c/66f95df4-0dfc-8005-9e7b-c3f15c1ca924
 ;; - [[id:9fa465f4-68f7-45c5-966e-80084e2c8a05][emacs_export_header_to_latex.py]]
@@ -2077,7 +1928,6 @@ from being silently re-rendered."
         (start-process-shell-command "latex-process" output-buffer command)
         ;; Display the output buffer
         (pop-to-buffer output-buffer)))))
-
 ;; export-org-table-by-name-to-csv
 
 (defun export-org-table-by-name-to-csv (org-file table-name csv-file)
@@ -2087,7 +1937,6 @@ from being silently re-rendered."
     (when (re-search-forward (concat "^#\\+NAME: " (regexp-quote table-name)) nil t)
       (forward-line)
       (org-table-export csv-file "orgtbl-to-csv"))))
-
 ;; AUCTeX
 ;; - [[https://www.gnu.org/software/auctex/manual/auctex.html#Quick-Start][documentation]]
 ;;   - [[https://www.gnu.org/software/auctex/manual/auctex/Folding.html][3.2 Folding Macros and Environments]]
@@ -2096,7 +1945,6 @@ from being silently re-rendered."
 ;; - [[https://tex.stackexchange.com/questions/145318/how-to-make-auctex-not-prompt-me-on-c-c-c-c][stack:tex: How to make auctex not prompt me on C-c C-c]]
 ;; - [[https://tex.stackexchange.com/questions/20843/useful-shortcuts-or-key-bindings-or-predefined-commands-for-emacsauctex][stack:tex: Useful shortcuts or key bindings or predefined commands for emacs+AUCTeX]]
 ;; - https://piotrkazmierczak.com/2010/emacs-as-the-ultimate-latex-editor/
-
 
 (use-package tex
   :ensure auctex
@@ -2109,7 +1957,6 @@ from being silently re-rendered."
         TeX-save-query nil
         TeX-view-program-selection '((output-pdf "Okular"))
         TeX-view-program-list '(("Okular" "okular %o"))))
-
 (eval-after-load "tex"
   '(progn
      (add-to-list 'TeX-command-list
@@ -2130,7 +1977,6 @@ from being silently re-rendered."
      (setq TeX-view-program-selection '((output-pdf "Okular")))
      (setq TeX-view-program-list
            '(("Okular" ("okular --unique %o"))))))
-
 ;; Avy
 ;; [[https://github.com/abo-abo/avy][github: abo-abo/avy]] | [[https://karthinks.com/software/avy-can-do-anything/][Avy can do anything (karthinks)]]
 
@@ -2154,19 +2000,16 @@ from being silently re-rendered."
   (setf (alist-get ?m avy-dispatch-alist) 'avy-action-mark-word)
   (key-chord-mode 1)
   (key-chord-define-global "jj" 'avy-goto-char-timer))
-
 ;; Casual-avy
 ;; [[https://github.com/kickingvegas/casual-avy][github: kickingvegas/casual-avy]]
 
 (use-package casual-avy
   :ensure t)
-
 ;; Use-package
 
 (use-package blacken
   :after elpy
   :hook (elpy-mode . blacken-mode))
-
 ;; citar
 
 ;; Citar configuration for org-cite integration
@@ -2212,14 +2055,12 @@ from being silently re-rendered."
         ("pdf" . citar-file-open-external)  ;; Use system default for PDFs
         (t . find-file)))                   ;; Default to Emacs for others
 
-
 (require 'oc-biblatex)
 
 (setq org-cite-biblatex-styles
       '((nil nil "autocite" "autocites")   ;; DEFAULT: [cite:@key] -> \autocite{}
         ("auto" nil "autocite" "autocites")
         ("plain" nil "cite" "cites")))     ;; [cite/plain:@key] -> \cite{}
-
 (use-package embark
   :ensure t
   :demand t
@@ -2279,41 +2120,31 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
               (let ((inhibit-message t))
                 (apply orig args))))
 
-
 ;; https://blog.tecosaur.com/tmio/2021-07-31-citations.html
 ;; https://kristofferbalintona.me/posts/202206141852/
-
 
 (setq org-cite-biblatex-styles
       '(("auto" "autocite" "Autocite")
         ("plain" "cite" "Cite")))
 
 (setq org-cite-biblatex-default-style "auto")
-
 ;; claude-code-ide
 ;; [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]] — installed via =package-vc=, autoloaded. There is no =use-package= block; the only config is the =jc= key-chord under =**** key-chord= and this customization.
 
 ;; By default claude-code-ide opens an ediff session for every edit Claude makes. Under i3 that rearranges windows and steals focus from the active window. Render diffs in the Claude terminal buffer instead.
 
-
 (with-eval-after-load 'claude-code-ide
   (setq claude-code-ide-use-ide-diff nil))
 
-
-
 ;; Belt-and-suspenders for the case where ide-diff is ever re-enabled: claude-code-ide hardcodes =ediff-window-setup-function= to the plain (single-frame) setup immediately before calling =ediff-buffers=, which overrides the Claude window. This =:before= advice runs after that =setq= but before ediff reads the variable, forcing a separate frame. See [[https://github.com/manzaltu/claude-code-ide.el/issues][upstream issues]].
-
 
 (advice-add 'ediff-buffers :before
             (lambda (&rest _)
               (setq ediff-window-setup-function 'ediff-setup-windows-multiframe)))
-
 ;; Conda
 ;; - https://github.com/necaris/conda.el
 
-
 ;; M-x conda-env-activate
-
 
 ;; Remove everything and evaluate this clean version:
 (use-package conda
@@ -2337,7 +2168,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (defun conda--message (&rest _args)
     "Suppress all conda messages."
     nil))
-
 (defun my/ess-use-conda-r ()
   "Set `inferior-ess-r-program` to Conda's R if a Conda env is active."
   (when (and (boundp 'conda-env-current-path)
@@ -2348,7 +2178,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 
 (with-eval-after-load 'ess-r-mode
   (add-hook 'ess-r-mode-hook #'my/ess-use-conda-r))
-
 ;; Corfu
 
 ;; Corfu for completion UI
@@ -2368,12 +2197,10 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
     (define-key flyspell-mode-map (kbd "C-.") nil)
     (define-key flyspell-mode-map (kbd "C-;") nil))
   (global-set-key (kbd "M-TAB") #'completion-at-point)) ;; Bind `M-TAB` globally
-
 ;; Hide M-x commands irrelevant to the current mode
 (use-package emacs
   :custom
   (read-extended-command-predicate #'command-completion-default-include-p))
-
 ;; Cape
 ;; [[https://github.com/minad/cape][github: minad/cape]]
 
@@ -2390,7 +2217,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (add-hook 'completion-at-point-functions #'cape-file)
   (add-hook 'completion-at-point-functions #'cape-dict)
   (add-hook 'completion-at-point-functions #'cape-tex))
-
 ;; Dabbrev
 
 ;; Dynamic abbreviation completion
@@ -2399,7 +2225,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   :config
   (setq dabbrev-case-fold-search t) ;; Case-insensitive search
   (setq dabbrev-upcase-means-case-search t)) ;; Respect case for uppercase words
-
 ;; Eglot
 
 (use-package eglot
@@ -2417,11 +2242,9 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 
 (with-eval-after-load 'eglot
   (define-key eglot-mode-map (kbd "C-c <tab>") #'company-complete))
-
 ;; eglot example
 (add-to-list 'eglot-server-programs
              '((yaml-mode yaml-ts-mode) . ("yaml-language-server" "--stdio")))
-
 ;; Elpy
 
 ;; - Prereqs: conda activate base; pip install python-lsp-server[all]
@@ -2429,7 +2252,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 ;; - Workflow: activate env (basecamp etc.), open .py file, Elpy starts, use keybindings to send code, Flycheck handles linting.
 ;; - Checks: PATH includes miniconda3/bin, elpy-rpc-python-command points to miniconda3/bin/python, Flycheck installed, conda info --envs shows envs.
 ;; - References: Elpy docs (editing, IDE/REPL, virtual envs), Emacs StackExchange thread on conda conflicts.
-
 
 ;; -------------------------------------------------------------------
 ;; Elpy — Python IDE inside Emacs
@@ -2492,7 +2314,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (when (require 'flycheck nil t)
     (setq elpy-modules (delq 'elpy-module-flymake elpy-modules))
     (add-hook 'elpy-mode-hook #'flycheck-mode)))
-
 ;; ESS
 
 ;; - Session prompt behavior: ESS only asks "which R session?" once per interactive REPL
@@ -2515,8 +2336,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 ;; - cite:rossini2016
 ;; - https://stat.ethz.ch/pipermail/ess-help/2010-January/005822.html
 ;; - https://github.com/emacs-lsp/lsp-mode/issues/1383
-
-
 
 (use-package ess
   :ensure t
@@ -2554,11 +2373,7 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
      (ess-fl-keyword:= . t)
      (ess-R-fl-keyword:F&T . t)
      (ess-R-fl-keyword:%op% . t))))
-
 ;; exec-path-from-shell
-;; :PROPERTIES:
-;; :ID:       3c5baef9-d1c5-41f5-aa43-368c8b346790
-;; :END:
 ;; - Ensures parts of Emacs inherit shell PATH when Emacs is runnng as a daemon
 
 ;; -----------------------------------------------------------------------------
@@ -2582,17 +2397,12 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (setq exec-path-from-shell-arguments '("-l"))
   (add-to-list 'exec-path-from-shell-variables "TEXINPUTS")
   (exec-path-from-shell-initialize))
-
 ;; expand-region
-;; :PROPERTIES:
-;; :ID:       aa87da56-3f24-475c-adbe-d4d99a7376cc
-;; :END:
 ;; https://github.com/magnars/expand-region.el
 
 (use-package expand-region)
 (require 'expand-region)
 (global-set-key (kbd "C-=") 'er/expand-region)
-
 ;; Use-package
 
 (use-package flycheck
@@ -2602,7 +2412,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (defun my-org-mode-flycheck-hook ()
     (when (derived-mode-p 'prog-mode) ;; Check if it's a programming mode
       (flycheck-mode 1))))
-
 ;; Use-package
 
 (use-package gcmh
@@ -2611,7 +2420,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
         gcmh-high-cons-threshold (* 128 1024 1024))
   :config
   (gcmh-mode 1))
-
 ;; Helm
 ;; - [[id:96c0f509-c06b-4e48-8f28-019cd2ca1a38][Helm reference header]]
 
@@ -2622,9 +2430,7 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (setq
    helm-completion-style 'emacs
    helm-move-to-line-cycle-in-source nil)) ;; allow C-n through different sections
-
 ;; helm-org
-
 
 (use-package helm-org
   :config
@@ -2642,12 +2448,10 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   ;; The default (helm) completion style is case-sensitive even with
   ;; helm-case-fold-search 'smart.  Include orderless for multi-word matching.
   (setq helm-org-completion-styles '(orderless basic substring))
-
 (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings)
 
 (with-eval-after-load 'org
   (define-key org-mode-map (kbd "C-c C-j") 'helm-org-agenda-files-headings))
-
 ;;;; Yiming Chen–style org-refile workflow
 
 ;; 1) Targets = all currently opened .org buffers
@@ -2682,7 +2486,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 
 ;; Suggested keys (optional)
 ;; C-c C-w is org’s default refile; bind jump to C-c j
-
 (defun jg/helm-org-nohelm-filter (candidates)
   "Filter :nohelm: tagged headings, org-id link headings, and cal.org from helm-org."
   (cl-remove-if
@@ -2700,7 +2503,6 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 
 (advice-add 'helm-org--get-candidates-in-file :filter-return
             'jg/helm-org-nohelm-filter)
-
 ;; helm-org-rifle
 
 (use-package helm-org-rifle
@@ -2709,16 +2511,13 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 	  helm-org-rifle-show-full-contents nil)
     (require 'helm)
     (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings))
-
 ;; Use-pacakge
 
 (use-package htmlize)
-
 ;; Use-package
 
 (use-package ivy
   :diminish)
-
 ;; Use-package
 
 (use-package jupyter
@@ -2735,11 +2534,7 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   :config
   (require 'ob-jupyter)
   (org-babel-jupyter-aliases-from-kernelspecs))
-
 ;; key-chord
-;; :PROPERTIES:
-;; :ID:       dab8038b-67bd-413e-88d5-25d168f29e9b
-;; :END:
 
 ;;Exit insert mode by pressing j and then j quickly
 ;; https://stackoverflow.com/questions/10569165/how-to-map-jj-to-esc-in-emacs-evil-mode
@@ -2751,15 +2546,11 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 (setq key-chord-two-keys-delay 0.01)
 ;;(key-chord-define evil-insert-state-map "jj" 'evil-normal-state)
 
-
-
 ;; - [[https://github.com/emacsorphanage/key-chord][repo]]
 
 (key-chord-define-global ",." "<>\C-b")
 
-
 ;; <> <> ,.<sf>
-
 
 (key-chord-define-global "jc"     'claude-code-ide-menu)
 (key-chord-define-global "xx"      'shell)
@@ -2770,14 +2561,11 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 (key-chord-define-global "x1" 'delete-other-windows)
 (key-chord-define org-mode-map "cd" 'my-collapse-all-drawers)
 
-
 (setq key-chord-typing-detection t)
-
 ;; Magit
 ;; https://www.reddit.com/r/emacs/comments/1mq2hww/why_do_i_find_magit_so_hard_to_use/
 
 (use-package magit)
-
 ;; marginalia
 
 (use-package marginalia
@@ -2789,44 +2577,41 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   :init
   (marginalia-mode)
   :ensure t)
-
 ;; mark-whole-word
 
-;; https://emacs.stackexchange.com/questions/35069/best-way-to-select-a-word
-(defun mark-whole-word (&optional arg allow-extend)
-  "Like `mark-word', but selects whole words and skips over whitespace.
-If you use a negative prefix arg then select words backward.
-Otherwise select them forward.
+  ;; https://emacs.stackexchange.com/questions/35069/best-way-to-select-a-word
+  (defun mark-whole-word (&optional arg allow-extend)
+    "Like `mark-word', but selects whole words and skips over whitespace.
+  If you use a negative prefix arg then select words backward.
+  Otherwise select them forward.
 
-If cursor starts in the middle of word then select that whole word.
+  If cursor starts in the middle of word then select that whole word.
 
-If there is whitespace between the initial cursor position and the
-first word (in the selection direction), it is skipped (not selected).
+  If there is whitespace between the initial cursor position and the
+  first word (in the selection direction), it is skipped (not selected).
 
-If the command is repeated or the mark is active, select the next NUM
-words, where NUM is the numeric prefix argument.  (Negative NUM
-selects backward.)"
-  (interactive "P\np")
-  (let ((num  (prefix-numeric-value arg)))
-    (unless (eq last-command this-command)
+  If the command is repeated or the mark is active, select the next NUM
+  words, where NUM is the numeric prefix argument.  (Negative NUM
+  selects backward.)"
+    (interactive "P\np")
+    (let ((num  (prefix-numeric-value arg)))
+      (unless (eq last-command this-command)
 	(if (natnump num)
 	    (skip-syntax-forward "\\s-")
 	  (skip-syntax-backward "\\s-")))
-    (unless (or (eq last-command this-command)
+      (unless (or (eq last-command this-command)
 		  (if (natnump num)
 		      (looking-at "\\b")
 		    (looking-back "\\b")))
 	(if (natnump num)
 	    (left-word)
 	  (right-word)))
-    (mark-word arg allow-extend)))
+      (mark-word arg allow-extend)))
 
-(global-set-key (kbd "C-c C-SPC") 'mark-whole-word)
-
+  (global-set-key (kbd "C-c C-SPC") 'mark-whole-word)
 ;; Use-package
 
 (use-package native-complete)
-
 ;; ob-mermaid
 ;; Suppress zenuml/core stderr popup on every mermaid eval.
 
@@ -2839,7 +2624,6 @@ selects backward.)"
       (funcall orig-fn body params))))
 (advice-add 'org-babel-execute:mermaid :around #'my/ob-mermaid-suppress-zenuml)
 ;; (advice-remove 'org-babel-execute:mermaid #'my/ob-mermaid-suppress-zenuml)
-
 ;; Use-package
 
 (add-to-list 'load-path "/usr/local/share/emacs/site-lisp/mu4e")
@@ -2897,14 +2681,12 @@ selects backward.)"
 
   ;; Org integration
   (require 'org-mu4e))
-
 ;; Thread folding keybindings
 
 (with-eval-after-load 'mu4e
   (define-key mu4e-headers-mode-map (kbd "z a") #'mu4e-thread-fold-all)
   (define-key mu4e-headers-mode-map (kbd "z n") #'mu4e-thread-unfold-all)
   (define-key mu4e-headers-mode-map (kbd "z t") #'mu4e-thread-fold-toggle))
-
 ;; Immediate refile (archive)
 
 (with-eval-after-load 'mu4e
@@ -2924,7 +2706,6 @@ selects backward.)"
 
   (define-key mu4e-headers-mode-map (kbd "r") #'jg/mu4e-refile-now)
   (define-key mu4e-headers-mode-map (kbd "T") #'jg/mu4e-refile-thread-now))
-
 ;; Org thread link storage
 
 (with-eval-after-load 'mu4e
@@ -2943,18 +2724,15 @@ selects backward.)"
         (org-link-store-props :type "mu4e" :link link :description desc)
         link)))
   (org-link-set-parameters "mu4e" :store #'jg/mu4e-org-store-thread-link))
-
 ;; Display buffer rules
 
 (with-eval-after-load 'mu4e
   (add-to-list 'display-buffer-alist
                '("\\*mu4e-headers\\*" (display-buffer-pop-up-frame))))
-
 ;; Silence minibuffer tips
 
 (with-eval-after-load 'mu4e
   (advice-add 'mu4e~main-tip :override #'ignore))
-
 ;; Transient
 
 (with-eval-after-load 'mu4e
@@ -2982,7 +2760,6 @@ selects backward.)"
       ("j" "Jump to maildir" mu4e~headers-jump-to-maildir)
       ("l" "Store org link" org-store-link)]])
   (define-key mu4e-headers-mode-map (kbd "?") #'jg/mu4e-transient))
-
 ;; Use-package
 
 (use-package openwith
@@ -2990,7 +2767,6 @@ selects backward.)"
   (setq openwith-associations
         '(("\\.\\(pdf\\|docx\\|xlsx\\|pptx\\|svg\\|png\\|jpg\\|mp4\\)\\'" "xdg-open" (file))))
   (openwith-mode t))
-
 ;; orderless
 
 (use-package orderless
@@ -3001,21 +2777,18 @@ selects backward.)"
   (setq completion-styles '(orderless basic)
         completion-category-defaults nil
         completion-category-overrides '((file (styles partial-completion)))))
-
 ;; org-edna
 
 (use-package org-edna
   :ensure t
   :config
   (org-edna-mode 1))
-
 ;; org-glossary
 ;; [[https://github.com/tecosaur/org-glossary][github: tecosaur/org-glossary]]
 ;; - org-cite-style management of glossary/acronyms/index terms: defined under a =* Acronyms= description list per document, referenced in prose, expanded on export.
 ;; - Auto-detects terms in body text; headings are excluded by default (=org-glossary-autodetect-in-headings= is nil), so heading text stays literal for forced short forms.
 ;; - Default export does its own "long (short)" first-use expansion, so no LaTeX package is required. The LaTeX =acronym= package is kept loaded as a manual backup for edge cases; see [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][Emacs LaTeX setup]] in latex.org.
 ;; - Load only. Enable live term display in a document with ~M-x org-glossary-mode~; export works without the minor mode.
-
 
 (use-package org-glossary
   :after org
@@ -3073,28 +2846,43 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
 ;; use and a possible future display-triggered enable.
 ;; (add-hook 'org-mode-hook #'jg/org-glossary-mode-maybe)
 
+;; Show org-glossary term definitions in the echo area when point idles on
+;; a term. org-glossary attaches the definition as a help-echo text
+;; property; help-at-pt surfaces it in the minibuffer (no eldoc or
+;; org-eldoc dependency, neither of which is wired for org here).
+(setq help-at-pt-display-when-idle t)
+(help-at-pt-set-timer)
+
+;; Stop flyspell from flagging org-glossary-defined terms such as the
+;; acronym MSI. A flyspell overlay's help-echo ("mouse-2: correct word at
+;; point") shadows org-glossary's text-property help-echo at the same
+;; position, so the definition never reaches the minibuffer. Returning
+;; non-nil from flyspell-incorrect-hook suppresses the overlay for any
+;; term org-glossary already knows.
+(defun jg/flyspell-skip-glossary-terms (beg end _poss)
+  "Return non-nil so flyspell does NOT flag an org-glossary-defined term."
+  (and (bound-and-true-p org-glossary-mode)
+       (fboundp 'org-glossary--quicklookup)
+       (org-glossary--quicklookup (buffer-substring-no-properties beg end))
+       t))
+(add-hook 'flyspell-incorrect-hook #'jg/flyspell-skip-glossary-terms)
 ;; org-include-inline
 ;; [[https://github.com/yibie/org-include-inline][github: yibie/org-include-inline]]
 ;; - UUID-based includes work; CUSTOM_ID does not; export from UUID breaks
 ;; - Enable per buffer: ~M-x org-include-inline-mode~
 
-
 ;; Load only — enable per buffer with M-x org-include-inline-mode
 (use-package org-include-inline
   :vc (:url "https://github.com/yibie/org-include-inline" :vc-backend Git))
-
 ;; Use-package
 
 (use-package org-contrib
   :ensure t)
-
 (require 'org-checklist)
 (require 'ox-extra)
 (ox-extras-activate '(ignore-headlines))
-
 ;; org-ql
 ;; - org-ql to pull time logs as tabular data exports [[https://claude.ai/chat/c4df90a0-faa0-459e-99a5-cd8d8e3945a6]]
-
 
 (use-package org-ql
   :config
@@ -3105,7 +2893,6 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
   ;; Suppress that warning type from the log entirely. (Cache warnings are a
   ;; separate type, org-element-cache, and remain visible.)
   (add-to-list 'warning-suppress-log-types '(org-element)))
-
 ;; org-ros
 ;; https://github.com/LionyxML/ros
 ;; https://chatgpt.com/c/6841f0e8-c080-8005-a3ed-fc6d67a76e19
@@ -3145,13 +2932,10 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
             (org-display-inline-images t t))
           (message "File created and linked..."))
       (message "You're in a not saved buffer! Save it first!"))))
-
 ;; ox-gfm
-
 
 (use-package ox-gfm
   :after org)
-
 ;; ox-pandoc
 
 (use-package ox-pandoc
@@ -3159,25 +2943,19 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
   :config
   (setq org-pandoc-options-for-docx '((standalone . nil)))
   )
-
 ;; persistent-scratch
 
 (use-package persistent-scratch
   :config
   (persistent-scratch-setup-default))
-
 ;; Python
-
-
 
 ;; Use-package
 
 (use-package savehist)
-
 ;; snakemake-mode
 
 (use-package snakemake-mode)
-
 (defcustom snakemake-indent-field-offset nil
   "Offset for field indentation."
   :type 'integer)
@@ -3194,7 +2972,6 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
 (defun org-babel-execute:snakemake (body params)
   "No-op: snakemake blocks are tangle-only and never executed by babel."
   nil)
-
 ;; Tree-sitter
 
 ;; Install and configure tree-sitter
@@ -3209,7 +2986,6 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
   :config
   (add-hook 'tree-sitter-after-on-hook #'tree-sitter-hl-mode))
 
-
 (global-tree-sitter-mode)
 (add-hook 'tree-sitter-after-on-hook #'tree-sitter-hl-mode)
 
@@ -3218,7 +2994,6 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
     (tree-sitter-mode -1)))
 
 (add-hook 'tree-sitter-mode-hook #'disable-tree-sitter-for-org-mode)
-
 ;; Use `consult-completion-in-region' if Vertico is enabled.
 
 ;; Otherwise use the default `completion--in-region' function.
@@ -3228,7 +3003,6 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
                    #'consult-completion-in-region
                  #'completion--in-region)
                args)))
-
 ;; other
 
 ;; Ensure you have these packages installed
@@ -3259,7 +3033,6 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
   :after vertico
   :init
   (marginalia-mode))
-
 
 (use-package savehist
   :ensure t
@@ -3299,7 +3072,6 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
 (define-key vertico-map (kbd "TAB") #'minibuffer-complete)
 (define-key vertico-map (kbd "C-n") #'vertico-next)
 (define-key vertico-map (kbd "C-p") #'vertico-previous)
-
 ;; vterm
 ;; - exit nano w/ Esc Esc X [[https://stackoverflow.com/questions/66771206/how-do-i-exit-nano-in-emacs-26-3][SO: exit nano in emacs]]
 ;; - [[https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute_it/][Reddit: send command to vterm]]
@@ -3337,8 +3109,6 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
   (custom-set-faces
    '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC"))))))
 
-
-
 ;; Apply an ansible playbook to a machine, in a vterm. TARGET-addressed: runs locally (=-c local=) when you are on TARGET, otherwise pushes over SSH (inventory =TARGET,=). Used by =elisp:= links in the maintenance.org weekly checklist so either machine can be maintained from either machine. The =--ask-vault-pass= prompt and output stay interactive in the vterm. Clears =ANSIBLE_SSH_ARGS= on the push path so the global GCP IAP ProxyCommand in [[file:~/.ansible.cfg][~/.ansible.cfg]] does not hijack the connection; TARGET is reached directly via [[file:~/.ssh/config.d/][~/.ssh/config.d]].
 
 (defun jg/ansible-run (playbook target &optional vault become)
@@ -3362,8 +3132,6 @@ clearing ANSIBLE_SSH_ARGS so the global GCP IAP ProxyCommand in
       (vterm-send-string cmd)
       (vterm-send-return))))
 
-
-
 ;; Open a new vterm buffer in its own frame.
 
 (defun open-vterm-in-new-frame ()
@@ -3378,8 +3146,6 @@ clearing ANSIBLE_SSH_ARGS so the global GCP IAP ProxyCommand in
     ;; Rename the buffer.
     (rename-buffer buffer-name t)))  ; The t parameter forces the renaming even if a buffer named "TEST-<timestamp>" already exists.
 
-
-
 ;; Reset a garbled vterm display (=C-c C-r=): clear scrollback and send =reset=.
 
 ;; Reset garbled vterm display (narrow columns, corrupted output, drifted TUI)
@@ -3390,7 +3156,6 @@ clearing ANSIBLE_SSH_ARGS so the global GCP IAP ProxyCommand in
 
 (with-eval-after-load 'vterm
   (define-key vterm-mode-map (kbd "C-c C-r") #'jg/vterm-reset-display))
-
 ;; Use-package
 
 (use-package web-mode
@@ -3402,7 +3167,6 @@ clearing ANSIBLE_SSH_ARGS so the global GCP IAP ProxyCommand in
          "\\.mustache\\'"
          "\\.djhtml\\'"
          "\\.html?\\'"))
-
 ;; Use-package
 
 (use-package whisper
@@ -3478,11 +3242,9 @@ clearing ANSIBLE_SSH_ARGS so the global GCP IAP ProxyCommand in
       (my/whisper-run-with-mic)))
   (key-chord-define-global "ww" 'my/whisper-run-with-mic)
   (key-chord-define-global "WW" 'my/whisper-run-with-mic-no-return))
-
 ;; yaml
 
 (use-package yaml-mode)
-
 ;; Use-package
 
 (use-package yasnippet
@@ -3498,7 +3260,6 @@ clearing ANSIBLE_SSH_ARGS so the global GCP IAP ProxyCommand in
   :config
   (yas-global-mode 1) ; Enable yasnippet globally
   (define-key yas-minor-mode-map (kbd "<C-tab>") 'yas-expand))
-
 ;; (use-package yasnippet
 ;;   :init
 ;;   ;; Dynamically add subdirectories in ~/.emacs.d/snippets to yas-snippet-dirs
@@ -3507,21 +3268,15 @@ clearing ANSIBLE_SSH_ARGS so the global GCP IAP ProxyCommand in
 ;;    :config
 ;;   (yas-global-mode 1) ; Enable yasnippet globally
 ;;   (define-key yas-minor-mode-map (kbd "<C-tab>") 'yas-expand))
-
 (defun my-org-mode-hook ()
   (setq-local yas-buffer-local-condition
               '(not (org-in-src-block-p t))))
 (add-hook 'org-mode-hook #'my-org-mode-hook)
-
 ;; Prevent company mode during expansions
 
 (add-hook 'yas-before-expand-snippet-hook (lambda () (setq-local company-backends nil)))
 (add-hook 'yas-after-exit-snippet-hook    (lambda () (kill-local-variable 'company-backends)))
-
 ;; Provide a setting to auto-expand snippets
-;; :PROPERTIES:
-;; :ID:       485a4034-bae9-4d46-bed1-e21bb23e258c
-;; :END:
 
 (setq require-final-newline nil)
 (defun yas-auto-expand ()
@@ -3537,7 +3292,6 @@ clearing ANSIBLE_SSH_ARGS so the global GCP IAP ProxyCommand in
       (yas-expand))))
 
 (add-hook 'post-command-hook #'my-yas-try-expanding-auto-snippets)
-
 ;; org-repeat-by-cron
 
 (use-package org-repeat-by-cron
