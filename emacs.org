@@ -7156,14 +7156,14 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
              (not (member (file-name-nondirectory buffer-file-name)
                           jg/org-glossary-exclude-files)))
     (org-glossary-mode 1)))
-;; Auto-enable LEFT OFF. The factorial startup hang is fixed by the override
-;; above, but auto-enabling globally is impractical here: org-alert force-opens
-;; every agenda file at startup, so this hook fontifies many large files at once
-;; and pegs the CPU for a long while — and cal.org's calendar content hangs
-;; fontification outright. Enable per-document with M-x org-glossary-mode (fast
-;; and correct on normal files). The defun/exclude-list above are kept for manual
-;; use and a possible future display-triggered enable.
-;; (add-hook 'org-mode-hook #'jg/org-glossary-mode-maybe)
+;; Auto-enable ON (2026-07-24). The factorial startup hang is fixed by the
+;; override above, so org-glossary-mode is enabled in every org buffer via this
+;; hook. Caveat: org-alert force-opens all agenda files at startup, so many large
+;; buffers pay the per-buffer parse/fontify cost at once (career.org ~2.3s cold,
+;; then cached) — a one-time startup lag, not a hang. cal.org is excluded because
+;; its calendar content wedges jit-lock fontification outright; add other heavy
+;; basenames to jg/org-glossary-exclude-files as you find them.
+(add-hook 'org-mode-hook #'jg/org-glossary-mode-maybe)
 
 ;; Show org-glossary term definitions in the echo area when point idles on
 ;; a term. org-glossary attaches the definition as a help-echo text
