@@ -1438,6 +1438,13 @@ TABLE-NAME is the name of the table identified as #+name."
 ;; When set as a list as below, 300 pixels will be the default, but another width can be specified through ATTR, e.g. #+ATTR_ORG: :width 800px
 
 (setq org-image-actual-width '(300))
+;; gfx: graphics store abbreviation
+;; Shared graphics store for figures reused across presentations, grants, and manuscripts. Written as =[[gfx:papers/koelsche2021-fig1b.png]]=; org expands the path at export, so the same link resolves on every machine.
+
+;; Also defined in [[file:~/repos/latex/latex.org][latex.org]] → =latex_init.el=: the batch exporter runs =emacs -Q= and loads no user init. Without the abbreviation defined there, the image is dropped from the =.tex= with no error and a clean compile.
+
+(setq org-link-abbrev-alist
+      '(("gfx" . "file:~/career/graphics/%s")))
 ;; Checkbox intermediate states!
 
 ;; https://claude.ai/chat/81ca7e51-65b4-4c0d-892b-a94861979890

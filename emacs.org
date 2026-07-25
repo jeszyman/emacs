@@ -5372,6 +5372,19 @@ When set as a list as below, 300 pixels will be the default, but another width c
 #+begin_src emacs-lisp
 (setq org-image-actual-width '(300))
 #+end_src
+
+***** gfx: graphics store abbreviation
+:PROPERTIES:
+:ID:       1c7b20f4-b4e6-49a6-b7d9-b75d185277f4
+:END:
+Shared graphics store for figures reused across presentations, grants, and manuscripts. Written as =[[gfx:papers/koelsche2021-fig1b.png]]=; org expands the path at export, so the same link resolves on every machine.
+
+Also defined in [[file:~/repos/latex/latex.org][latex.org]] → =latex_init.el=: the batch exporter runs =emacs -Q= and loads no user init. Without the abbreviation defined there, the image is dropped from the =.tex= with no error and a clean compile.
+#+begin_src emacs-lisp
+(setq org-link-abbrev-alist
+      '(("gfx" . "file:~/career/graphics/%s")))
+#+end_src
+
 ***** Checkbox intermediate states!
 :PROPERTIES:
 :ID:       0f435c0d-0492-480c-8c25-3ddcd626e168
