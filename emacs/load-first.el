@@ -7,5 +7,6 @@
 (when (daemonp)
   (setq org-element-cache-persistent nil))
 (setq server-socket-dir (expand-file-name "server" user-emacs-directory))
+(setq server-raise-frame nil)
 (require 'server)
 (unless (server-running-p) (server-start))

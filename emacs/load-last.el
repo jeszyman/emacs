@@ -11,11 +11,20 @@
 (custom-set-faces
  '(default ((t (:family "Hack" :height 114 :weight light)))))
 
+(defun jg/apply-org-emphasis-faces ()
+  "Bold, distinct colors for inline =verbatim= and ~code~.
+Run after `load-theme' so the theme (manoj-dark sets org-verbatim to
+grey70) does not clobber these."
+  (set-face-attribute 'org-verbatim nil :weight 'bold :foreground "#b58900")
+  (set-face-attribute 'org-code     nil :weight 'bold :foreground "#cf833a"))
+
 (add-hook 'emacs-startup-hook
           (lambda ()
-            (load-theme 'manoj-dark t)))
+            (load-theme 'manoj-dark t)
+            (jg/apply-org-emphasis-faces)))
 
 (load-theme 'manoj-dark t)
+(jg/apply-org-emphasis-faces)
 (org-babel-do-load-languages
  'org-babel-load-languages
  '(

@@ -1018,6 +1018,7 @@ https://wilkesley.org/~ian/xah/emacs/elisp_syntax_coloring.html
 - Use =Type=simple= + =--fg-daemon=, not =Type=forking= + =--daemon=. The forking variant hangs when init spawns subprocesses (exec-path-from-shell, hunspell) that inherit the parent's stdout fd, preventing the parent from exiting.
 - =--fg-daemon= does not auto-start the server at a custom =server-socket-dir=, so the explicit =(server-start)= in Load First is required.
 - If the daemon hangs on startup, clear =~/.cache/org-persist/=. A bloated org-element cache can block the event loop for longer than systemd's timeout (2026-03-16 incident). The =org-element-cache-persistent= guard in Load First prevents recurrence.
+- Restart policy: no scheduled restarts; the daemon is designed for indefinite uptime. Resident memory grows progressively (buffers, undo history, kill ring, and org-element cache accumulate; the allocator seldom returns freed pages to the OS) but growth decelerates and typically settles at 1 to 2 GB, which is harmless. Restart only on symptoms: an unresponsive daemon, broken package state, or a config change that cannot be applied to the running process. Check usage: =ps -C emacs -o pid,etime,rss=.
 **** Undo
 - https://github.com/casouri/vundo
 
@@ -2256,6 +2257,21 @@ emacsclient -e "(progn (find-file \"$1\") \
 :PROPERTIES:
 :ID:       d7d54139-64d0-4cfe-ab3a-879b3617b226
 :END:
+#+begin_src emacs-lisp :tangle ./emacs/public_config.el
+(defun jg/org-at-id-nosteal (id fn)
+  "Call FN with point at org entry ID. Never touches windows, frames, or folds.
+For programmatic edits from emacsclient --eval. Saves the buffer."
+  (let ((m (org-id-find id 'marker)))
+    (unless m (error "jg/org-at-id-nosteal: no entry with ID %s" id))
+    (unwind-protect
+        (with-current-buffer (marker-buffer m)
+          (org-with-wide-buffer
+           (goto-char m)
+           (prog1 (funcall fn)
+             (let ((inhibit-message t)) (save-buffer)))))
+      (move-marker m nil))))
+#+end_src
+
 *** [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][org-latex-classes definitions]]
 *** [[id:B171BCE2-2FF8-45C6-8958-8799B349E1B0][Org-Mode in basecamp-private]]
 *** Processes
@@ -3622,6 +3638,7 @@ If FILEPATH is relative, treat it as relative to `user-emacs-directory`."
 
 #+begin_src emacs-lisp
 (setq server-socket-dir (expand-file-name "server" user-emacs-directory))
+(setq server-raise-frame nil)
 (require 'server)
 (unless (server-running-p) (server-start))
 
@@ -4504,7 +4521,7 @@ Wire it up, migrate off the old hardcoded highlight functions, and add =todonote
 (add-hook 'org-babel-post-tangle-hook #'jg/org-marks-strip-yas-newline)
 #+end_src
 
-Imposing a mark on existing text: the yas keys insert a fresh mark as you type, but to wrap text you have ALREADY written, select it and use =jg/org-mark-region= (reads the type) or the =C-c m= transient (one key per type). Both wrap the active region in the chosen mark's delimiters using the same registry; with no region they insert an empty mark, point inside. The region is captured before the transient opens, so transient's own keymap can't lose it.
+Imposing a mark on existing text: the yas keys insert a fresh mark as you type, but to wrap text you have ALREADY written, select it and use =jg/org-mark-region= (reads the type) or the =HH= key-chord transient (one key per type). Both wrap the active region in the chosen mark's delimiters using the same registry; with no region they insert an empty mark, point inside. The region is captured before the transient opens, so transient's own keymap can't lose it.
 #+begin_src emacs-lisp
 (require 'transient)
 (require 'key-chord)
@@ -4539,7 +4556,7 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
 (transient-define-prefix jg/org-mark-transient ()
   "Impose an inline mark on the region (or insert one)."
   [["Highlight"
-    ("h" "red"    (lambda () (interactive) (jg/org-mark-apply 'hl-red)))
+    ("r" "red"    (lambda () (interactive) (jg/org-mark-apply 'hl-red)))
     ("y" "yellow" (lambda () (interactive) (jg/org-mark-apply 'hl-yellow)))
     ("g" "green"  (lambda () (interactive) (jg/org-mark-apply 'hl-green)))]
    ["Other"
@@ -6428,12 +6445,13 @@ Kernelspecs live at =~/.local/share/jupyter/kernels/<name>/kernel.json=. They st
   :ensure t
   :after corfu
   :init
-  ;; cape-dabbrev is wrapped to drop pure org-heading star runs (**, ***, …),
-  ;; which dabbrev otherwise emits as tokens since * has symbol syntax.
+  ;; cape-dabbrev is wrapped to drop star-prefixed candidates (**, **word, ...).
+  ;; Since * has symbol syntax, dabbrev emits such tokens, and they pollute
+  ;; completion when typing org heading stars.
   (add-hook 'completion-at-point-functions
             (cape-capf-predicate
              #'cape-dabbrev
-             (lambda (cand) (not (string-match-p "\\`\\*+\\'" cand)))))
+             (lambda (cand) (not (string-prefix-p "*" cand)))))
   (add-hook 'completion-at-point-functions #'cape-file)
   (add-hook 'completion-at-point-functions #'cape-dict)
   (add-hook 'completion-at-point-functions #'cape-tex))
@@ -6690,7 +6708,29 @@ https://github.com/magnars/expand-region.el
   (global-set-key (kbd "C-s") 'helm-occur)
   (setq
    helm-completion-style 'emacs
-   helm-move-to-line-cycle-in-source nil)) ;; allow C-n through different sections
+   helm-move-to-line-cycle-in-source nil) ;; allow C-n through different sections
+
+  (defun my/helm-copy-marked-display ()
+    "Copy display text of marked Helm candidates to the kill ring and quit.
+With no marks, copies the current selection's display text."
+    (interactive)
+    (with-helm-alive-p
+      (let ((strs (with-helm-buffer
+                    (if helm-visible-mark-overlays
+                        (cl-loop for o in (reverse helm-visible-mark-overlays)
+                                 collect (string-trim
+                                          (substring-no-properties
+                                           (overlay-get o 'string))))
+                      (list (string-trim
+                             (format "%s" (helm-get-selection nil 'noicon))))))))
+        (helm-run-after-exit
+         (lambda (sels)
+           (kill-new (mapconcat #'identity sels "\n"))
+           (prog1 nil
+             (message "Copied %d candidate(s) to kill ring" (length sels))))
+         strs))))
+  (put 'my/helm-copy-marked-display 'helm-only t)
+  (define-key helm-map (kbd "C-c C-c") #'my/helm-copy-marked-display))
 #+end_src
 **** helm-org
 

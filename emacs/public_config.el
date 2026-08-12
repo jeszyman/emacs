@@ -1,3 +1,15 @@
+(defun jg/org-at-id-nosteal (id fn)
+  "Call FN with point at org entry ID. Never touches windows, frames, or folds.
+For programmatic edits from emacsclient --eval. Saves the buffer."
+  (let ((m (org-id-find id 'marker)))
+    (unless m (error "jg/org-at-id-nosteal: no entry with ID %s" id))
+    (unwind-protect
+        (with-current-buffer (marker-buffer m)
+          (org-with-wide-buffer
+           (goto-char m)
+           (prog1 (funcall fn)
+             (let ((inhibit-message t)) (save-buffer)))))
+      (move-marker m nil))))
 ;; Base Emacs
 ;; - Frozen Emacs: =pkill -USR2 emacs=
 
@@ -778,7 +790,7 @@ must protect it ourselves before wrapping it in a LaTeX command."
 
 (add-hook 'org-babel-post-tangle-hook #'jg/org-marks-strip-yas-newline)
 
-;; Imposing a mark on existing text: the yas keys insert a fresh mark as you type, but to wrap text you have ALREADY written, select it and use =jg/org-mark-region= (reads the type) or the =C-c m= transient (one key per type). Both wrap the active region in the chosen mark's delimiters using the same registry; with no region they insert an empty mark, point inside. The region is captured before the transient opens, so transient's own keymap can't lose it.
+;; Imposing a mark on existing text: the yas keys insert a fresh mark as you type, but to wrap text you have ALREADY written, select it and use =jg/org-mark-region= (reads the type) or the =HH= key-chord transient (one key per type). Both wrap the active region in the chosen mark's delimiters using the same registry; with no region they insert an empty mark, point inside. The region is captured before the transient opens, so transient's own keymap can't lose it.
 
 (require 'transient)
 (require 'key-chord)
@@ -813,7 +825,7 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
 (transient-define-prefix jg/org-mark-transient ()
   "Impose an inline mark on the region (or insert one)."
   [["Highlight"
-    ("h" "red"    (lambda () (interactive) (jg/org-mark-apply 'hl-red)))
+    ("r" "red"    (lambda () (interactive) (jg/org-mark-apply 'hl-red)))
     ("y" "yellow" (lambda () (interactive) (jg/org-mark-apply 'hl-yellow)))
     ("g" "green"  (lambda () (interactive) (jg/org-mark-apply 'hl-green)))]
    ["Other"
@@ -2215,12 +2227,13 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   :ensure t
   :after corfu
   :init
-  ;; cape-dabbrev is wrapped to drop pure org-heading star runs (**, ***, …),
-  ;; which dabbrev otherwise emits as tokens since * has symbol syntax.
+  ;; cape-dabbrev is wrapped to drop star-prefixed candidates (**, **word, ...).
+  ;; Since * has symbol syntax, dabbrev emits such tokens, and they pollute
+  ;; completion when typing org heading stars.
   (add-hook 'completion-at-point-functions
             (cape-capf-predicate
              #'cape-dabbrev
-             (lambda (cand) (not (string-match-p "\\`\\*+\\'" cand)))))
+             (lambda (cand) (not (string-prefix-p "*" cand)))))
   (add-hook 'completion-at-point-functions #'cape-file)
   (add-hook 'completion-at-point-functions #'cape-dict)
   (add-hook 'completion-at-point-functions #'cape-tex))
@@ -2436,7 +2449,29 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (global-set-key (kbd "C-s") 'helm-occur)
   (setq
    helm-completion-style 'emacs
-   helm-move-to-line-cycle-in-source nil)) ;; allow C-n through different sections
+   helm-move-to-line-cycle-in-source nil) ;; allow C-n through different sections
+
+  (defun my/helm-copy-marked-display ()
+    "Copy display text of marked Helm candidates to the kill ring and quit.
+With no marks, copies the current selection's display text."
+    (interactive)
+    (with-helm-alive-p
+      (let ((strs (with-helm-buffer
+                    (if helm-visible-mark-overlays
+                        (cl-loop for o in (reverse helm-visible-mark-overlays)
+                                 collect (string-trim
+                                          (substring-no-properties
+                                           (overlay-get o 'string))))
+                      (list (string-trim
+                             (format "%s" (helm-get-selection nil 'noicon))))))))
+        (helm-run-after-exit
+         (lambda (sels)
+           (kill-new (mapconcat #'identity sels "\n"))
+           (prog1 nil
+             (message "Copied %d candidate(s) to kill ring" (length sels))))
+         strs))))
+  (put 'my/helm-copy-marked-display 'helm-only t)
+  (define-key helm-map (kbd "C-c C-c") #'my/helm-copy-marked-display))
 ;; helm-org
 
 (use-package helm-org
