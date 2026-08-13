@@ -445,14 +445,14 @@ Target file for this example is [[file:/tmp/test.sh]].
 
 # Define a two-block setup in the remote file:
 #+name: include-from-remote-wrapper
-#+begin_src org
+,#+begin_src org
 # <​#include-from-remote#>
-#+end_src
+,#+end_src
 
 #+name: include-from-remote
-#+begin_src bash
+,#+begin_src bash
 echo "I AM INCLUDED FROM ANOTHER BUFFER"
-#+end_src
+,#+end_src
 
 # Then reference the wrapper (evaluated as Org) in your local file:
 <​#~/repos/emacs/resources/emacs/include_examples.org:include-from-remote-wrapper()#>
@@ -1277,7 +1277,7 @@ https://github.com/tarsius/moody
 - https://github.com/riscy/shx-for-emacs#from-melpa
 - https://www.youtube.com/watch?app=desktop&v=9xLeqwl_7n0&ab_channel=EmacsConfandEmacshangouts
 - https://xenodium.com/yasnippet-in-emacs-eshell/
-- [[id:eecd8a09-89dd-4cb7-99ed-719eb3890597][emacs-native-shell-complete]]
+- emacs-native-shell-complete
 - shells
   - https://www.reddit.com/r/emacs/comments/r2p12t/eshellmode/
   - - https://emacs.stackexchange.com/questions/50539/sending-code-to-an-ansi-term-via-isend-mode-how-to-modify-default-buffer-chosen
@@ -1309,8 +1309,8 @@ https://github.com/tarsius/moody
 - https://www.emacswiki.org/emacs/essh.el
 - essh.el- tools to send lines in emacs to shell
   - https://www.emacswiki.org/emacs/essh.el
-- [[id:2501e2dd-b2ca-4bea-a313-3a0a758144e4][essh.el in my config]]
-- [[id:fc0d7670-9357-4209-a699-88d05157bcea][bash-completion package]]
+- essh.el in my config
+- bash-completion package
 - [[id:f73673dd-e2fe-4228-97c5-efcabcf8f69b][shx package]]
 - https://github.com/p3r7/friendly-shell
 - https://www.eigenbahn.com/2020/07/07/emacs-remote-shell-interpreter-conf
@@ -1428,7 +1428,7 @@ When a project has elisp that should load on buffer open or provides helper func
 - https://www.reddit.com/r/emacs/comments/10a42eo/nondevelopers_who_started_without_other/
 - https://github.com/joshpetit/dotfiles
 - https://alhassy.github.io/emacs.d/
-- [[id:EF8F2A3C-F614-4B7F-9CF6-084BDFE2A241][Customization]]
+- Customization
 - profiling and optimization
   - https://stackoverflow.com/questions/5762098/how-do-i-profile-my-emacs-configuration
 - [[https://superuser.com/questions/637979/install-emacs-without-sudo][Install emacs on server]]
@@ -1990,11 +1990,11 @@ https://www.reddit.com/r/emacs/comments/1au10ha/i_want_to_learn_what_emacs_offer
 :PROPERTIES:
 :ID:       3b3db398-e82a-4a5d-b4cb-a8c10cc08aca
 :END:
-[[id:44347009-ee09-4cf1-9786-f0106a378a2e][sql integration]]
-[[id:5d29a241-3165-4a3b-a88c-c3fe122d2ff9][Jupyter integration]]
-[[id:e33cbb04-6299-4a46-bcbd-116bdd72e99d][Rmd integration]]
-[[id:e7806712-9607-4b78-8662-80a2659c203d][Python integration]]
-[[id:07b8634c-70a6-4a99-90b5-0f5083ccaf04][Emacs shell IDE]]
+- [[id:44347009-ee09-4cf1-9786-f0106a378a2e][sql integration]]
+- [[id:5d29a241-3165-4a3b-a88c-c3fe122d2ff9][Jupyter integration]]
+- [[id:e33cbb04-6299-4a46-bcbd-116bdd72e99d][Rmd integration]]
+- Python integration
+- [[id:07b8634c-70a6-4a99-90b5-0f5083ccaf04][Emacs shell IDE]]
 *** Interfaces
 - https://github.com/emacs-slack/emacs-slack/
 *** LaTeX integration
@@ -2273,7 +2273,7 @@ For programmatic edits from emacsclient --eval. Saves the buffer."
 #+end_src
 
 *** [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][org-latex-classes definitions]]
-*** [[id:B171BCE2-2FF8-45C6-8958-8799B349E1B0][Org-Mode in basecamp-private]]
+*** Org-Mode in basecamp-private
 *** Processes
 :PROPERTIES:
 :ID:       8b5c515e-689b-436d-ac09-f368ec6d87ef
@@ -2492,7 +2492,7 @@ examples:
 :PROPERTIES:
 :ID:       92231be8-7a75-4d5b-bc40-bbe0f675ad95
 :END:
-- see [[id:6475bbfa-39b8-4223-b511-67e91c0d144a][Custom functions in basecamp private]]
+- see Custom functions in basecamp private
 - https://kitchingroup.cheme.cmu.edu/blog/2014/09/13/Make-some-org-sections-read-only/
 ***** Tangle header arguments
 :PROPERTIES:
@@ -2640,7 +2640,7 @@ https://emacs.stackexchange.com/questions/54497/how-to-set-tab-behavior-in-org-m
   - https://emacs.stackexchange.com/questions/46479/how-to-set-a-tangled-parent-directory-for-each-subtree-in-org-mode
   - https://emacs.stackexchange.com/questions/20001/is-it-possible-to-read-user-input-from-stdin-while-tangling-a-source-block
   - https://emacs.stackexchange.com/questions/45164/does-org-have-any-inverse-tangle-operations-e-g-for-collaborating-with-non-or
-****** [[id:38e75166-d05e-4ef5-96eb-ed38b2f0ab10][Tangle to multiple locations]]
+****** Tangle to multiple locations
 :PROPERTIES:
 :ID:       89d833a8-68f1-4e4c-849d-5bd4ba302169
 :END:
@@ -2713,9 +2713,9 @@ Per-file default via PROPERTY header:
 
 Per-block override (different env for one section):
 #+begin_src org :tangle no
-#+begin_src jupyter-R :kernel basecamp :session *R:basecamp*
+,#+begin_src jupyter-R :kernel basecamp :session *R:basecamp*
 library(snakemake)
-#+end_src
+,#+end_src
 #+end_src
 
 Note: same =:session= name can be reused across different =:kernel= values — the underlying
@@ -2971,7 +2971,7 @@ https://github.com/makuto/KeepToOrg
 :ID:       7a0c211b-168a-4821-aca6-4e0fad22d0f2
 :END:
 https://emacs.stackexchange.com/questions/18688/radio-targets-in-external-org-mode-file-for-glossary-application
-[[id:F8997164-7995-405B-A065-266603146579][Search and link]]
+- Search and link
 - note, radio targets will not work between files
   - https://www.reddit.com/r/orgmode/comments/2qz4fb/question_radio_target_accross_multiple_files/
   - https://lists.gnu.org/archive/html/emacs-orgmode/2007-03/msg00024.html
@@ -3097,7 +3097,7 @@ https://github.com/alphapapa/org-ql?tab=readme-ov-file#org-ql-view
 - [ ] [[http://orgmode.org/worg/org-contrib/babel/intro.html][worg advanced searching]]
 
 https://orgmode.org/worg/org-tutorials/advanced-searching.html#:~:text=Org%2Dmode%20uses%20Emacs'%20multi,linked%20to%20its%20original%20location.
-[[id:F8997164-7995-405B-A065-266603146579][Search for tags]]
+- Search for tags
 
 ***** Custom agenda
 :PROPERTIES:
@@ -5383,7 +5383,7 @@ https://claude.ai/chat/c775f0eb-fa91-45b4-82d6-e1a0df8b5526
 
 ****** org-image-actual-width
 :PROPERTIES:
-:ID:       a760d06b-c2b2-4b54-a0b6-375a13a20538
+:ID:       739cec5b-e546-4ff9-814e-5cc06ed0cf80
 :END:
 When set as a list as below, 300 pixels will be the default, but another width can be specified through ATTR, e.g. #+ATTR_ORG: :width 800px
 #+begin_src emacs-lisp
@@ -6580,7 +6580,7 @@ Kernelspecs live at =~/.local/share/jupyter/kernels/<name>/kernel.json=. They st
 - no python support- https://github.com/emacs-ess/ESS/issues/910
 - ess-remote to docker R
 https://www.reddit.com/r/emacs/comments/op4fcm/send_command_to_vterm_and_execute_it/
-- [[id:3BC3B329-C75B-461C-A4BD-E565C2046424][My ESS config]]
+- My ESS config
 - for ESS- https://github.com/emacs-ess/ESS/issues/144
 - Emacs Speaks Statistics (ess)
   - https://github.com/emacs-ess/ESS
@@ -6700,7 +6700,7 @@ https://github.com/magnars/expand-region.el
   (gcmh-mode 1))
 #+end_src
 **** Helm
-- [[id:96c0f509-c06b-4e48-8f28-019cd2ca1a38][Helm reference header]]
+- Helm reference header
 #+begin_src emacs-lisp
 (use-package helm
   :config
@@ -7730,7 +7730,7 @@ $0
 
 
 
-***** [[id:EA056C38-9DE6-47EE-A75B-0FCBAE62372B][private YASnippets setup]]
+***** private YASnippets setup
 ***** Use-package
 #+begin_src emacs-lisp
 (use-package yasnippet
