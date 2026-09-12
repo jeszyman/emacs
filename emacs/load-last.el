@@ -67,13 +67,15 @@ With prefix argument, also display headlines without a TODO keyword."
 (org-add-link-type
  "tag" 'endless/follow-tag-link)
 (require 'essh)
+;; Bind in the buffer's own keymap: bash-ts-mode-map does not inherit
+;; sh-mode-map, and sh-base-mode-hook runs for both sh-mode and bash-ts-mode
 (defun essh-sh-hook ()
-  (define-key sh-mode-map "\C-c\C-r" 'pipe-region-to-shell)
-  (define-key sh-mode-map "\C-c\C-b" 'pipe-buffer-to-shell)
-  (define-key sh-mode-map "\C-c\C-j" 'pipe-line-to-shell)
-  (define-key sh-mode-map "\C-c\C-n" 'pipe-line-to-shell-and-step)
-  (define-key sh-mode-map "\C-c\C-f" 'pipe-function-to-shell)
-  (define-key sh-mode-map "\C-c\C-d" 'shell-cd-current-directory))
-(add-hook 'sh-mode-hook 'essh-sh-hook)
+  (local-set-key "\C-c\C-r" 'pipe-region-to-shell)
+  (local-set-key "\C-c\C-b" 'pipe-buffer-to-shell)
+  (local-set-key "\C-c\C-j" 'pipe-line-to-shell)
+  (local-set-key "\C-c\C-n" 'pipe-line-to-shell-and-step)
+  (local-set-key "\C-c\C-f" 'pipe-function-to-shell)
+  (local-set-key "\C-c\C-d" 'shell-cd-current-directory))
+(add-hook 'sh-base-mode-hook 'essh-sh-hook)
 
-(add-hook 'sh-mode-hook 'flycheck-mode)
+(add-hook 'sh-base-mode-hook 'flycheck-mode)
