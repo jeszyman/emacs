@@ -7551,6 +7551,23 @@ clearing ANSIBLE_SSH_ARGS so the global GCP IAP ProxyCommand in
       (vterm-send-return))))
 #+end_src
 
+Run one shell command on a machine, in a vterm. Same host addressing as =jg/ansible-run=: runs directly when HOST is this machine, otherwise over =ssh -t HOST=. The remote command runs inside =bash -lc= because a bare ssh command gets a non-login PATH without =~/.local/bin=, where pip-installed tools such as trash-cli live. Used by =elisp:= links in the maintenance.org weekly checklist (trash review) so the command runs on the named machine from either machine and its output stays visible in the vterm.
+#+begin_src emacs-lisp
+(defun jg/vterm-run (host cmd)
+  "Run shell CMD on HOST in a vterm.
+If HOST matches the local machine (`system-name'), run CMD directly;
+otherwise run it over `ssh -t HOST' inside a login shell so PATH
+includes ~/.local/bin."
+  (let ((full (if (string-prefix-p host (system-name))
+                  cmd
+                (format "ssh -t %s %s" host
+                        (shell-quote-argument
+                         (format "bash -lc %s" (shell-quote-argument cmd)))))))
+    (with-current-buffer (vterm (format "*%s:%s*" host (car (split-string cmd))))
+      (vterm-send-string full)
+      (vterm-send-return))))
+#+end_src
+
 Open a new vterm buffer in its own frame.
 #+begin_src emacs-lisp
 (defun open-vterm-in-new-frame ()
