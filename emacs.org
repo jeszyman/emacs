@@ -4980,6 +4980,11 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 ;; You might want to remove the hook if you don't want this function to run every time you open an org file
 (add-hook 'org-mode-hook 'my-collapse-all-drawers)
 
+(defun my-hide-drawers-after-agenda-goto ()
+  "Collapse drawers after agenda navigation."
+  (org-hide-drawer-all))
+(add-hook 'org-agenda-after-show-hook #'my-hide-drawers-after-agenda-goto)
+
 #+end_src
 
 ***** No blank lines!
