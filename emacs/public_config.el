@@ -77,6 +77,24 @@ For programmatic edits from emacsclient --eval. Saves the buffer."
 (setq inhibit-splash-screen t)
 (setq redisplay-skip-fontification-on-input t)
 
+; ---   Zoom preservation   --- ;
+; ----------------------------- ;
+
+;; Preserve text-scale (C-x C-+/C--) across buffer reverts
+(defvar my/text-scale-cache (make-hash-table :test 'equal))
+
+(defun my/save-text-scale ()
+  (when (and text-scale-mode (not (zerop text-scale-mode-amount)))
+    (puthash (buffer-file-name) text-scale-mode-amount my/text-scale-cache)))
+
+(defun my/restore-text-scale ()
+  (when-let ((amount (gethash (buffer-file-name) my/text-scale-cache)))
+    (text-scale-set amount)
+    (remhash (buffer-file-name) my/text-scale-cache)))
+
+(add-hook 'before-revert-hook #'my/save-text-scale)
+(add-hook 'after-revert-hook #'my/restore-text-scale)
+
 ; ---   Windows   --- ;
 ; ------------------- ;
 
@@ -1118,6 +1136,11 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 (global-set-key (kbd "C-c d") 'my-collapse-all-drawers)
 ;; You might want to remove the hook if you don't want this function to run every time you open an org file
 (add-hook 'org-mode-hook 'my-collapse-all-drawers)
+
+(defun my-hide-drawers-after-agenda-goto ()
+  "Collapse drawers after agenda navigation."
+  (org-hide-drawer-all))
+(add-hook 'org-agenda-after-show-hook #'my-hide-drawers-after-agenda-goto)
 ;; No blank lines!
 
 (setq org-cycle-separator-lines 0)

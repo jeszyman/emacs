@@ -3737,6 +3737,24 @@ Code that needs to be tangled both here and into custom inits for batch export
 (setq inhibit-splash-screen t)
 (setq redisplay-skip-fontification-on-input t)
 
+; ---   Zoom preservation   --- ;
+; ----------------------------- ;
+
+;; Preserve text-scale (C-x C-+/C--) across buffer reverts
+(defvar my/text-scale-cache (make-hash-table :test 'equal))
+
+(defun my/save-text-scale ()
+  (when (and text-scale-mode (not (zerop text-scale-mode-amount)))
+    (puthash (buffer-file-name) text-scale-mode-amount my/text-scale-cache)))
+
+(defun my/restore-text-scale ()
+  (when-let ((amount (gethash (buffer-file-name) my/text-scale-cache)))
+    (text-scale-set amount)
+    (remhash (buffer-file-name) my/text-scale-cache)))
+
+(add-hook 'before-revert-hook #'my/save-text-scale)
+(add-hook 'after-revert-hook #'my/restore-text-scale)
+
 ; ---   Windows   --- ;
 ; ------------------- ;
 
