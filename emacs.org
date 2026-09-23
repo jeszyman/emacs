@@ -6985,6 +6985,15 @@ https://www.reddit.com/r/emacs/comments/1mq2hww/why_do_i_find_magit_so_hard_to_u
 
   (global-set-key (kbd "C-c C-SPC") 'mark-whole-word)
 #+end_src
+**** markdown-mode
+Markdown buffers open with markup hidden (bold shows as bold, no =**= or =#= characters) and headings in larger type. =C-c C-x C-m= toggles the markup back on in one buffer. Header scaling is set with =customize-set-variable= after load because its =:set= function rebuilds the heading faces.
+- [[https://github.com/jrblevin/markdown-mode][markdown-mode on GitHub]]
+#+begin_src emacs-lisp
+(use-package markdown-mode
+  :config
+  (setq-default markdown-hide-markup t)
+  (customize-set-variable 'markdown-header-scaling t))
+#+end_src
 **** Native complete
 ***** Use-package
 #+begin_src emacs-lisp
@@ -7839,6 +7848,99 @@ https://github.com/joaotavora/yasnippet/issues/998
   (global-org-repeat-by-cron-mode))
 #+end_src
 - https://github.com/TomoeMami/org-repeat-by-cron.el
+- The package moves only SCHEDULED and DEADLINE. The block below extends it to an appointment: a TODO entry with a =:REPEAT_TS_CRON:= rule and a plain active timestamp in its body (e.g. =<2026-09-23 Wed 14:00-15:00>= with ="0 14 * * 3#4"=) moves that timestamp to the next cron match when marked DONE, and returns to TODO. Only the first body timestamp follows the rule; a SCHEDULED without a repeater on the same entry is deleted by org's repeat step, and a DEADLINE without one does not move. Diary sexps are not used for this because they cannot be cycled with a TODO state.
+#+begin_src emacs-lisp
+;; Mechanism: before org's repeat step, a temporary "+1d" repeater is
+;; added to the body timestamp so `org-auto-repeat-maybe' resets the
+;; state and logs the repeat; `org-trigger-hook' then overwrites the
+;; timestamp with the cron result.  The property name differs from
+;; REPEAT_CRON so the package leaves these entries alone (it would add
+;; a SCHEDULED line).
+
+(defvar jg/repeat-ts-cron-prop "REPEAT_TS_CRON"
+  "Property holding the cron rule (3 or 5 fields) for the body timestamp.")
+
+(defvar org-state)                      ; bound by `org-todo' around its hooks
+
+(defvar jg/repeat-ts-cron--orig nil
+  "Body timestamp as it was before this DONE transition shifted it.")
+
+(defconst jg/repeat-ts-cron--ts-re
+  "<\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}[^>\n]*\\)>"
+  "Plain active timestamp; diary sexps (<%%...>) do not match.")
+
+(defun jg/repeat-ts-cron--find ()
+  "Put point after the first plain active timestamp in the entry body.
+The heading line, planning line, and drawers are skipped.  Match data
+is set on success; return nil when the body has no timestamp."
+  (org-back-to-heading t)
+  (let ((end (org-entry-end-position)))
+    (org-end-of-meta-data t)
+    (re-search-forward jg/repeat-ts-cron--ts-re end t)))
+
+(defun jg/repeat-ts-cron--prepare ()
+  "On a change to a DONE state, save the body timestamp and add a repeater.
+Runs from `org-after-todo-state-change-hook', before org's repeat step."
+  (when (and (member org-state org-done-keywords)
+             (org-entry-get nil jg/repeat-ts-cron-prop))
+    (save-excursion
+      (when (jg/repeat-ts-cron--find)
+        (let ((ts (match-string 0)))
+          (setq jg/repeat-ts-cron--orig ts)
+          (unless (string-match-p org-repeat-re ts)
+            (replace-match (concat (substring ts 0 -1) " +1d>") t t)))))))
+
+(defun jg/repeat-ts-cron--next (rule orig)
+  "Return the timestamp string for the first match of RULE after ORIG.
+The search starts at the later of ORIG and now, so a meeting marked
+DONE before it starts still moves to the following occurrence.  Time
+of day and range length are kept from ORIG."
+  (let* ((arity (org-repeat-by-cron--cron-rule-arity rule))
+         (has-time (string-match "\\([0-9]\\{1,2\\}\\):\\([0-9]\\{2\\}\\)" orig))
+         ;; A 3-field rule takes its minute and hour from ORIG, so the
+         ;; search sees the real start time rather than midnight.
+         (cron (if (and (eq arity 3) has-time)
+                   (format "%d %d %s"
+                           (string-to-number (match-string 2 orig))
+                           (string-to-number (match-string 1 orig))
+                           (string-trim rule))
+                 (org-repeat-by-cron--normalize-cron-rule rule)))
+         (orig-time (org-time-string-to-time orig))
+         (base (if (time-less-p orig-time nil) (current-time) orig-time))
+         (next (and cron (org-repeat-by-cron-next-time cron base))))
+    (when next
+      (concat "<"
+              (format-time-string
+               (if (or has-time (eq arity 5)) "%Y-%m-%d %a %H:%M" "%Y-%m-%d %a")
+               next)
+              (or (org-repeat-by-cron--extract-time-range-end orig next) "")
+              ">"))))
+
+(defun jg/repeat-ts-cron--on-done (change-plist)
+  "Replace the body timestamp with the next cron match.
+Runs from `org-trigger-hook' after org's repeat step.  CHANGE-PLIST
+carries the :from and :to states."
+  (let ((from (format "%s" (plist-get change-plist :from)))
+        (to (format "%s" (plist-get change-plist :to)))
+        (rule (org-entry-get nil jg/repeat-ts-cron-prop))
+        (orig jg/repeat-ts-cron--orig))
+    ;; The reset to TODO inside `org-auto-repeat-maybe' re-enters this
+    ;; hook (DONE -> TODO); only the outer TODO -> DONE call consumes ORIG.
+    (when (and rule orig
+               (not (member from org-done-keywords))
+               (member to org-done-keywords))
+      (setq jg/repeat-ts-cron--orig nil)
+      (let ((new (jg/repeat-ts-cron--next rule orig)))
+        (if (not new)
+            (message "[repeat-ts-cron] No match for rule %s" rule)
+          (save-excursion
+            (when (jg/repeat-ts-cron--find)
+              (replace-match new t t)
+              (message "[repeat-ts-cron] Timestamp moved to %s" new))))))))
+
+(add-hook 'org-after-todo-state-change-hook #'jg/repeat-ts-cron--prepare)
+(add-hook 'org-trigger-hook #'jg/repeat-ts-cron--on-done)
+#+end_src
 
 
 *** anki-editor
