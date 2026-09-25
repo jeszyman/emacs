@@ -2275,6 +2275,9 @@ def link_caption_words(md_path):
 MD_OVERRIDES = r'''
 (require 'ox)
 (require 'ox-md)
+;; Links in tables go through ox-html, which rewrites a link to a .org file
+;; as .html; the repository holds the .org file.
+(setq org-html-link-org-files-as-html nil)
 ;; INFO carries the export's image rules; without it Org falls back to a
 ;; default list that has no svg.
 (defun md-figure-p (el info)
