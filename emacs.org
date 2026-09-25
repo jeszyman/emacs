@@ -2203,7 +2203,17 @@ def main():
     extracted_md_path = extract_md_path(args.org_file, args.node_id)
     link_caption_words(extracted_md_path)
     table_captions_below(extracted_md_path)
+    strip_style_tags(extracted_md_path)
     print(f"Markdown exported to: {extracted_md_path}")
+
+def strip_style_tags(md_path):
+    # The csl bibliography starts with a <style> tag. GitHub removes the tag
+    # but shows its CSS as text, so the tag is removed here.
+    with open(md_path) as f:
+        text = f.read()
+    text = re.sub(r"<style>.*?</style>", "", text, flags=re.S)
+    with open(md_path, "w") as f:
+        f.write(text)
 
 def table_captions_below(md_path):
     # Tables take the figure caption style: an italic "Table N: caption" line
