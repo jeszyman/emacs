@@ -46,9 +46,44 @@ def link_caption_words(md_path):
 #    rendered heading (lowercase, punctuation removed, spaces as hyphens,
 #    -1, -2 on repeated titles in document order), so a link to a heading
 #    lands on GitHub's own heading anchor.
+# 4. A figure (a paragraph holding only an image, with a #+caption) is
+#    written as its anchor, the image, and a visible "Figure N: caption" line;
+#    ox-md puts the caption only in the image's hover title. A link to a
+#    figure reads "Figure N", numbered over figures only; ox-md numbered it
+#    over all paragraphs.
 MD_OVERRIDES = r'''
 (require 'ox)
 (require 'ox-md)
+;; INFO carries the export's image rules; without it Org falls back to a
+;; default list that has no svg.
+(defun md-figure-p (el info)
+  (and (org-element-type-p el 'paragraph)
+       (org-element-property :caption el)
+       (org-html-standalone-image-p el info)))
+(defun md-figure-number (el info)
+  (org-export-get-ordinal el info '(paragraph) #'md-figure-p))
+(advice-add 'org-md-link :around
+            (lambda (orig link desc info)
+              (let* ((par (org-element-parent-element link))
+                     (dest (and (equal (org-element-property :type link) "fuzzy")
+                                (condition-case nil
+                                    (org-export-resolve-fuzzy-link link info)
+                                  (org-link-broken nil)))))
+                (cond
+                 ((and dest (md-figure-p dest info))
+                  (format "[%s](#%s)"
+                          (or (org-string-nw-p desc)
+                              (format "Figure %d" (md-figure-number dest info)))
+                          (org-export-get-reference dest info)))
+                 ((and (md-figure-p par info)
+                       (org-html-inline-image-p link info))
+                  (let ((cap (org-export-data (org-export-get-caption par) info)))
+                    (format "<a id=\"%s\"></a>\n\n![%s](%s)\n\n*Figure %d: %s*"
+                            (org-export-get-reference par info)
+                            (replace-regexp-in-string "[][\n]" " " cap)
+                            (org-element-property :path link)
+                            (md-figure-number par info) cap)))
+                 (t (funcall orig link desc info))))))
 (defvar md-heading-slugs nil)
 (defun md-plain-title (h)
   (let ((s (org-element-property :raw-value h)))
