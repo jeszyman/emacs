@@ -2,6 +2,31 @@
 :PROPERTIES:
 :ID:       a49abc44-8e71-4a1a-bd35-a77849427c94
 :END:
+** Plans
+:PROPERTIES:
+:TODO_SET: plans
+:PLANS_SINCE: [2026-09-25 Fri]
+:END:
+*** COMPLETE Moonshot skill
+:PROPERTIES:
+:ID:       2b5b9c14-3c04-4846-b171-e9d783c77f82
+:END:
+[[file:docs/superpowers/plans/2026-03-11-moonshot-plan.md]]
+*** COMPLETE org-sleeper
+:PROPERTIES:
+:ID:       aa99f32a-85ed-4290-b20f-5a3c9cb26151
+:END:
+[[file:docs/superpowers/plans/2026-03-11-org-sleeper.md]]
+*** COMPLETE org-sleeper v2
+:PROPERTIES:
+:ID:       c4319f71-7a78-46c9-952b-ff88fda4ec0d
+:END:
+[[file:docs/superpowers/plans/2026-03-13-org-sleeper-v2-plan.md]]
+*** COMPLETE Mindjack
+:PROPERTIES:
+:ID:       98940fcc-36c6-4aa6-b228-50d6e2366149
+:END:
+[[file:docs/superpowers/plans/2026-03-14-mindjack-plan.md]]
 ** README                                                          :noexport:
 *** Change log
 - [2026-09-12 Sat] emacs-bedrock review: adopted built-in settings (bidi left-to-right, =repeat-mode=, =visual-wrap-prefix-mode=, clipboard-preserving kill, =ffap= reject, recursive minibuffers, notification auto-revert, off-screen paren context, corfu popupinfo, =tab-always-indent= complete, eglot event log off). Fixed =org-cite-biblatex-styles= (3-element list made every biblatex export fail). Replaced MELPA tree-sitter with built-in =treesit= (pinned python/bash grammars, remap python/sh, hooks on =*-base-mode-hook=). Removed duplicate orderless/marginalia/savehist/LaTeX-class/LatexMk/signature/eval-depth forms and dead helm bindings. Commit cb8c50e.
@@ -2693,6 +2718,7 @@ See YAS code.r
 examples:
 ,* Local variables
 #+TODO: WAITING(w@) TODO(t) INPROCESS(p) | CLOSEOUT DONE(d!) DELEGATED(@) CANCELED(@)
+#+TODO: FUTURE(h!) ACTIVE(j!) | COMPLETE(m!) SUPERSEDED(y@) DISCARDED(x@)
 #+property: header-args    :cache yes
 #+property: header-args    :exports none
 #+property: header-args    :eval never-export
