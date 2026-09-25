@@ -6,8 +6,10 @@ Script to generate Markdown files from Emacs Org-mode headers
 
 import argparse
 import os
+import re
 import subprocess
 import sys
+import tempfile
 
 def load_inputs():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -19,10 +21,63 @@ def main():
     args = load_inputs()
     generate_md_via_org(args.org_file, args.node_id)
     extracted_md_path = extract_md_path(args.org_file, args.node_id)
+    link_caption_words(extracted_md_path)
     print(f"Markdown exported to: {extracted_md_path}")
 
+def link_caption_words(md_path):
+    # ox-md links only the number of a table or figure reference
+    # ("Table [1](#x)"). Put the word inside the link: "[Table 1](#x)".
+    with open(md_path) as f:
+        text = f.read()
+    text = re.sub(r"\b(Table|Figure) \[(\d+)\]\(#", r"[\1 \2](#", text)
+    with open(md_path, "w") as f:
+        f.write(text)
+
+# Overrides loaded into the batch Emacs before export.
+# 1. Org gives each table or figure a random anchor (org-export-new-reference)
+#    that changes on every export. An element with a #+name uses that name as
+#    its anchor, at the target and in every link to it.
+# 2. Footnotes are written as native Markdown footnotes ([^label] in the text,
+#    "[^label]: text" at the end), which GitHub renders with links both ways.
+#    ox-md's own footnotes link the reference by label (fn.label) but the
+#    definition by number (fn.1), so a named footnote has two dead links.
+#    A numeric or missing label uses the footnote number.
+MD_OVERRIDES = r'''
+(require 'ox)
+(require 'ox-md)
+(advice-add 'org-export-get-reference :around
+            (lambda (orig datum info)
+              (or (org-element-property :name datum) (funcall orig datum info))))
+(defun md-footnote-label (label n)
+  (if (and label (not (string-match-p "\\`[0-9]+\\'" label)))
+      label
+    (number-to-string n)))
+(advice-add 'org-html-footnote-reference :around
+            (lambda (orig ref contents info)
+              (if (org-export-derived-backend-p (plist-get info :back-end) 'md)
+                  (format "[^%s]" (md-footnote-label
+                                   (org-element-property :label ref)
+                                   (org-export-get-footnote-number ref info)))
+                (funcall orig ref contents info))))
+(advice-add 'org-md--footnote-section :override
+            (lambda (info)
+              (let ((defs (org-export-collect-footnote-definitions info)))
+                (when defs
+                  (mapconcat
+                   (lambda (d)
+                     (format "[^%s]: %s"
+                             (md-footnote-label (nth 1 d) (nth 0 d))
+                             (replace-regexp-in-string
+                              "\n\\(.\\)" "\n    \\1"
+                              (org-trim (org-export-data (nth 2 d) info)))))
+                   defs "\n\n")))))
+'''
+
 def generate_md_via_org(org_file, node_id):
-    command = f'''/usr/local/bin/emacs --batch -l "${{HOME}}/repos/latex/emacs/latex_init.el" --eval "(progn
+    with tempfile.NamedTemporaryFile("w", suffix=".el", delete=False) as f:
+        f.write(MD_OVERRIDES)
+        overrides = f.name
+    command = f'''/usr/local/bin/emacs --batch -l "${{HOME}}/repos/latex/emacs/latex_init.el" -l "{overrides}" --eval "(progn
         (require 'org)
         (require 'org-id)
         (setq org-confirm-babel-evaluate nil)
@@ -36,6 +91,8 @@ def generate_md_via_org(org_file, node_id):
     except subprocess.CalledProcessError as e:
         print(f"Command failed with error: {e.stderr}")
         raise
+    finally:
+        os.unlink(overrides)
 
 def extract_md_path(org_file, node_id):
     command = f'''/usr/local/bin/emacs --batch -l "${{HOME}}/repos/latex/emacs/latex_init.el" --eval "(progn
