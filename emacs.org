@@ -2222,12 +2222,55 @@ def link_caption_words(md_path):
 #    ox-md's own footnotes link the reference by label (fn.label) but the
 #    definition by number (fn.1), so a named footnote has two dead links.
 #    A numeric or missing label uses the footnote number.
+# 3. A heading's anchor is its CUSTOM_ID, else the slug GitHub gives the
+#    rendered heading (lowercase, punctuation removed, spaces as hyphens,
+#    -1, -2 on repeated titles in document order), so a link to a heading
+#    lands on GitHub's own heading anchor.
 MD_OVERRIDES = r'''
 (require 'ox)
 (require 'ox-md)
+(defvar md-heading-slugs nil)
+(defun md-plain-title (h)
+  (let ((s (org-element-property :raw-value h)))
+    (setq s (replace-regexp-in-string "\\[\\[[^]]*\\]\\[\\([^]]*\\)\\]\\]" "\\1" s))
+    (replace-regexp-in-string "\\[\\[\\([^]]*\\)\\]\\]" "\\1" s)))
+(defun md-github-slug (s)
+  (replace-regexp-in-string
+   " " "-" (replace-regexp-in-string "[^[:alnum:] _-]" "" (downcase s))))
+(defun md-heading-slug (h info)
+  (let ((tree (plist-get info :parse-tree)))
+    (unless (eq (car md-heading-slugs) tree)
+      (let ((slugs (make-hash-table :test 'eq))
+            (seen (make-hash-table :test 'equal)))
+        (org-element-map tree 'headline
+          (lambda (x)
+            (let* ((base (md-github-slug (md-plain-title x)))
+                   (n (gethash base seen 0)))
+              (puthash x (if (= n 0) base (format "%s-%d" base n)) slugs)
+              (puthash base (1+ n) seen)))
+          info)
+        (setq md-heading-slugs (cons tree slugs))))
+    (gethash h (cdr md-heading-slugs))))
 (advice-add 'org-export-get-reference :around
             (lambda (orig datum info)
-              (or (org-element-property :name datum) (funcall orig datum info))))
+              (or (if (org-element-type-p datum 'headline)
+                      (or (org-element-property :CUSTOM_ID datum)
+                          (md-heading-slug datum info))
+                    (org-element-property :name datum))
+                  (funcall orig datum info))))
+;; ox-md writes a heading anchor only for id: links and tables of contents.
+;; A [[*Heading]] link also gets one, so the link works outside GitHub too.
+(advice-add 'org-md--headline-referred-p :around
+            (lambda (orig headline info)
+              (or (funcall orig headline info)
+                  (org-element-map (plist-get info :parse-tree) 'link
+                    (lambda (link)
+                      (and (equal (org-element-property :type link) "fuzzy")
+                           (eq headline
+                               (condition-case nil
+                                   (org-export-resolve-fuzzy-link link info)
+                                 (org-link-broken nil)))))
+                    info t))))
 (defun md-footnote-label (label n)
   (if (and label (not (string-match-p "\\`[0-9]+\\'" label)))
       label
