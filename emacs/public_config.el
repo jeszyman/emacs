@@ -104,6 +104,68 @@ For programmatic edits from emacsclient --eval. Saves the buffer."
 (scroll-bar-mode 'right) ;; Place scroll bar on the right side
 (scroll-bar-mode -1)
 
+;; Scroll by pixel instead of by line, so the mouse wheel and touchpad move
+;; through a tall inline image in steps instead of skipping it in one jump
+(pixel-scroll-precision-mode 1)
+
+;; C-n / C-p and the up/down arrows: scroll by pixels through a line taller than the space left in
+;; the window (an inline image) instead of jumping past it in one step.
+;; Plain `next-line' re-centers when point leaves the window, and window-start
+;; cannot sit partway into a line without a pixel offset (vscroll).
+(defvar my/pixel-line-goal-column 0
+  "Visual column kept across consecutive `my/next-line-pixel' and
+`my/previous-line-pixel' presses.")
+
+(defun my/line-fully-visible-p (pos)
+  "Non-nil if the screen line at POS is entirely inside the selected window."
+  (let ((vis (pos-visible-in-window-p pos nil t)))
+    (and vis (null (nth 2 vis)))))
+
+(defun my/pixel-line-move (n)
+  "Move point N (1 or -1) screen lines, scrolling by one line height in
+pixels first while the target line is not fully in the window.
+`line-move' resets the window's vscroll, so point moves with
+`vertical-motion' instead."
+  (unless (memq last-command '(my/next-line-pixel my/previous-line-pixel))
+    (setq my/pixel-line-goal-column (car (posn-col-row (posn-at-point)))))
+  (let ((target (save-excursion (and (= (vertical-motion n) n) (point)))))
+    (when (and target (not (my/line-fully-visible-p target)))
+      (if (> n 0)
+          (pixel-scroll-precision-scroll-down (default-line-height))
+        (pixel-scroll-precision-scroll-up (default-line-height))))
+    (cond
+     ((null target) (if (> n 0) (next-line 1) (previous-line 1)))
+     ((not (my/line-fully-visible-p target)))
+     (t (vertical-motion (cons my/pixel-line-goal-column n))))
+    ;; Once a text line is back at the window top, scroll off the pixel
+    ;; offset left over from the tall line so that line is not cut off.
+    ;; `pos-visible-in-window-p' gives (X Y RTOP RBOT ROWH VPOS) for a
+    ;; partly visible line; its full height is RTOP + ROWH + RBOT.
+    (let* ((vs (window-vscroll nil t))
+           (vis (pos-visible-in-window-p (window-start) nil t))
+           (full (and (nth 4 vis) (+ (nth 2 vis) (nth 3 vis) (nth 4 vis)))))
+      (when (and (> vs 0) full (<= full (default-line-height)))
+        (if (> n 0)
+            (pixel-scroll-precision-scroll-down (- full vs))
+          (pixel-scroll-precision-scroll-up vs))))))
+
+(defun my/next-line-pixel (&optional arg)
+  "Like `next-line', but scroll by pixels through lines taller than the
+space left in the window instead of jumping past them."
+  (interactive "p")
+  (if (eq arg 1) (my/pixel-line-move 1) (next-line arg)))
+
+(defun my/previous-line-pixel (&optional arg)
+  "Like `previous-line', but scroll by pixels through lines taller than
+the space left in the window instead of jumping past them."
+  (interactive "p")
+  (if (eq arg 1) (my/pixel-line-move -1) (previous-line arg)))
+
+(global-set-key (kbd "C-n") #'my/next-line-pixel)
+(global-set-key (kbd "C-p") #'my/previous-line-pixel)
+(global-set-key (kbd "<down>") #'my/next-line-pixel)
+(global-set-key (kbd "<up>") #'my/previous-line-pixel)
+
 ;
 ; Fringe- Set finge color to background
 ;https://emacs.stackexchange.com/a/31944/11502
