@@ -114,6 +114,32 @@ MD_OVERRIDES = r'''
                                     (org-export-resolve-fuzzy-link link info)
                                   (org-link-broken nil)))))
                 (cond
+                 ;; ox-md rewrites a link to a .org file as .md and drops a
+                 ;; ::*Heading target; keep the .org path and turn the heading
+                 ;; into GitHub's heading anchor.
+                 ((and (equal (org-element-property :type link) "file")
+                       (string-suffix-p ".org" (org-element-property :path link)))
+                  (let* ((path (org-element-property :path link))
+                         (opt (org-element-property :search-option link))
+                         (anchor (if (and opt (string-prefix-p "*" opt))
+                                     (concat "#" (md-github-slug (substring opt 1)))
+                                   "")))
+                    (format "[%s](%s%s)" (or (org-string-nw-p desc) path) path anchor)))
+                 ;; An id: link to a heading outside the export resolves to its
+                 ;; file; link to that .org file at the heading's anchor.
+                 ((and (equal (org-element-property :type link) "id")
+                       (stringp (condition-case nil (org-export-resolve-id-link link info)
+                                  (org-link-broken nil))))
+                  (let* ((file (org-export-resolve-id-link link info))
+                         (id (org-element-property :path link))
+                         (title (with-current-buffer (find-file-noselect file)
+                                  (org-with-wide-buffer
+                                   (let ((p (org-find-entry-with-id id)))
+                                     (when p (goto-char p) (org-get-heading t t t t))))))
+                         (rel (file-relative-name
+                               file (file-name-directory (plist-get info :input-file)))))
+                    (format "[%s](%s%s)" (or (org-string-nw-p desc) rel) rel
+                            (if title (concat "#" (md-github-slug title)) ""))))
                  ;; A table reference reads "Table N", numbered as ox-html
                  ;; numbers table captions.
                  ((and dest (org-element-type-p dest 'table)
