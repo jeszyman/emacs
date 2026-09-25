@@ -24,7 +24,22 @@ def main():
     link_caption_words(extracted_md_path)
     table_captions_below(extracted_md_path)
     strip_style_tags(extracted_md_path)
+    join_bibliography_numbers(extracted_md_path)
     print(f"Markdown exported to: {extracted_md_path}")
+
+def join_bibliography_numbers(md_path):
+    # A numeric csl style writes each entry's number and text as two <div>
+    # blocks, which GitHub shows on two lines. Join them into "N. text".
+    with open(md_path) as f:
+        text = f.read()
+    text = re.sub(
+        r'<div class="csl-left-margin">(.*?)</div><div class="csl-right-inline">(.*?)</div>',
+        r"\1 \2",
+        text,
+        flags=re.S,
+    )
+    with open(md_path, "w") as f:
+        f.write(text)
 
 def strip_style_tags(md_path):
     # The csl bibliography starts with a <style> tag. GitHub removes the tag
