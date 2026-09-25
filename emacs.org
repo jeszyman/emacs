@@ -2202,6 +2202,11 @@ https://www.reddit.com/r/emacs/comments/179t67l/window_management_share_your_dis
 :ID:       14a9e27b-c960-42cb-b052-536eaf6a22da
 :END:
 *** emacs_export_header_to_markdown.py
+:PROPERTIES:
+:ID:       68fc529a-94bc-42ed-b457-15e28d721af3
+:END:
+Exports one org heading (by =:ID:=) to Markdown with Org 9.7's ox-md plus overrides loaded into the batch Emacs, then post-processes the file. The Markdown it writes: a table's or figure's =#+name= is its anchor and links to it read "Table N" / "Figure N"; tables and figures carry an italic caption line under them; headings anchor on their CUSTOM_ID or GitHub's slug of the title; footnotes are native =[^label]=; links to =.org= files keep =.org= and heading targets become =file.org#slug=; a numeric csl bibliography is one line per entry and loses its =<style>= tag. Used by the rmeth README/METHOD exports ([[id:058d0bdd-037d-4186-aa08-7e6d5e8cfab3][rmeth, Working in this repo]]).
+
 #+begin_src python :tangle ./scripts/emacs_export_header_to_markdown.py
 #!/usr/bin/env python3
 
