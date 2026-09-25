@@ -2266,6 +2266,16 @@ MD_OVERRIDES = r'''
                                     (org-export-resolve-fuzzy-link link info)
                                   (org-link-broken nil)))))
                 (cond
+                 ;; A table reference reads "Table N", numbered as ox-html
+                 ;; numbers table captions.
+                 ((and dest (org-element-type-p dest 'table)
+                       (org-element-property :caption dest))
+                  (format "[%s](#%s)"
+                          (or (org-string-nw-p desc)
+                              (format "Table %d"
+                                      (org-export-get-ordinal
+                                       dest info nil #'org-html--has-caption-p)))
+                          (org-export-get-reference dest info)))
                  ((and dest (md-figure-p dest info))
                   (format "[%s](#%s)"
                           (or (org-string-nw-p desc)
