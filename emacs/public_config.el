@@ -1496,6 +1496,16 @@ TABLE-NAME is the name of the table identified as #+name."
         nil)))
 ;; Needed for no y/n prompt at linked agenda execution
 (setq org-confirm-elisp-link-function nil)
+;; Jumping from the agenda to an entry (RET, TAB) saves the agenda position
+;; on the org mark ring, so C-$ (org-mark-ring-goto) returns to the agenda
+;; the same way it returns from a followed link.
+(defun my/org-agenda-push-mark (&rest _)
+  "Save the agenda position on the org mark ring so C-$ returns to it."
+  (org-mark-ring-push))
+
+(with-eval-after-load 'org-agenda
+  (advice-add 'org-agenda-switch-to :before #'my/org-agenda-push-mark)
+  (advice-add 'org-agenda-goto :before #'my/org-agenda-push-mark))
 ;; :plain link type
 ;; https://claude.ai/chat/c775f0eb-fa91-45b4-82d6-e1a0df8b5526
 ;; #+name: org_plain_links

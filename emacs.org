@@ -5670,6 +5670,18 @@ TABLE-NAME is the name of the table identified as #+name."
 (setq org-confirm-elisp-link-function nil)
 
 #+end_src
+#+begin_src emacs-lisp
+;; Jumping from the agenda to an entry (RET, TAB) saves the agenda position
+;; on the org mark ring, so C-$ (org-mark-ring-goto) returns to the agenda
+;; the same way it returns from a followed link.
+(defun my/org-agenda-push-mark (&rest _)
+  "Save the agenda position on the org mark ring so C-$ returns to it."
+  (org-mark-ring-push))
+
+(with-eval-after-load 'org-agenda
+  (advice-add 'org-agenda-switch-to :before #'my/org-agenda-push-mark)
+  (advice-add 'org-agenda-goto :before #'my/org-agenda-push-mark))
+#+end_src
 ***** :plain link type
 :PROPERTIES:
 :ID:       0f1b7abb-233b-4e81-abcb-e424e9b860e4
@@ -8623,6 +8635,7 @@ Show true (absolute) line numbers from the parent buffer in the mode line of an 
 
 *** Custom elisp utilities
 - Custom transient menu — see [[https://github.com/karthink/calc-transient][calc-transient]] for example
+- Publish the small behavior fixes in this config as a shared package or repo others can install (e.g. the agenda jump that saves its position so C-$ returns to the agenda, under Base Emacs > Org-mode > Agenda)
 
 
 **** CANCELED run-gnome-ctrl
