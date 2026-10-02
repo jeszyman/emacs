@@ -8168,6 +8168,7 @@ https://github.com/joaotavora/yasnippet/issues/998
   (global-org-repeat-by-cron-mode))
 #+end_src
 - https://github.com/TomoeMami/org-repeat-by-cron.el
+- A =:REPEAT_CRON:= value stored in double quotes loses its minute: the package reads the leading ="30= of ="30 13 * * 3#1,3#2,3#3,3#5"= as minute 0, so marking the [[id:8fe3f336-c9fa-484e-bf79-fb24b379a949][CANPREDICT planning task]] DONE moved it to 13:00 instead of 13:30 (batch test 2026-10-01: quoted 13:00, unquoted 13:30). Rules whose minute is 0, or that have no time fields, give the same time either way.
 - The package moves only SCHEDULED and DEADLINE. The block below extends it to an appointment: a TODO entry with a =:REPEAT_TS_CRON:= rule and a plain active timestamp in its body (e.g. =<2026-09-23 Wed 14:00-15:00>= with ="0 14 * * 3#4"=) moves that timestamp to the next cron match when marked DONE, and returns to TODO. Only the first body timestamp follows the rule; a SCHEDULED without a repeater on the same entry is deleted by org's repeat step, and a DEADLINE without one does not move. Diary sexps are not used for this because they cannot be cycled with a TODO state.
 #+begin_src emacs-lisp
 ;; Mechanism: before org's repeat step, a temporary "+1d" repeater is
