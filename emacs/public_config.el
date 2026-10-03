@@ -1,15 +1,27 @@
 (defun jg/org-at-id-nosteal (id fn)
   "Call FN with point at org entry ID. Never touches windows, frames, or folds.
-For programmatic edits from emacsclient --eval. Saves the buffer."
-  (let ((m (org-id-find id 'marker)))
-    (unless m (error "jg/org-at-id-nosteal: no entry with ID %s" id))
-    (unwind-protect
-        (with-current-buffer (marker-buffer m)
-          (org-with-wide-buffer
-           (goto-char m)
-           (prog1 (funcall fn)
-             (let ((inhibit-message t)) (save-buffer)))))
-      (move-marker m nil))))
+For programmatic edits from emacsclient --eval. Saves the buffer.
+A prompt opened inside an --eval blocks every emacsclient call until someone answers it
+in the Emacs frame, so FN runs with `inhibit-interaction': any minibuffer read signals
+instead, and the call returns \"ERROR: ...\" with the buffer left unsaved.
+State-change notes are logged as timestamps and written at once (no *Org Note* buffer),
+and a changed-on-disk file is reread without asking."
+  (condition-case err
+      (let* ((inhibit-interaction t)
+             (org-inhibit-logging 'note)
+             (query-about-changed-file nil)
+             (m (org-id-find id 'marker)))
+        (unless m (error "jg/org-at-id-nosteal: no entry with ID %s" id))
+        (unwind-protect
+            (with-current-buffer (marker-buffer m)
+              (org-with-wide-buffer
+               (goto-char m)
+               (prog1 (funcall fn)
+                 (when (memq 'org-add-log-note post-command-hook)
+                   (org-add-log-note))
+                 (let ((inhibit-message t)) (save-buffer)))))
+          (move-marker m nil)))
+    (error (format "ERROR: %S" err))))
 ;; Base Emacs
 ;; - Frozen Emacs: =pkill -USR2 emacs=
 
@@ -3087,6 +3099,19 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
             (org-display-inline-images t t))
           (message "File created and linked..."))
       (message "You're in a not saved buffer! Save it first!"))))
+;; org-table-widget
+;; [[https://github.com/yibie/org-table-widget][github: yibie/org-table-widget]]
+;; - Draws Org tables as aligned widgets over the unchanged source text: long cells wrap to the window, tall tables scroll row by row, and a scrolled-off header row stays in the window's header line. Export, =#+TBLFM= formulas and Babel see the plain table.
+;; - Editing: =e= on a drawn row shows the Org source with point on that row; leaving the table draws it again. ~M-x org-table-widget-toggle~ switches the table at point, ~M-x org-table-widget-mode~ the whole buffer. The keyboard cannot reach links in a drawn row (the row is one cursor stop); click them, or press =e= first.
+;; - Needs TextUI from the same author and a graphical frame (terminal frames keep plain tables); neither is on MELPA. If org-modern is enabled, set =org-modern-table= to nil so the two do not style the same table.
+
+(use-package textui
+  :vc (:url "https://github.com/yibie/textui" :vc-backend Git :rev :newest))
+
+(use-package org-table-widget
+  :after (org textui)
+  :vc (:url "https://github.com/yibie/org-table-widget" :vc-backend Git :rev :newest)
+  :hook (org-mode . org-table-widget-mode))
 ;; ox-gfm
 
 (use-package ox-gfm
