@@ -441,6 +441,47 @@ the space left in the window instead of jumping past them."
 ; ----------------- ;
 
 (setq require-final-newline nil)
+
+;; #+name: server-eval-noprompt
+
+;; An emacsclient --eval with no frame of its own comes from a script or
+;; another program, not from someone at the keyboard. If its code reaches a
+;; question about a file that changed on disk, the question opens in whichever
+;; frame is selected and every later emacsclient call waits behind it. Inside
+;; such an eval: a stale buffer with no unsaved edits is reread from disk
+;; without asking (no edits are lost), and a y/n question or the "changed on
+;; disk; really edit the buffer?" check signals an error that is returned to
+;; the client instead. Clients that open a frame (-c, -t) keep the questions.
+;; Advice, not cl-letf: userlock.el autoloads on the first such edit and its
+;; defun would replace a temporary function binding; advice survives it.
+;; Regression test: scripts/test-server-eval-noprompt.sh (block below).
+(defvar jg--server-eval-no-prompts nil
+  "Non-nil while a frameless emacsclient --eval runs.")
+
+(defun jg/server-eval-refuse-prompt (orig prompt &rest args)
+  (if jg--server-eval-no-prompts
+      (error "emacsclient --eval refused to ask: %s"
+             (string-trim (format "%s" prompt)))
+    (apply orig prompt args)))
+
+(defun jg/server-eval-refuse-supersession (orig filename)
+  (if jg--server-eval-no-prompts
+      (signal 'file-supersession
+              (list "File changed on disk since visited; emacsclient --eval did not edit the buffer"
+                    filename))
+    (funcall orig filename)))
+
+(defun jg/server-eval-without-prompts (orig expr proc)
+  (if (and proc (process-get proc 'frame))
+      (funcall orig expr proc)
+    (let ((jg--server-eval-no-prompts t)
+          (revert-without-query '(".")))
+      (funcall orig expr proc))))
+
+(advice-add 'yes-or-no-p :around #'jg/server-eval-refuse-prompt)
+(advice-add 'y-or-n-p :around #'jg/server-eval-refuse-prompt)
+(advice-add 'ask-user-about-supersession-threat :around #'jg/server-eval-refuse-supersession)
+(advice-add 'server-eval-and-print :around #'jg/server-eval-without-prompts)
 (defun toggle-theme ()
   "Toggle between dark and light themes."
   (interactive)
@@ -3479,6 +3520,7 @@ includes ~/.local/bin."
   (global-org-repeat-by-cron-mode))
 
 ;; - https://github.com/TomoeMami/org-repeat-by-cron.el
+;; - A =:REPEAT_CRON:= value stored in double quotes loses its minute: the package reads the leading ="30= of ="30 13 * * 3#1,3#2,3#3,3#5"= as minute 0, so marking the [[id:8fe3f336-c9fa-484e-bf79-fb24b379a949][CANPREDICT planning task]] DONE moved it to 13:00 instead of 13:30 (batch test 2026-10-01: quoted 13:00, unquoted 13:30). Rules whose minute is 0, or that have no time fields, give the same time either way.
 ;; - The package moves only SCHEDULED and DEADLINE. The block below extends it to an appointment: a TODO entry with a =:REPEAT_TS_CRON:= rule and a plain active timestamp in its body (e.g. =<2026-09-23 Wed 14:00-15:00>= with ="0 14 * * 3#4"=) moves that timestamp to the next cron match when marked DONE, and returns to TODO. Only the first body timestamp follows the rule; a SCHEDULED without a repeater on the same entry is deleted by org's repeat step, and a DEADLINE without one does not move. Diary sexps are not used for this because they cannot be cycled with a TODO state.
 
 ;; Mechanism: before org's repeat step, a temporary "+1d" repeater is
