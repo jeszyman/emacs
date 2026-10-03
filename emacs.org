@@ -29,6 +29,7 @@
 [[file:docs/superpowers/plans/2026-03-14-mindjack-plan.md]]
 ** README                                                          :noexport:
 *** Change log
+- [2026-10-03 Sat] Frameless =emacsclient --eval= calls no longer open file-changed-on-disk questions (=save-buffer= "Save anyway?", =find-file-noselect= "Reread from disk?", "really edit the buffer?") that blocked the server for every later call: block =server-eval-noprompt= under Miscellaneous rereads a stale unmodified buffer silently and returns an error for the rest. Regression test =scripts/test-server-eval-noprompt.sh= (9 checks pass). The Claude edit hook (=~/.claude/mods/emacs-sync=) now refuses an edit when that save fails, so its revert cannot discard unsaved buffer text.
 - [2026-09-12 Sat] emacs-bedrock review: adopted built-in settings (bidi left-to-right, =repeat-mode=, =visual-wrap-prefix-mode=, clipboard-preserving kill, =ffap= reject, recursive minibuffers, notification auto-revert, off-screen paren context, corfu popupinfo, =tab-always-indent= complete, eglot event log off). Fixed =org-cite-biblatex-styles= (3-element list made every biblatex export fail). Replaced MELPA tree-sitter with built-in =treesit= (pinned python/bash grammars, remap python/sh, hooks on =*-base-mode-hook=). Removed duplicate orderless/marginalia/savehist/LaTeX-class/LatexMk/signature/eval-depth forms and dead helm bindings. Commit cb8c50e.
 - [2026-03-18 Wed] Fixed org MCP tools not registering: stale =public_config.elc= (Sep 2025) was loaded instead of current =.el= source. Deleted =.elc=; tools (=org_outline=, =org_subtree_by_id=, =org_subtree_by_heading=, =org_ql_query=, =org_refile_subtree=) will auto-register on next Emacs restart.
 - [2026-03-17 Tue] Tangle preamble inserter: moved from private.org to emacs.org =****** Tangle preamble inserter= under Source code and tangle. Replaced hardcoded extension→comment-char cond chain with =set-auto-mode= / =comment-start= auto-detection (covers all Emacs-known languages). Fallback =# = for unknown modes. Fixes =.sty= / =.cls= / =.tex= getting =#= preambles instead of =%=.
@@ -4360,6 +4361,106 @@ Three backup mechanisms are active, each covering a different failure mode:
 ; ----------------- ;
 
 (setq require-final-newline nil)
+#+end_src
+
+#+name: server-eval-noprompt
+#+begin_src emacs-lisp
+;; An emacsclient --eval with no frame of its own comes from a script or
+;; another program, not from someone at the keyboard. If its code reaches a
+;; question about a file that changed on disk, the question opens in whichever
+;; frame is selected and every later emacsclient call waits behind it. Inside
+;; such an eval: a stale buffer with no unsaved edits is reread from disk
+;; without asking (no edits are lost), and a y/n question or the "changed on
+;; disk; really edit the buffer?" check signals an error that is returned to
+;; the client instead. Clients that open a frame (-c, -t) keep the questions.
+;; Advice, not cl-letf: userlock.el autoloads on the first such edit and its
+;; defun would replace a temporary function binding; advice survives it.
+;; Regression test: scripts/test-server-eval-noprompt.sh (block below).
+(defvar jg--server-eval-no-prompts nil
+  "Non-nil while a frameless emacsclient --eval runs.")
+
+(defun jg/server-eval-refuse-prompt (orig prompt &rest args)
+  (if jg--server-eval-no-prompts
+      (error "emacsclient --eval refused to ask: %s"
+             (string-trim (format "%s" prompt)))
+    (apply orig prompt args)))
+
+(defun jg/server-eval-refuse-supersession (orig filename)
+  (if jg--server-eval-no-prompts
+      (signal 'file-supersession
+              (list "File changed on disk since visited; emacsclient --eval did not edit the buffer"
+                    filename))
+    (funcall orig filename)))
+
+(defun jg/server-eval-without-prompts (orig expr proc)
+  (if (and proc (process-get proc 'frame))
+      (funcall orig expr proc)
+    (let ((jg--server-eval-no-prompts t)
+          (revert-without-query '(".")))
+      (funcall orig expr proc))))
+
+(advice-add 'yes-or-no-p :around #'jg/server-eval-refuse-prompt)
+(advice-add 'y-or-n-p :around #'jg/server-eval-refuse-prompt)
+(advice-add 'ask-user-about-supersession-threat :around #'jg/server-eval-refuse-supersession)
+(advice-add 'server-eval-and-print :around #'jg/server-eval-without-prompts)
+#+end_src
+
+#+name: test-server-eval-noprompt
+#+begin_src bash :tangle ./scripts/test-server-eval-noprompt.sh :shebang "#!/usr/bin/env bash"
+# Regression test for the block server-eval-noprompt: an emacsclient --eval that
+# meets a file-changed-on-disk question must answer at once instead of blocking
+# the Emacs server. Each case runs in a private scratch daemon (socket
+# emacs-noprompt-test, one hidden X frame; the running Emacs is never touched),
+# first without the block, where every case must block (proof the test reaches
+# the questions), then with it, where none may. Needs DISPLAY. Exit 0 = pass.
+set -u
+ORG="${1:-$HOME/repos/emacs/emacs.org}"
+SOCK=emacs-noprompt-test
+FIX=$(mktemp --suffix=.el)
+trap 'rm -f "$FIX"' EXIT
+emacs -Q --batch --eval "(progn (require 'org) (with-temp-buffer (insert-file-contents \"$ORG\") (org-mode) (org-babel-goto-named-src-block \"server-eval-noprompt\") (write-region (org-element-property :value (org-element-at-point)) nil \"$FIX\")))" 2>/dev/null
+[ -s "$FIX" ] || { echo "FAIL: block server-eval-noprompt not found in $ORG"; exit 1; }
+
+ec() { timeout "$1" emacsclient -s "$SOCK" --eval "$2" 2>&1; echo "exit=$?"; }
+stop() { timeout 2 emacsclient -s "$SOCK" --eval '(kill-emacs)' >/dev/null 2>&1; pkill -f "[d]aemon=emacs-noprompt-test"; sleep 0.5; }
+start() {
+  emacs -Q --daemon="$SOCK" >/dev/null 2>&1
+  ec 5 '(select-frame (make-frame-on-display (getenv "DISPLAY") (quote ((visibility . nil)))))' >/dev/null
+  if [ -n "$1" ]; then ec 5 "(load \"$1\" nil t)" >/dev/null; fi
+}
+
+# Modified buffer, file changed on disk, then save-buffer.
+case1() { local f; f=$(mktemp --suffix=.org); printf '* a\n' >"$f"
+  ec 3 "(with-current-buffer (find-file-noselect \"$f\") (goto-char (point-max)) (insert \"buffer edit\") nil)" >/dev/null
+  sleep 1.1; printf '* a\n* disk edit\n' >"$f"
+  ec 4 "(with-current-buffer (get-file-buffer \"$f\") (save-buffer) nil)"; rm -f "$f"; }
+# Unmodified buffer, file changed on disk, then find-file-noselect.
+case2() { local f; f=$(mktemp --suffix=.org); printf '* b\n' >"$f"
+  ec 3 "(progn (find-file-noselect \"$f\") nil)" >/dev/null
+  sleep 1.1; printf '* b\n* disk edit 2\n' >"$f"
+  ec 4 "(with-current-buffer (find-file-noselect \"$f\") (buffer-substring-no-properties (point-min) (point-max)))"; rm -f "$f"; }
+# Unmodified buffer, file changed on disk, then an eval inserts text.
+case3() { local f; f=$(mktemp --suffix=.org); printf '* c\n' >"$f"
+  ec 3 "(progn (find-file-noselect \"$f\") nil)" >/dev/null
+  sleep 1.1; printf '* c\n* disk edit 3\n' >"$f"
+  ec 4 "(with-current-buffer (get-file-buffer \"$f\") (goto-char (point-max)) (insert \"x\") nil)"; rm -f "$f"; }
+
+fail=0
+check() {  # name, output, grep pattern that must match
+  if printf '%s' "$2" | grep -q -- "$3"; then echo "pass: $1"; else echo "FAIL: $1"; printf '%s\n' "$2" | sed 's/^/    /'; fail=1; fi
+}
+for c in case1 case2 case3; do
+  stop; start ""; check "$c blocks without the fix" "$($c)" "exit=124"
+  stop; start "$FIX"; out=$($c)
+  case $c in
+    case1) check "$c returns an error with the fix" "$out" "refused to ask: .*Save anyway" ;;
+    case2) check "$c rereads the file with the fix" "$out" "disk edit 2" ;;
+    case3) check "$c returns an error with the fix" "$out" "did not edit the buffer" ;;
+  esac
+  check "$c server still answers after" "$(ec 3 '(+ 1 1)')" "^2$"
+done
+stop
+exit $fail
 #+end_src
 #+begin_src emacs-lisp
 (defun toggle-theme ()
