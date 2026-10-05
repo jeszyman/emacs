@@ -2996,7 +2996,9 @@ With no marks, copies the current selection's display text."
 ;; - org-cite-style management of glossary/acronyms/index terms: defined under a =* Acronyms= description list per document, referenced in prose, expanded on export.
 ;; - Auto-detects terms in body text; headings are excluded by default (=org-glossary-autodetect-in-headings= is nil), so heading text stays literal for forced short forms.
 ;; - Default export does its own "long (short)" first-use expansion, so no LaTeX package is required. The LaTeX =acronym= package is kept loaded as a manual backup for edge cases; see [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][Emacs LaTeX setup]] in latex.org.
-;; - Load only. Enable live term display in a document with ~M-x org-glossary-mode~; export works without the minor mode.
+;; - ~org-glossary-mode~ turns on in every org buffer through ~org-mode-hook~ (~jg/org-glossary-mode-maybe~), except basenames listed in ~jg/org-glossary-exclude-files~ (cal.org); a failure only logs a message. Export works without the minor mode.
+;; - [2026-10-05 Mon] An empty nested =*** Glossary= under career.org's =** Acronyms= made ~org-glossary-mode~ raise =args-out-of-range=, which aborted ~org-mode-hook~ before font-lock was enabled, so org buffers lost syntax highlighting on open and on auto-revert. ~jg/org-glossary-mode-maybe~ now wraps the call in ~with-demoted-errors~; the empty heading was deleted; regression test =tests/org-glossary-hook-test.el= (block below).
+;; - [2026-10-05 Mon] CPU profile of one revert plus full ~font-lock-ensure~ of career.org in the daemon, glossary mode on: 4.9 s (one run). ~org-glossary--fontify-find-next~ took 1138 samples, 30% of the profile, mostly in recursive ~org-glossary--within-definition-p~. Earlier the same day, a revert and tangle of emacs.org and a revert of career.org each held the daemon at 100% CPU for over 2 minutes. This profile does not reproduce that, so the cause of those stalls is still unknown.
 
 (use-package org-glossary
   :after org
@@ -3040,14 +3042,23 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
 (defvar jg/org-glossary-exclude-files '("cal.org")
   "Basenames of org files where `org-glossary-mode' must NOT auto-enable.")
 (defun jg/org-glossary-mode-maybe ()
-  "Enable `org-glossary-mode' unless the file is in `jg/org-glossary-exclude-files'."
+  "Schedule `org-glossary-mode' for this buffer unless its file is in `jg/org-glossary-exclude-files'.
+The mode is enabled from an idle timer after `org-mode-hook' returns, so an
+error, a slow term scan, or a C-g during the enable cannot stop the rest of the
+hook (including `global-font-lock-mode-enable-in-buffer')."
   (when (and buffer-file-name
              (not (member (file-name-nondirectory buffer-file-name)
                           jg/org-glossary-exclude-files)))
-    ;; An error here would abort the rest of org-mode-hook, including
-    ;; global-font-lock-mode-enable-in-buffer, leaving the buffer unfontified.
-    (with-demoted-errors "org-glossary-mode failed: %S"
-      (org-glossary-mode 1))))
+    (let ((buf (current-buffer)))
+      (run-with-idle-timer
+       0.5 nil
+       (lambda ()
+         (when (buffer-live-p buf)
+           (with-current-buffer buf
+             (when (and (derived-mode-p 'org-mode)
+                        (not (bound-and-true-p org-glossary-mode)))
+               (with-demoted-errors "org-glossary-mode failed: %S"
+                 (org-glossary-mode 1))))))))))
 ;; Auto-enable ON (2026-07-24). The factorial startup hang is fixed by the
 ;; override above, so org-glossary-mode is enabled in every org buffer via this
 ;; hook. Caveat: org-alert force-opens all agenda files at startup, so many large
@@ -3155,7 +3166,30 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
 (use-package org-table-widget
   :after (org textui)
   :vc (:url "https://github.com/yibie/org-table-widget" :vc-backend Git :rev :newest)
-  :hook (org-mode . org-table-widget-mode))
+  :hook (org-mode . jg/org-table-widget-mode-maybe))
+
+(defvar jg/org-table-widget-max-buffer-size (* 200 1024)
+  "Org buffers larger than this many characters keep plain tables.")
+
+(defun jg/org-table-widget-mode-maybe ()
+  "Schedule `org-table-widget-mode' for a file-visiting org buffer no larger than `jg/org-table-widget-max-buffer-size'.
+The widget measures the pixel width of every table cell, which takes minutes in
+a large file (about 11 minutes for career.org, 1.2 MB with 498 table lines).
+It is enabled from an idle timer after `org-mode-hook' returns, so neither that
+time nor a C-g during it can stop the rest of the hook, including
+`global-font-lock-mode-enable-in-buffer'."
+  (when (and buffer-file-name
+             (<= (buffer-size) jg/org-table-widget-max-buffer-size))
+    (let ((buf (current-buffer)))
+      (run-with-idle-timer
+       0.5 nil
+       (lambda ()
+         (when (buffer-live-p buf)
+           (with-current-buffer buf
+             (when (and (derived-mode-p 'org-mode)
+                        (not (bound-and-true-p org-table-widget-mode)))
+               (with-demoted-errors "org-table-widget-mode failed: %S"
+                 (org-table-widget-mode 1))))))))))
 ;; ox-gfm
 
 (use-package ox-gfm

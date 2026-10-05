@@ -40,3 +40,45 @@ nested glossary-type heading, which would crash collection under
         (should (equal (jg/org-glossary-scan-file file)
                        (list (format "%s::*Glossary" file))))
       (delete-file file))))
+
+(ert-deftest jg/org-glossary-quit-keeps-font-lock ()
+  "A quit during `org-glossary-mode' leaves font-lock on in a visited org file."
+  (let ((file (make-temp-file "glossary-quit-" nil ".org" "* Heading\n")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'org-glossary-mode)
+                   (lambda (&rest _) (signal 'quit nil))))
+          (let ((buf (condition-case nil (find-file-noselect file)
+                       (quit (get-file-buffer file)))))
+            (unwind-protect
+                (with-current-buffer buf
+                  (should font-lock-mode))
+              (kill-buffer buf))))
+      (delete-file file))))
+
+(ert-deftest jg/org-table-widget-quit-keeps-font-lock ()
+  "A quit during `org-table-widget-mode' leaves font-lock on in a visited org file."
+  (let ((file (make-temp-file "table-widget-quit-" nil ".org"
+                              "* Heading\n| a | b |\n|---+---|\n| 1 | 2 |\n")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'org-table-widget-mode)
+                   (lambda (&rest _) (signal 'quit nil))))
+          (let ((buf (condition-case nil (find-file-noselect file)
+                       (quit (get-file-buffer file)))))
+            (unwind-protect
+                (with-current-buffer buf
+                  (should font-lock-mode))
+              (kill-buffer buf))))
+      (delete-file file))))
+
+(ert-deftest jg/org-table-widget-skips-large-buffers ()
+  "The table widget is not scheduled for an org buffer over the size limit."
+  (let ((jg/org-table-widget-max-buffer-size 10)
+        (scheduled nil))
+    (cl-letf (((symbol-function 'run-with-idle-timer)
+               (lambda (&rest _) (setq scheduled t))))
+      (with-temp-buffer
+        (setq buffer-file-name "/tmp/large.org")
+        (insert "* A heading longer than ten characters\n")
+        (jg/org-table-widget-mode-maybe)
+        (setq buffer-file-name nil)))
+    (should-not scheduled)))
