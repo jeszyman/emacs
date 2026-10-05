@@ -3044,7 +3044,10 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
   (when (and buffer-file-name
              (not (member (file-name-nondirectory buffer-file-name)
                           jg/org-glossary-exclude-files)))
-    (org-glossary-mode 1)))
+    ;; An error here would abort the rest of org-mode-hook, including
+    ;; global-font-lock-mode-enable-in-buffer, leaving the buffer unfontified.
+    (with-demoted-errors "org-glossary-mode failed: %S"
+      (org-glossary-mode 1))))
 ;; Auto-enable ON (2026-07-24). The factorial startup hang is fixed by the
 ;; override above, so org-glossary-mode is enabled in every org buffer via this
 ;; hook. Caveat: org-alert force-opens all agenda files at startup, so many large

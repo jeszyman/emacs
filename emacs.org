@@ -7635,8 +7635,9 @@ Suppress zenuml/core stderr popup on every mermaid eval.
 - org-cite-style management of glossary/acronyms/index terms: defined under a =* Acronyms= description list per document, referenced in prose, expanded on export.
 - Auto-detects terms in body text; headings are excluded by default (=org-glossary-autodetect-in-headings= is nil), so heading text stays literal for forced short forms.
 - Default export does its own "long (short)" first-use expansion, so no LaTeX package is required. The LaTeX =acronym= package is kept loaded as a manual backup for edge cases; see [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][Emacs LaTeX setup]] in latex.org.
-- Load only. Enable live term display in a document with ~M-x org-glossary-mode~; export works without the minor mode.
+- ~org-glossary-mode~ turns on in every org buffer through ~org-mode-hook~ (~jg/org-glossary-mode-maybe~), except basenames listed in ~jg/org-glossary-exclude-files~ (cal.org); a failure only logs a message. Export works without the minor mode.
 - [2026-10-05 Mon] An empty nested =*** Glossary= under career.org's =** Acronyms= made ~org-glossary-mode~ raise =args-out-of-range=, which aborted ~org-mode-hook~ before font-lock was enabled, so org buffers lost syntax highlighting on open and on auto-revert. ~jg/org-glossary-mode-maybe~ now wraps the call in ~with-demoted-errors~; the empty heading was deleted; regression test =tests/org-glossary-hook-test.el= (block below).
+- [2026-10-05 Mon] CPU profile of one revert plus full ~font-lock-ensure~ of career.org in the daemon, glossary mode on: 4.9 s (one run). ~org-glossary--fontify-find-next~ took 1138 samples, 30% of the profile, mostly in recursive ~org-glossary--within-definition-p~. Earlier the same day, a revert and tangle of emacs.org and a revert of career.org each held the daemon at 100% CPU for over 2 minutes. This profile does not reproduce that, so the cause of those stalls is still unknown.
 
 #+begin_src emacs-lisp
 (use-package org-glossary
@@ -7746,7 +7747,22 @@ Regression test, run in the live daemon: a failing ~org-glossary-mode~ must not 
                   (should font-lock-mode))
               (kill-buffer buf))))
       (delete-file file))))
+
+(ert-deftest jg/org-glossary-scan-skips-empty-nested ()
+  "The work.org scanner emits no source for a glossary heading holding an empty
+nested glossary-type heading, which would crash collection under
+`org-glossary-toplevel-only' nil; a sibling heading with terms is still emitted."
+  (let ((file (make-temp-file
+               "glossary-scan-" nil ".org"
+               (concat "* Acronyms\n- CTF :: Children's Tumor Foundation\n"
+                       "** Glossary\n"
+                       "* Glossary\n- cfDNA :: cell-free DNA\n"))))
+    (unwind-protect
+        (should (equal (jg/org-glossary-scan-file file)
+                       (list (format "%s::*Glossary" file))))
+      (delete-file file))))
 #+end_src
+- [2026-10-05 Mon] Claude session "org-glossary-fontlock-fix": [[elisp:(start-process "claude-resume" nil (expand-file-name "~/.claude/bin/claude-resume") "0829b881-7c41-4fe9-a03a-d6d41b10ce52" "/home/jeszyman")][resume]]
 
 **** [[id:45e28300-51fd-4ce7-aed1-15dca15022d4][Org-mode]]
 **** org-include-inline
