@@ -8136,14 +8136,14 @@ Built-in =treesit= (Emacs 29+) replaces the MELPA =tree-sitter= / =tree-sitter-l
    '(vterm-color-blue ((t (:foreground "#477EFC" :background "#477EFC"))))))
 #+end_src
 
-Apply an ansible playbook to a machine, in a vterm. TARGET-addressed: runs locally (=-c local=) when you are on TARGET, otherwise pushes over SSH (inventory =TARGET,=). Used by =elisp:= links in the maintenance.org weekly checklist so either machine can be maintained from either machine. The =--ask-vault-pass= prompt and output stay interactive in the vterm. Clears =ANSIBLE_SSH_ARGS= on the push path so the global GCP IAP ProxyCommand in [[file:~/.ansible.cfg][~/.ansible.cfg]] does not hijack the connection; TARGET is reached directly via [[file:~/.ssh/config.d/][~/.ssh/config.d]].
+Apply an ansible playbook to a machine, in a vterm. TARGET-addressed: runs locally (=-c local=) when you are on TARGET, otherwise pushes over SSH (inventory =TARGET,=). Used by =elisp:= links in the maintenance.org weekly checklist so either machine can be maintained from either machine. The =--ask-vault-pass= prompt and output stay interactive in the vterm. Clears =ANSIBLE_SSH_ARGS= on the push path so an =ssh_args= setting in [[file:~/.ansible.cfg][~/.ansible.cfg]] (such as a ProxyCommand for a cloud VM) cannot route the connection elsewhere; TARGET is reached directly via [[file:~/.ssh/config.d/][~/.ssh/config.d]].
 #+begin_src emacs-lisp
 (defun jg/ansible-run (playbook target &optional vault become)
   "Apply ansible PLAYBOOK to machine TARGET, in a vterm.
 If TARGET matches the local machine (`system-name'), run locally with
 -c local.  Otherwise push to TARGET over SSH (inventory \"TARGET,\"),
-clearing ANSIBLE_SSH_ARGS so the global GCP IAP ProxyCommand in
-~/.ansible.cfg does not hijack the connection.  With VAULT add
+clearing ANSIBLE_SSH_ARGS so an ssh_args setting in ~/.ansible.cfg
+cannot route the connection elsewhere.  With VAULT add
 --ask-vault-pass; with BECOME add --ask-become-pass."
   (let* ((pb (expand-file-name playbook))
          (default-directory (file-name-directory pb))
