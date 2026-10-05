@@ -7636,6 +7636,7 @@ Suppress zenuml/core stderr popup on every mermaid eval.
 - Auto-detects terms in body text; headings are excluded by default (=org-glossary-autodetect-in-headings= is nil), so heading text stays literal for forced short forms.
 - Default export does its own "long (short)" first-use expansion, so no LaTeX package is required. The LaTeX =acronym= package is kept loaded as a manual backup for edge cases; see [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][Emacs LaTeX setup]] in latex.org.
 - Load only. Enable live term display in a document with ~M-x org-glossary-mode~; export works without the minor mode.
+- [2026-10-05 Mon] An empty nested =*** Glossary= under career.org's =** Acronyms= made ~org-glossary-mode~ raise =args-out-of-range=, which aborted ~org-mode-hook~ before font-lock was enabled, so org buffers lost syntax highlighting on open and on auto-revert. ~jg/org-glossary-mode-maybe~ now wraps the call in ~with-demoted-errors~; the empty heading was deleted; regression test =tests/org-glossary-hook-test.el= (block below).
 
 #+begin_src emacs-lisp
 (use-package org-glossary
@@ -7684,7 +7685,10 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
   (when (and buffer-file-name
              (not (member (file-name-nondirectory buffer-file-name)
                           jg/org-glossary-exclude-files)))
-    (org-glossary-mode 1)))
+    ;; An error here would abort the rest of org-mode-hook, including
+    ;; global-font-lock-mode-enable-in-buffer, leaving the buffer unfontified.
+    (with-demoted-errors "org-glossary-mode failed: %S"
+      (org-glossary-mode 1))))
 ;; Auto-enable ON (2026-07-24). The factorial startup hang is fixed by the
 ;; override above, so org-glossary-mode is enabled in every org buffer via this
 ;; hook. Caveat: org-alert force-opens all agenda files at startup, so many large
@@ -7714,6 +7718,34 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
        (org-glossary--quicklookup (buffer-substring-no-properties beg end))
        t))
 (add-hook 'flyspell-incorrect-hook #'jg/flyspell-skip-glossary-terms)
+#+end_src
+
+Regression test, run in the live daemon: a failing ~org-glossary-mode~ must not stop ~org-mode-hook~ before ~global-font-lock-mode-enable-in-buffer~ runs, or org buffers lose syntax highlighting on every open and auto-revert.
+
+#+name: org-glossary-hook-test
+#+begin_src emacs-lisp :tangle ~/repos/emacs/tests/org-glossary-hook-test.el :mkdirp yes
+;;; org-glossary-hook-test.el --- live-daemon ERT test  -*- lexical-binding: t; -*-
+;; Run: emacsclient --socket-name ~/.emacs.d/server/server --eval
+;;   '(progn (load-file "~/repos/emacs/tests/org-glossary-hook-test.el")
+;;           (ert-stats-completed-unexpected (ert-run-tests-batch "jg/org-glossary")))'
+;; A result of 0 means pass.
+(require 'ert)
+(require 'cl-lib)
+
+(ert-deftest jg/org-glossary-error-keeps-font-lock ()
+  "An error from `org-glossary-mode' leaves font-lock on in a visited org file."
+  (should (memq #'jg/org-glossary-mode-maybe (default-value 'org-mode-hook)))
+  (let ((file (make-temp-file "glossary-hook-" nil ".org" "* Heading\n")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'org-glossary-mode)
+                   (lambda (&rest _) (signal 'args-out-of-range '(90 103)))))
+          (let ((buf (find-file-noselect file)))
+            (unwind-protect
+                (with-current-buffer buf
+                  (should (derived-mode-p 'org-mode))
+                  (should font-lock-mode))
+              (kill-buffer buf))))
+      (delete-file file))))
 #+end_src
 
 **** [[id:45e28300-51fd-4ce7-aed1-15dca15022d4][Org-mode]]
