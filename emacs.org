@@ -2524,7 +2524,10 @@ and a changed-on-disk file is reread without asking."
               (org-with-wide-buffer
                (goto-char m)
                (prog1 (funcall fn)
-                 (when (memq 'org-add-log-note post-command-hook)
+                 ;; `org-add-log-setup' adds the note to the global hook; the
+                 ;; buffer's own `post-command-hook' is buffer-local, so check both.
+                 (when (or (memq 'org-add-log-note post-command-hook)
+                           (memq 'org-add-log-note (default-value 'post-command-hook)))
                    (org-add-log-note))
                  (let ((inhibit-message t)) (save-buffer)))))
           (move-marker m nil)))
