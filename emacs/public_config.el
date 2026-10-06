@@ -17,7 +17,10 @@ and a changed-on-disk file is reread without asking."
               (org-with-wide-buffer
                (goto-char m)
                (prog1 (funcall fn)
-                 (when (memq 'org-add-log-note post-command-hook)
+                 ;; `org-add-log-setup' adds the note to the global hook; the
+                 ;; buffer's own `post-command-hook' is buffer-local, so check both.
+                 (when (or (memq 'org-add-log-note post-command-hook)
+                           (memq 'org-add-log-note (default-value 'post-command-hook)))
                    (org-add-log-note))
                  (let ((inhibit-message t)) (save-buffer)))))
           (move-marker m nil)))
@@ -2996,9 +2999,10 @@ With no marks, copies the current selection's display text."
 ;; - org-cite-style management of glossary/acronyms/index terms: defined under a =* Acronyms= description list per document, referenced in prose, expanded on export.
 ;; - Auto-detects terms in body text; headings are excluded by default (=org-glossary-autodetect-in-headings= is nil), so heading text stays literal for forced short forms.
 ;; - Default export does its own "long (short)" first-use expansion, so no LaTeX package is required. The LaTeX =acronym= package is kept loaded as a manual backup for edge cases; see [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][Emacs LaTeX setup]] in latex.org.
-;; - ~org-glossary-mode~ turns on in every org buffer through ~org-mode-hook~ (~jg/org-glossary-mode-maybe~), except basenames listed in ~jg/org-glossary-exclude-files~ (cal.org); a failure only logs a message. Export works without the minor mode.
+;; - ~org-glossary-mode~ turns on in every file-visiting org buffer from an idle timer that ~jg/org-glossary-mode-maybe~ sets on ~org-mode-hook~, except basenames listed in ~jg/org-glossary-exclude-files~ (cal.org); a failure only logs a message. Export works without the minor mode.
 ;; - [2026-10-05 Mon] An empty nested =*** Glossary= under career.org's =** Acronyms= made ~org-glossary-mode~ raise =args-out-of-range=, which aborted ~org-mode-hook~ before font-lock was enabled, so org buffers lost syntax highlighting on open and on auto-revert. ~jg/org-glossary-mode-maybe~ now wraps the call in ~with-demoted-errors~; the empty heading was deleted; regression test =tests/org-glossary-hook-test.el= (block below).
-;; - [2026-10-05 Mon] CPU profile of one revert plus full ~font-lock-ensure~ of career.org in the daemon, glossary mode on: 4.9 s (one run). ~org-glossary--fontify-find-next~ took 1138 samples, 30% of the profile, mostly in recursive ~org-glossary--within-definition-p~. Earlier the same day, a revert and tangle of emacs.org and a revert of career.org each held the daemon at 100% CPU for over 2 minutes. This profile does not reproduce that, so the cause of those stalls is still unknown.
+;; - [2026-10-05 Mon] CPU profile of one revert plus full ~font-lock-ensure~ of career.org in the daemon, glossary mode on: 4.9 s (one run). ~org-glossary--fontify-find-next~ took 1138 samples, 30% of the profile, mostly in recursive ~org-glossary--within-definition-p~. Earlier the same day, a revert and tangle of emacs.org and a revert of career.org each held the daemon at 100% CPU for over 2 minutes. This profile does not reproduce that because glossary was not the slow step: a later profile found ~org-table-widget-mode~ spending 99.1% of a 670 s career.org revert measuring cell widths (see [[id:43dc6823-b58d-4d2e-bb5f-c1e904476b68][org-table-widget]]).
+;; - [2026-10-05 Mon] A C-g during a slow career.org revert (11:07) left the buffer unfontified again: a quit is not an error, so ~with-demoted-errors~ did not catch it, and it stopped ~org-mode-hook~ before font-lock. ~jg/org-glossary-mode-maybe~ now schedules the mode on a 0.5 s idle timer instead of enabling it inside the hook; test ~jg/org-glossary-quit-keeps-font-lock~. The slow step was ~org-table-widget-mode~ (see [[id:43dc6823-b58d-4d2e-bb5f-c1e904476b68][org-table-widget]]).
 
 (use-package org-glossary
   :after org
@@ -3159,6 +3163,8 @@ hook (including `global-font-lock-mode-enable-in-buffer')."
 ;; - Draws Org tables as aligned widgets over the unchanged source text: long cells wrap to the window, tall tables scroll row by row, and a scrolled-off header row stays in the window's header line. Export, =#+TBLFM= formulas and Babel see the plain table.
 ;; - Editing: =e= on a drawn row shows the Org source with point on that row; leaving the table draws it again. ~M-x org-table-widget-toggle~ switches the table at point, ~M-x org-table-widget-mode~ the whole buffer. The keyboard cannot reach links in a drawn row (the row is one cursor stop); click them, or press =e= first.
 ;; - Needs TextUI from the same author and a graphical frame (terminal frames keep plain tables); neither is on MELPA. If org-modern is enabled, set =org-modern-table= to nil so the two do not style the same table.
+;; - Turned on by ~jg/org-table-widget-mode-maybe~ from a 0.5 s idle timer after ~org-mode-hook~, only in file-visiting buffers up to ~jg/org-table-widget-max-buffer-size~ (200 KB); larger files keep plain tables.
+;; - [2026-10-05 Mon] CPU profile of one career.org revert (1.2 MB, 498 table lines) in the daemon: 670 s, 99.1% inside ~org-table-widget-mode~, almost all in ~window-text-pixel-size~ called by ~org-table-widget--widths~ to measure cell widths. A C-g during that time stopped ~org-mode-hook~ before font-lock, leaving the buffer unfontified. After the size limit and idle timer: the same revert took 3.1 s (one run), with font-lock on. Tests ~jg/org-table-widget-quit-keeps-font-lock~ and ~jg/org-table-widget-skips-large-buffers~ in =tests/org-glossary-hook-test.el=.
 
 (use-package textui
   :vc (:url "https://github.com/yibie/textui" :vc-backend Git :rev :newest))
