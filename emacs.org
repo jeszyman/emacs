@@ -3946,6 +3946,11 @@ Bidirectional-text scanning runs on every redisplay. Forcing left-to-right and d
 (setq bidi-inhibit-bpa t)
 #+end_src
 
+When scroll commands arrive faster than redisplay can keep up, Emacs skips fontifying the screens scrolled past, which keeps fast scrolling responsive in the large org files. Pattern from [[https://www.jamescherti.com/emacs-user-interface-better-responsiveness-and-latency/][James Cherti]].
+#+begin_src emacs-lisp
+(setq fast-but-imprecise-scrolling t)
+#+end_src
+
 **** Dired
 :PROPERTIES:
 :ID:       b3bd2685-ea78-4097-ae4c-e4a5e7a422ea
