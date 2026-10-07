@@ -3565,6 +3565,7 @@ includes ~/.local/bin."
 ;; - https://github.com/TomoeMami/org-repeat-by-cron.el
 ;; - A =:REPEAT_CRON:= value stored in double quotes loses its minute: the package reads the leading ="30= of ="30 13 * * 3#1,3#2,3#3,3#5"= as minute 0, so marking the [[id:8fe3f336-c9fa-484e-bf79-fb24b379a949][CANPREDICT planning task]] DONE moved it to 13:00 instead of 13:30 (batch test 2026-10-01: quoted 13:00, unquoted 13:30). Rules whose minute is 0, or that have no time fields, give the same time either way.
 ;; - The package moves only SCHEDULED and DEADLINE. The block below extends it to an appointment: a TODO entry with a =:REPEAT_TS_CRON:= rule and a plain active timestamp in its body (e.g. =<2026-09-23 Wed 14:00-15:00>= with ="0 14 * * 3#4"=) moves that timestamp to the next cron match when marked DONE, and returns to TODO. Only the first body timestamp follows the rule; a SCHEDULED without a repeater on the same entry is deleted by org's repeat step, and a DEADLINE without one does not move. Diary sexps are not used for this because they cannot be cycled with a TODO state.
+;; - On DONE, =org-auto-repeat-maybe= shifts every repeating timestamp in the entry, not only the first: it loops =re-search-forward org-repeat-re= up to =org-entry-end-position= (org.el, Emacs 29.1, near line 10824). An entry holding two =++1w= body timestamps (a Tuesday and a Friday meeting) moves both a week on each DONE. A two-day series is one =:REPEAT_TS_CRON:= rule such as ="0 9 * * 2,5"= on one plain body timestamp.
 
 ;; Mechanism: before org's repeat step, a temporary "+1d" repeater is
 ;; added to the body timestamp so `org-auto-repeat-maybe' resets the
@@ -3606,11 +3607,12 @@ Runs from `org-after-todo-state-change-hook', before org's repeat step."
           (unless (string-match-p org-repeat-re ts)
             (replace-match (concat (substring ts 0 -1) " +1d>") t t)))))))
 
-(defun jg/repeat-ts-cron--next (rule orig)
+(defun jg/repeat-ts-cron--next (rule orig &optional from-orig)
   "Return the timestamp string for the first match of RULE after ORIG.
 The search starts at the later of ORIG and now, so a meeting marked
-DONE before it starts still moves to the following occurrence.  Time
-of day and range length are kept from ORIG."
+DONE before it starts still moves to the following occurrence; with
+FROM-ORIG it starts at ORIG, so feeding each result back in lists the
+series in order.  Time of day and range length are kept from ORIG."
   (let* ((arity (org-repeat-by-cron--cron-rule-arity rule))
          (has-time (string-match "\\([0-9]\\{1,2\\}\\):\\([0-9]\\{2\\}\\)" orig))
          ;; A 3-field rule takes its minute and hour from ORIG, so the
@@ -3622,7 +3624,9 @@ of day and range length are kept from ORIG."
                            (string-trim rule))
                  (org-repeat-by-cron--normalize-cron-rule rule)))
          (orig-time (org-time-string-to-time orig))
-         (base (if (time-less-p orig-time nil) (current-time) orig-time))
+         (base (if (and (not from-orig) (time-less-p orig-time nil))
+                   (current-time)
+                 orig-time))
          (next (and cron (org-repeat-by-cron-next-time cron base))))
     (when next
       (concat "<"

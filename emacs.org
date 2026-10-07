@@ -8473,11 +8473,12 @@ Runs from `org-after-todo-state-change-hook', before org's repeat step."
           (unless (string-match-p org-repeat-re ts)
             (replace-match (concat (substring ts 0 -1) " +1d>") t t)))))))
 
-(defun jg/repeat-ts-cron--next (rule orig)
+(defun jg/repeat-ts-cron--next (rule orig &optional from-orig)
   "Return the timestamp string for the first match of RULE after ORIG.
 The search starts at the later of ORIG and now, so a meeting marked
-DONE before it starts still moves to the following occurrence.  Time
-of day and range length are kept from ORIG."
+DONE before it starts still moves to the following occurrence; with
+FROM-ORIG it starts at ORIG, so feeding each result back in lists the
+series in order.  Time of day and range length are kept from ORIG."
   (let* ((arity (org-repeat-by-cron--cron-rule-arity rule))
          (has-time (string-match "\\([0-9]\\{1,2\\}\\):\\([0-9]\\{2\\}\\)" orig))
          ;; A 3-field rule takes its minute and hour from ORIG, so the
@@ -8489,7 +8490,9 @@ of day and range length are kept from ORIG."
                            (string-trim rule))
                  (org-repeat-by-cron--normalize-cron-rule rule)))
          (orig-time (org-time-string-to-time orig))
-         (base (if (time-less-p orig-time nil) (current-time) orig-time))
+         (base (if (and (not from-orig) (time-less-p orig-time nil))
+                   (current-time)
+                 orig-time))
          (next (and cron (org-repeat-by-cron-next-time cron base))))
     (when next
       (concat "<"
