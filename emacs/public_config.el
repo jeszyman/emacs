@@ -49,6 +49,10 @@ and a changed-on-disk file is reread without asking."
 
 (setq-default bidi-paragraph-direction 'left-to-right)
 (setq bidi-inhibit-bpa t)
+
+;; When scroll commands arrive faster than redisplay can keep up, Emacs skips fontifying the screens scrolled past, which keeps fast scrolling responsive in the large org files. Pattern from [[https://www.jamescherti.com/emacs-user-interface-better-responsiveness-and-latency/][James Cherti]].
+
+(setq fast-but-imprecise-scrolling t)
 ;; Dired
 ;; - whenever you open a new directory in Dired, the old Dired buffer is automatically killed
 
