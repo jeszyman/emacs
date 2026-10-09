@@ -5281,12 +5281,12 @@ Each ={{{macro}}}= call is displayed as its expansion, computed by Org's own =or
 
 Tested on Org 9.7.11 (2026-10-09) with the display snippet above and with ASCII export.
 
-| Where the macro is defined                     | Shown in the buffer | Used at export |
-|------------------------------------------------+---------------------+----------------|
-| <36>                                           |                     |                |
-| =#+MACRO:= in the file                         | yes                 | yes            |
+| Where the macro is defined                 | Shown in the buffer | Used at export |
+|--------------------------------------------+---------------------+----------------|
+| <36>                                       |                     |                |
+| =#+MACRO:= in the file                       | yes                 | yes            |
 | =#+MACRO:= in a file named by =#+SETUPFILE:=   | yes                 | yes            |
-| =org-export-global-macros=                     | no                  | yes            |
+| =org-export-global-macros=                   | no                  | yes            |
 | =#+MACRO:= in a file pulled in by =#+INCLUDE:= | no                  | yes            |
 
 Org reads =#+MACRO:= lines from the buffer and its setup files when it sets up the buffer. The global list is added only at export (=ox.el= calls =org-macro-initialize-templates= with =org-export-global-macros=), and included files exist only during export. A macro shared by several documents therefore goes in a setup file.
@@ -5318,6 +5318,8 @@ A setup file can define a macro that reads a project parameter file; =#+SETUPFIL
 #+end_example
 
 yaml.el and PyYAML read some unquoted values differently ([[id:a7ab5383-e7c2-4341-ab78-48967db4c9ca][YAML Processes]]). A pipeline-written values file is therefore safer as JSON, which Emacs reads with the built-in =json-parse-string= and which parsed identically in Emacs and Python.
+
+An argument left out of a macro call reaches an =(eval ...)= macro as =nil=, not as an empty string (Org 9.7.11, 2026-10-09: ={{{val(n_2l)}}}= stopped export with =wrong-type-argument (stringp nil)= while the macro tested an optional argument with =string-empty-p=). An optional argument is therefore tested with =(or (null $2) (string-empty-p $2))=. The two-argument =val= macro that reads =results/<workflow>/values.json= is the project-repository convention: [[id:13b9fb98-1209-46a8-9a41-fa19fef30a6d][Scientific project repository, Deliverable files]].
 
 ***** Source code and tangle
 
