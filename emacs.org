@@ -5273,6 +5273,51 @@ Each ={{{macro}}}= call is displayed as its expansion, computed by Org's own =or
                            (text (org-macro-expand el org-macro-templates)))
                       (if text text input-str)))))))
 #+end_src
+- [2026-10-09 Fri] Claude session "org-macro-display-and-gate-fix": [[elisp:(start-process "claude-resume" nil (expand-file-name "~/.claude/bin/claude-resume") "6159e900-def3-4eb3-95a1-7bac88754e83" "/home/jeszyman")][resume]]
+****** Where macro definitions and values come from
+:PROPERTIES:
+:ID:       277ae535-55ce-4d04-b6d5-0f9feb6623e4
+:END:
+
+Tested on Org 9.7.11 (2026-10-09) with the display snippet above and with ASCII export.
+
+| Where the macro is defined                     | Shown in the buffer | Used at export |
+|------------------------------------------------+---------------------+----------------|
+| <36>                                           |                     |                |
+| =#+MACRO:= in the file                         | yes                 | yes            |
+| =#+MACRO:= in a file named by =#+SETUPFILE:=   | yes                 | yes            |
+| =org-export-global-macros=                     | no                  | yes            |
+| =#+MACRO:= in a file pulled in by =#+INCLUDE:= | no                  | yes            |
+
+Org reads =#+MACRO:= lines from the buffer and its setup files when it sets up the buffer. The global list is added only at export (=ox.el= calls =org-macro-initialize-templates= with =org-export-global-macros=), and included files exist only during export. A macro shared by several documents therefore goes in a setup file.
+
+A =#+MACRO:= definition applies to the whole buffer, but values can differ by heading when stored as properties. The built-in ={{{property(NAME)}}}= reads =NAME= from the heading holding the call (a second argument names another heading, e.g. ={{{property(n_pt,*Cohort B)}}}=); inheritance follows =org-use-property-inheritance=. A computed macro reads properties with =org-entry-get=:
+
+#+begin_example
+,#+MACRO: pctp (eval (format "%.0f" (/ (* 100.0 (string-to-number (org-entry-get nil $1 t))) (string-to-number (org-entry-get nil $2 t)))))
+,* Cohort A
+:PROPERTIES:
+:n_pt: 17
+:n_pd: 12
+:END:
+
+{{{property(n_pt)}}} patients, {{{pctp(n_pd,n_pt)}}}% progressed.   -> 17 patients, 71% progressed.
+#+end_example
+
+File-level macros in use: the cohort lines of [[file:~/repos/breast/breast-report.org::5][breast-report.org]].
+
+A setup file can define a macro that reads a project parameter file; =#+SETUPFILE:= itself reads only Org keyword lines. Tested with the =yaml= package; the buffer and export both showed the values:
+
+#+begin_example
+,# project-setup.org: finds config/project.yaml in the nearest parent directory that has one
+,#+MACRO: cfg (eval (let ((v (yaml-parse-string (with-temp-buffer (insert-file-contents (expand-file-name "config/project.yaml" (locate-dominating-file default-directory "config/project.yaml"))) (buffer-string)) :object-type 'alist))) (dolist (k (split-string $1 "\\.")) (setq v (cdr (assq (intern k) v)))) (format "%s" v)))
+
+,# reports/report.org
+,#+SETUPFILE: ../project-setup.org
+{{{cfg(cohort.n_pt)}}} patients   -> 17 patients
+#+end_example
+
+yaml.el and PyYAML read some unquoted values differently ([[id:a7ab5383-e7c2-4341-ab78-48967db4c9ca][YAML Processes]]). A pipeline-written values file is therefore safer as JSON, which Emacs reads with the built-in =json-parse-string= and which parsed identically in Emacs and Python.
 
 ***** Source code and tangle
 

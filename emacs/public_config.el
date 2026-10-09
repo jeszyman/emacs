@@ -1119,6 +1119,23 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
 ;; LaTeX preview
 
 (setq org-format-latex-options (plist-put org-format-latex-options :scale 3))
+;; Show macro values in the buffer
+;; Each ={{{macro}}}= call is displayed as its expansion, computed by Org's own =org-macro-expand=; the file text is unchanged and export is unaffected. A changed =#+MACRO:= definition shows after =M-x org-mode-restart=. Adapted from [[https://notes.alexkehayias.com/emacs-inline-macro-in-the-buffer/][Alex Kehayias, Org-Mode Inline Macro in the Buffer]], with the match widened so calls with decimals or several arguments (={{{pct(525,0.3)}}}=) also display.
+;; #+name: org-macro-inline-display
+
+(add-to-list 'font-lock-extra-managed-props 'display)
+(font-lock-add-keywords
+ 'org-mode
+ '(("\\({{{[^}\n]+}}}\\)" 0
+    `(face nil display
+           ,(format "%s"
+                    (let* ((input-str (match-string 0))
+                           (el (with-temp-buffer
+                                 (insert input-str)
+                                 (goto-char (point-min))
+                                 (org-element-context)))
+                           (text (org-macro-expand el org-macro-templates)))
+                      (if text text input-str)))))))
 ;; Source code and tangle
 
 ;; Stale =.elc= files silently override =.el= source — Emacs's =load= prefers byte-compiled files. After tangling new code into a =.el= file, delete any corresponding =.elc= or recompile. The =public_config.elc= incident (2026-03-18) caused org MCP tools to silently not register for months because the =.elc= predated the registration code.
