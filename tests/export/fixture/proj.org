@@ -1,0 +1,66 @@
+#+title: Paired export test document
+#+cite_export: csl ~/library/styles/nature.csl
+#+bibliography: refs.bib
+#+MACRO: val (eval (let* ((f (expand-file-name (format "results/%s/values.json" $1) (locate-dominating-file default-directory "results"))) (v (and (file-exists-p f) (gethash $2 (with-temp-buffer (insert-file-contents f) (json-parse-buffer)))))) (if v (format (if (and $3 (not (string-empty-p $3))) $3 "%s") v) (format "[val: no %s in %s]" $2 $1))))
+* proj
+** Method
+:PROPERTIES:
+:export_file_name: METHOD
+:export_options: toc:2
+:export_title: proj Method: paired export test document
+:ID:       11111111-2222-4333-8444-555555555555
+:END:
+*** Overview
+This document exercises every feature of the paired export. The demo value is {{{val(demo,n,%.1f)}}} units.
+
+See [[fig-svg]], [[fig-png]], [[tab-small]] and [[tab-wide]], and the section [[*Details][Details]].
+
+The counting script is [[file:scripts/count.py][=scripts/count.py=]]; the bare link is [[file:scripts/count.py]].
+
+Validation lives in [[file:proj.org::*Validation][Validation, Checks]] and in [[id:99999999-2222-4333-8444-555555555555][the validation section]]; the web page is [[https://orgmode.org/][Org mode]].
+
+Prior work is cited [cite:@pairedtestalpha2020; @pairedtestbeta2021].[fn:note]
+
+#+name: fig-svg
+#+caption: A small SVG figure.
+[[file:resources/figures/demo.svg]]
+
+An uncaptioned image follows; it takes no figure number.
+
+[[file:resources/figures/demo.png]]
+
+#+name: fig-png
+#+caption: A small PNG figure.
+[[file:resources/figures/demo.png]]
+
+*** Details
+#+name: tab-small
+#+caption: A small table.
+| a | b |
+|---+---|
+| 1 | 2 |
+
+| uncaptioned | table |
+|-------------+-------|
+| 3           | 4     |
+
+#+name: tab-wide
+#+caption: A wide table.
+| c01 | c02 | c03 | c04 | c05 | c06 | c07 | c08 | c09 | c10 | c11 | c12 | c13 | c14 | c15 | c16 | c17 | c18 | c19 | c20 | c21 | c22 | c23 | c24 | c25 | c26 | c27 | c28 | c29 | c30 |
+|-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----+-----|
+| wide-cell-01 | wide-cell-02 | wide-cell-03 | wide-cell-04 | wide-cell-05 | wide-cell-06 | wide-cell-07 | wide-cell-08 | wide-cell-09 | wide-cell-10 | wide-cell-11 | wide-cell-12 | wide-cell-13 | wide-cell-14 | wide-cell-15 | wide-cell-16 | wide-cell-17 | wide-cell-18 | wide-cell-19 | wide-cell-20 | wide-cell-21 | wide-cell-22 | wide-cell-23 | wide-cell-24 | wide-cell-25 | wide-cell-26 | wide-cell-27 | wide-cell-28 | wide-cell-29 | wide-cell-30 |
+
+**** Notes
+First of two headings with the same title.
+**** Notes
+Second of two headings with the same title.
+*** References
+#+print_bibliography:
+
+[fn:note] A named footnote.
+** Validation
+:PROPERTIES:
+:ID:       99999999-2222-4333-8444-555555555555
+:END:
+*** Checks
+Outside the exported section.
