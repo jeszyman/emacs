@@ -2206,13 +2206,16 @@ https://www.reddit.com/r/emacs/comments/179t67l/window_management_share_your_dis
 :PROPERTIES:
 :ID:       68fc529a-94bc-42ed-b457-15e28d721af3
 :END:
-Exports one org heading (by =:ID:=) to Markdown with Org 9.7's ox-md plus overrides loaded into the batch Emacs, then post-processes the file. The Markdown it writes: a table's or figure's =#+name= is its anchor and links to it read "Table N" / "Figure N"; tables and figures carry an italic caption line under them; headings anchor on their CUSTOM_ID or GitHub's slug of the title; footnotes are native =[^label]=; links to =.org= files keep =.org= and heading targets become =file.org#slug=; a numeric csl bibliography is one line per entry and loses its =<style>= tag. Used by the rmeth README/METHOD exports ([[id:058d0bdd-037d-4186-aa08-7e6d5e8cfab3][rmeth, Working in this repo]]).
+Exports one org heading (by =:ID:=) to Markdown for GitHub (=--format md=, the default), to one self-contained HTML file for readers without GitHub (=--format html=), or to both, with Org 9.7's ox-md and ox-html plus overrides loaded into a batch Emacs. Shared by both formats: a table's or figure's =#+name= is its anchor and links to it read "Table N" / "Figure N"; headings anchor on their CUSTOM_ID or GitHub's slug of the title; the heading is found by ID in the named file only. The Markdown: tables and figures carry an italic caption line under them; footnotes are native =[^label]=; links to =.org= files keep =.org= and heading targets become =file.org#slug=; a numeric csl bibliography is one line per entry and loses its =<style>= tag. The HTML: the shared report stylesheet =~/repos/science/resources/org.css= and every image are embedded by =inline_html.py=, captions sit under tables and figures, links to repository files and to headings in other files are kept as text, and the export fails if anything is left unembedded. =EXPORT_ORG_CSS= and =EXPORT_INLINE_HTML= point to another stylesheet or embedding script. Used by the rmeth README/METHOD exports ([[id:058d0bdd-037d-4186-aa08-7e6d5e8cfab3][rmeth, Working in this repo]]) and by frag and emseq; tests in [[id:1cd73e6f-d412-4fb3-9c43-8591bcb6aa48][Paired export tests]].
+
+A repo exports a section in both formats when the section has an =:ID:= and an =:export_file_name:= (=:export_title:= gives the HTML a fuller title), the org file has =#+cite_export: csl ~/library/styles/nature.csl= and a heading holding =#+print_bibliography:= if the section cites references, its =org_update.sh= runs the script with =--format html= after the Markdown export followed by =|| echo "METHOD.html export failed; README.md and METHOD.md are unaffected"=, and =METHOD.html= is in its =.gitignore=; the biopipe template in science.org (Bioinformatics pipeline > Templates) carries all four. The script runs from the repo root, because it writes and post-processes paths relative to the current folder. The HTML export stops with an error when an image cannot be embedded; figures and tables are numbered only when they have =#+name= and =#+caption=. Batch export sets =org-export-with-broken-links= to t (=latex_init.el:92=), so a broken link exports as blank text without an error; the crosslink check finds it. As of 2026-10-10 the callers are rmeth, frag and emseq.
 
 #+begin_src python :tangle ./scripts/emacs_export_header_to_markdown.py
 #!/usr/bin/env python3
 
 """
-Script to generate Markdown files from Emacs Org-mode headers
+Export one Org heading to Markdown for GitHub (--format md, the default), to one
+self-contained HTML file for readers without GitHub (--format html), or to both.
 """
 
 import argparse
@@ -2222,21 +2225,48 @@ import subprocess
 import sys
 import tempfile
 
+EMACS = "/usr/local/bin/emacs"
+EMACS_INIT = os.path.expanduser("~/repos/latex/emacs/latex_init.el")
+# The HTML export embeds this stylesheet with this embedding script. Tests and
+# checks point them elsewhere with the environment variables.
+ORG_CSS = os.environ.get("EXPORT_ORG_CSS", os.path.expanduser("~/repos/science/resources/org.css"))
+INLINE_HTML = os.environ.get("EXPORT_INLINE_HTML",
+                             os.path.expanduser("~/repos/science/resources/inline_html.py"))
+
+
 def load_inputs():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--org_file", type=str, required=True, help="Org-mode file with header to export")
     parser.add_argument("--node_id", type=str, required=True, help="ID of header to export")
+    parser.add_argument("--format", choices=("md", "html", "both"), default="md",
+                        help="md: Markdown for GitHub; html: one self-contained HTML file; both")
     return parser.parse_args()
+
 
 def main():
     args = load_inputs()
-    generate_md_via_org(args.org_file, args.node_id)
-    extracted_md_path = extract_md_path(args.org_file, args.node_id)
-    link_caption_words(extracted_md_path)
-    table_captions_below(extracted_md_path)
-    strip_style_tags(extracted_md_path)
-    join_bibliography_numbers(extracted_md_path)
-    print(f"Markdown exported to: {extracted_md_path}")
+    md_path = extract_md_path(args.org_file, args.node_id)
+    if args.format in ("md", "both"):
+        run_export(args.org_file, args.node_id, MD_OVERRIDES, "(org-md-export-to-markdown nil t)")
+        link_caption_words(md_path)
+        table_captions_below(md_path)
+        strip_style_tags(md_path)
+        join_bibliography_numbers(md_path)
+        print(f"Markdown exported to: {md_path}")
+    if args.format in ("html", "both"):
+        html_path = os.path.splitext(md_path)[0] + ".html"
+        try:
+            run_export(args.org_file, args.node_id, html_overrides(), "(org-html-export-to-html nil t)")
+            subprocess.run([sys.executable, INLINE_HTML, html_path], check=True)
+            check_self_contained(html_path)
+        except BaseException:
+            # After a failed export, no HTML file is left: a partial or older
+            # copy could be sent to a reader as if it were current.
+            if os.path.exists(html_path):
+                os.remove(html_path)
+            raise
+        print(f"HTML exported to: {html_path}")
+
 
 def join_bibliography_numbers(md_path):
     # A numeric csl style writes each entry's number and text as two <div>
@@ -2252,6 +2282,7 @@ def join_bibliography_numbers(md_path):
     with open(md_path, "w") as f:
         f.write(text)
 
+
 def strip_style_tags(md_path):
     # The csl bibliography starts with a <style> tag. GitHub removes the tag
     # but shows its CSS as text, so the tag is removed here.
@@ -2260,6 +2291,7 @@ def strip_style_tags(md_path):
     text = re.sub(r"<style>.*?</style>", "", text, flags=re.S)
     with open(md_path, "w") as f:
         f.write(text)
+
 
 def table_captions_below(md_path):
     # Tables take the figure caption style: an italic "Table N: caption" line
@@ -2276,6 +2308,7 @@ def table_captions_below(md_path):
     with open(md_path, "w") as f:
         f.write(text)
 
+
 def link_caption_words(md_path):
     # ox-md links only the number of a table or figure reference
     # ("Table [1](#x)"). Put the word inside the link: "[Table 1](#x)".
@@ -2285,45 +2318,99 @@ def link_caption_words(md_path):
     with open(md_path, "w") as f:
         f.write(text)
 
-# Overrides loaded into the batch Emacs before export.
+
+# Overrides loaded into the batch Emacs before either export.
 # 1. Org gives each table or figure a random anchor (org-export-new-reference)
 #    that changes on every export. An element with a #+name uses that name as
 #    its anchor, at the target and in every link to it.
-# 2. Footnotes are written as native Markdown footnotes ([^label] in the text,
+# 2. A heading's anchor is its CUSTOM_ID, else the slug GitHub gives the
+#    rendered heading (lowercase, punctuation removed, spaces as hyphens,
+#    -1, -2 on repeated titles in document order), so a link to a heading
+#    lands on GitHub's own heading anchor.
+# 3. A figure is a paragraph holding only an image, with a #+caption; figures
+#    are numbered over figures only.
+# 4. An id: link to a heading outside the export resolves to the file that
+#    holds it; the title of that heading is read from the file.
+SHARED_OVERRIDES = r'''
+(require 'ox)
+(require 'ox-html)
+;; INFO carries the export's image rules; without it Org falls back to a
+;; default list that has no svg.
+(defun paired-figure-p (el info)
+  (and (org-element-type-p el 'paragraph)
+       (org-element-property :caption el)
+       (org-html-standalone-image-p el info)))
+(defun paired-figure-number (el info)
+  (org-export-get-ordinal el info '(paragraph) #'paired-figure-p))
+(defvar paired-heading-slugs nil)
+(defun paired-plain-title (h)
+  (let ((s (org-element-property :raw-value h)))
+    (setq s (replace-regexp-in-string "\\[\\[[^]]*\\]\\[\\([^]]*\\)\\]\\]" "\\1" s))
+    (replace-regexp-in-string "\\[\\[\\([^]]*\\)\\]\\]" "\\1" s)))
+(defun paired-github-slug (s)
+  (replace-regexp-in-string
+   " " "-" (replace-regexp-in-string "[^[:alnum:] _-]" "" (downcase s))))
+(defun paired-heading-slug (h info)
+  (let ((tree (plist-get info :parse-tree)))
+    (unless (eq (car paired-heading-slugs) tree)
+      (let ((slugs (make-hash-table :test 'eq))
+            (seen (make-hash-table :test 'equal)))
+        (org-element-map tree 'headline
+          (lambda (x)
+            (let* ((base (paired-github-slug (paired-plain-title x)))
+                   (n (gethash base seen 0)))
+              (puthash x (if (= n 0) base (format "%s-%d" base n)) slugs)
+              (puthash base (1+ n) seen)))
+          info)
+        (setq paired-heading-slugs (cons tree slugs))))
+    (gethash h (cdr paired-heading-slugs))))
+(defun paired-external-id-file (link info)
+  "The file holding the heading an id: LINK names, when that heading is outside the export."
+  (and (equal (org-element-property :type link) "id")
+       (let ((dest (condition-case nil
+                       (org-export-resolve-id-link link info)
+                     (org-link-broken nil))))
+         (and (stringp dest) dest))))
+(defun paired-id-heading-title (link file)
+  "The title of the heading in FILE that the id: LINK names, or nil."
+  (let ((id (org-element-property :path link)))
+    (with-current-buffer (find-file-noselect file)
+      (org-with-wide-buffer
+       (let ((p (org-find-entry-with-id id)))
+         (when p (goto-char p) (org-get-heading t t t t)))))))
+(advice-add 'org-export-get-reference :around
+            (lambda (orig datum info)
+              (or (if (org-element-type-p datum 'headline)
+                      (or (org-element-property :CUSTOM_ID datum)
+                          (paired-heading-slug datum info))
+                    (org-element-property :name datum))
+                  (funcall orig datum info))))
+'''
+
+# Markdown writer.
+# 1. Footnotes are written as native Markdown footnotes ([^label] in the text,
 #    "[^label]: text" at the end), which GitHub renders with links both ways.
 #    ox-md's own footnotes link the reference by label (fn.label) but the
 #    definition by number (fn.1), so a named footnote has two dead links.
 #    A numeric or missing label uses the footnote number.
-# 3. A heading's anchor is its CUSTOM_ID, else the slug GitHub gives the
-#    rendered heading (lowercase, punctuation removed, spaces as hyphens,
-#    -1, -2 on repeated titles in document order), so a link to a heading
-#    lands on GitHub's own heading anchor.
-# 4. A figure (a paragraph holding only an image, with a #+caption) is
-#    written as its anchor, the image, and a visible "Figure N: caption" line;
-#    ox-md puts the caption only in the image's hover title. A link to a
-#    figure reads "Figure N", numbered over figures only; ox-md numbered it
-#    over all paragraphs.
-MD_OVERRIDES = r'''
-(require 'ox)
+# 2. A figure is written as its anchor, the image, and a visible
+#    "Figure N: caption" line; ox-md puts the caption only in the image's
+#    hover title. A link to a figure or table reads "Figure N" / "Table N".
+# 3. Links to .org files keep the .org path; a heading target becomes
+#    GitHub's heading anchor.
+MD_WRITER = r'''
 (require 'ox-md)
 ;; Links in tables go through ox-html, which rewrites a link to a .org file
 ;; as .html; the repository holds the .org file.
 (setq org-html-link-org-files-as-html nil)
-;; INFO carries the export's image rules; without it Org falls back to a
-;; default list that has no svg.
-(defun md-figure-p (el info)
-  (and (org-element-type-p el 'paragraph)
-       (org-element-property :caption el)
-       (org-html-standalone-image-p el info)))
-(defun md-figure-number (el info)
-  (org-export-get-ordinal el info '(paragraph) #'md-figure-p))
 (advice-add 'org-md-link :around
             (lambda (orig link desc info)
               (let* ((par (org-element-parent-element link))
                      (dest (and (equal (org-element-property :type link) "fuzzy")
                                 (condition-case nil
                                     (org-export-resolve-fuzzy-link link info)
-                                  (org-link-broken nil)))))
+                                  (org-link-broken nil))))
+                     (id-file (paired-external-id-file link info)))
                 (cond
                  ;; ox-md rewrites a link to a .org file as .md and drops a
                  ;; ::*Heading target; keep the .org path and turn the heading
@@ -2333,24 +2420,17 @@ MD_OVERRIDES = r'''
                   (let* ((path (org-element-property :path link))
                          (opt (org-element-property :search-option link))
                          (anchor (if (and opt (string-prefix-p "*" opt))
-                                     (concat "#" (md-github-slug (substring opt 1)))
+                                     (concat "#" (paired-github-slug (substring opt 1)))
                                    "")))
                     (format "[%s](%s%s)" (or (org-string-nw-p desc) path) path anchor)))
                  ;; An id: link to a heading outside the export resolves to its
                  ;; file; link to that .org file at the heading's anchor.
-                 ((and (equal (org-element-property :type link) "id")
-                       (stringp (condition-case nil (org-export-resolve-id-link link info)
-                                  (org-link-broken nil))))
-                  (let* ((file (org-export-resolve-id-link link info))
-                         (id (org-element-property :path link))
-                         (title (with-current-buffer (find-file-noselect file)
-                                  (org-with-wide-buffer
-                                   (let ((p (org-find-entry-with-id id)))
-                                     (when p (goto-char p) (org-get-heading t t t t))))))
-                         (rel (file-relative-name
-                               file (file-name-directory (plist-get info :input-file)))))
+                 (id-file
+                  (let ((title (paired-id-heading-title link id-file))
+                        (rel (file-relative-name
+                              id-file (file-name-directory (plist-get info :input-file)))))
                     (format "[%s](%s%s)" (or (org-string-nw-p desc) rel) rel
-                            (if title (concat "#" (md-github-slug title)) ""))))
+                            (if title (concat "#" (paired-github-slug title)) ""))))
                  ;; A table reference reads "Table N", numbered as ox-html
                  ;; numbers table captions.
                  ((and dest (org-element-type-p dest 'table)
@@ -2361,49 +2441,20 @@ MD_OVERRIDES = r'''
                                       (org-export-get-ordinal
                                        dest info nil #'org-html--has-caption-p)))
                           (org-export-get-reference dest info)))
-                 ((and dest (md-figure-p dest info))
+                 ((and dest (paired-figure-p dest info))
                   (format "[%s](#%s)"
                           (or (org-string-nw-p desc)
-                              (format "Figure %d" (md-figure-number dest info)))
+                              (format "Figure %d" (paired-figure-number dest info)))
                           (org-export-get-reference dest info)))
-                 ((and (md-figure-p par info)
+                 ((and (paired-figure-p par info)
                        (org-html-inline-image-p link info))
                   (let ((cap (org-export-data (org-export-get-caption par) info)))
                     (format "<a id=\"%s\"></a>\n\n![%s](%s)\n\n*Figure %d: %s*"
                             (org-export-get-reference par info)
                             (replace-regexp-in-string "[][\n]" " " cap)
                             (org-element-property :path link)
-                            (md-figure-number par info) cap)))
+                            (paired-figure-number par info) cap)))
                  (t (funcall orig link desc info))))))
-(defvar md-heading-slugs nil)
-(defun md-plain-title (h)
-  (let ((s (org-element-property :raw-value h)))
-    (setq s (replace-regexp-in-string "\\[\\[[^]]*\\]\\[\\([^]]*\\)\\]\\]" "\\1" s))
-    (replace-regexp-in-string "\\[\\[\\([^]]*\\)\\]\\]" "\\1" s)))
-(defun md-github-slug (s)
-  (replace-regexp-in-string
-   " " "-" (replace-regexp-in-string "[^[:alnum:] _-]" "" (downcase s))))
-(defun md-heading-slug (h info)
-  (let ((tree (plist-get info :parse-tree)))
-    (unless (eq (car md-heading-slugs) tree)
-      (let ((slugs (make-hash-table :test 'eq))
-            (seen (make-hash-table :test 'equal)))
-        (org-element-map tree 'headline
-          (lambda (x)
-            (let* ((base (md-github-slug (md-plain-title x)))
-                   (n (gethash base seen 0)))
-              (puthash x (if (= n 0) base (format "%s-%d" base n)) slugs)
-              (puthash base (1+ n) seen)))
-          info)
-        (setq md-heading-slugs (cons tree slugs))))
-    (gethash h (cdr md-heading-slugs))))
-(advice-add 'org-export-get-reference :around
-            (lambda (orig datum info)
-              (or (if (org-element-type-p datum 'headline)
-                      (or (org-element-property :CUSTOM_ID datum)
-                          (md-heading-slug datum info))
-                    (org-element-property :name datum))
-                  (funcall orig datum info))))
 ;; ox-md writes a heading anchor only for id: links and tables of contents.
 ;; A [[*Heading]] link also gets one, so the link works outside GitHub too.
 (advice-add 'org-md--headline-referred-p :around
@@ -2442,20 +2493,117 @@ MD_OVERRIDES = r'''
                    defs "\n\n")))))
 '''
 
-def generate_md_via_org(org_file, node_id):
+# The complete Emacs Lisp for a Markdown export. The crosslink skill's
+# checker loads it by this name.
+MD_OVERRIDES = SHARED_OVERRIDES + MD_WRITER
+
+# HTML writer, for one file read away from the repository.
+# 1. Table captions go under the table, as in the Markdown export. The page
+#    has no Org default style or scripts and no validation link; the shared
+#    report stylesheet org.css is linked here and embedded by inline_html.py.
+# 2. org.css numbers captions with CSS counters. Org already writes the number
+#    into each caption, and only Org's number matches the "Figure N" link
+#    text, so the counters are switched off.
+# 3. A link to a table or figure reads "Table N" / "Figure N". Links to files
+#    in the repository and to headings in other files are kept as text, since
+#    the reader has only the HTML file. Images stay images.
+# 4. A wide table scrolls sideways inside the page; its caption stays under it.
+HTML_WRITER = r'''
+(setq org-html-table-caption-above nil
+      org-html-head-include-default-style nil
+      org-html-head-include-scripts nil
+      org-html-validation-link nil
+      org-html-postamble t
+      org-html-postamble-format
+      '(("en" "<hr/><p style=\"text-align:right; color:#888; font-size:0.9em;\">Last compiled %T</p>"))
+      org-html-head "<link rel=\"stylesheet\" type=\"text/css\" href=\"@ORG_CSS@\"/>"
+      org-html-head-extra "<style type=\"text/css\">
+caption::before, figcaption::before { content: none; }
+caption, div.figure > p + p { font-style: italic; }
+caption { text-align: left; }
+.table-scroll { overflow-x: auto; }
+</style>")
+(defun paired-html-unlinked (desc path)
+  "DESC, or PATH as code when DESC is empty: the text of a link the reader cannot open."
+  (or (org-string-nw-p desc)
+      (format "<code>%s</code>" (org-html-encode-plain-text path))))
+(advice-add 'org-html-link :around
+            (lambda (orig link desc info)
+              (let* ((type (org-element-property :type link))
+                     (dest (and (equal type "fuzzy")
+                                (condition-case nil
+                                    (org-export-resolve-fuzzy-link link info)
+                                  (org-link-broken nil))))
+                     (id-file (paired-external-id-file link info)))
+                (cond
+                 ((and dest (org-element-type-p dest 'table)
+                       (org-element-property :caption dest))
+                  (format "<a href=\"#%s\">%s</a>"
+                          (org-export-get-reference dest info)
+                          (or (org-string-nw-p desc)
+                              (format "Table %d"
+                                      (org-export-get-ordinal
+                                       dest info nil #'org-html--has-caption-p)))))
+                 ((and dest (paired-figure-p dest info))
+                  (format "<a href=\"#%s\">%s</a>"
+                          (org-export-get-reference dest info)
+                          (or (org-string-nw-p desc)
+                              (format "Figure %d" (paired-figure-number dest info)))))
+                 ((and (equal type "file")
+                       (not (org-export-inline-image-p
+                             link (plist-get info :html-inline-image-rules))))
+                  (paired-html-unlinked desc (org-element-property :path link)))
+                 (id-file
+                  (let ((title (paired-id-heading-title link id-file)))
+                    (paired-html-unlinked
+                     (or (org-string-nw-p desc)
+                         (and title (org-html-encode-plain-text title)))
+                     (org-element-property :path link))))
+                 (t (funcall orig link desc info))))))
+(advice-add 'org-html-table :filter-return
+            (lambda (html) (concat "<div class=\"table-scroll\">\n" html "\n</div>")))
+'''
+
+
+def html_overrides():
+    return SHARED_OVERRIDES + HTML_WRITER.replace("@ORG_CSS@", ORG_CSS)
+
+
+def check_self_contained(html_path):
+    # inline_html.py leaves a tag unchanged when its file is missing. A reader
+    # who has only the HTML file would see a broken image or an unstyled page,
+    # so the export fails and names what is missing.
+    with open(html_path) as f:
+        text = f.read()
+    missing = [src for src in re.findall(r'<img\s[^>]*src="([^"]+)"', text)
+               if not src.startswith("data:")]
+    missing += re.findall(r'<link\s+rel="stylesheet"[^>]*href="([^"]+)"', text)
+    if missing:
+        sys.exit(f"{html_path} is not self-contained; not embedded: {', '.join(missing)}")
+
+
+def elisp_string(s):
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def find_heading_form(org_file, node_id):
+    # The heading is looked up in ORG_FILE's own buffer. org-id-goto would use
+    # the batch ID index, which can name another file holding the same ID (the
+    # original, when this script runs on a copy).
+    return (f"(find-file {elisp_string(org_file)}) "
+            f"(goto-char (or (org-find-entry-with-id {elisp_string(node_id)}) "
+            f"(error \"ID %s is not in %s\" {elisp_string(node_id)} {elisp_string(org_file)})))")
+
+
+def run_export(org_file, node_id, overrides_el, export_call):
     with tempfile.NamedTemporaryFile("w", suffix=".el", delete=False) as f:
-        f.write(MD_OVERRIDES)
+        f.write(overrides_el)
         overrides = f.name
-    command = f'''/usr/local/bin/emacs --batch -l "${{HOME}}/repos/latex/emacs/latex_init.el" -l "{overrides}" --eval "(progn
-        (require 'org)
-        (require 'org-id)
-        (setq org-confirm-babel-evaluate nil)
-        (find-file \\"{org_file}\\")
-        (org-id-goto \\"{node_id}\\")
-        (org-md-export-to-markdown nil t)
-        (kill-emacs))"'''
+    form = (f"(progn (require 'org) (require 'org-id) (setq org-confirm-babel-evaluate nil) "
+            f"{find_heading_form(org_file, node_id)} {export_call} (kill-emacs))")
     try:
-        result = subprocess.run(command, check=True, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run([EMACS, "--batch", "-l", EMACS_INIT, "-l", overrides, "--eval", form],
+                                check=True, capture_output=True, text=True)
         print(result.stdout)
     except subprocess.CalledProcessError as e:
         print(f"Command failed with error: {e.stderr}")
@@ -2463,31 +2611,673 @@ def generate_md_via_org(org_file, node_id):
     finally:
         os.unlink(overrides)
 
+
 def extract_md_path(org_file, node_id):
-    command = f'''/usr/local/bin/emacs --batch -l "${{HOME}}/repos/latex/emacs/latex_init.el" --eval "(progn
-        (require 'org)
-        (require 'org-id)
-        (find-file \\"{org_file}\\")
-        (org-id-goto \\"{node_id}\\")
-        (let ((result (org-entry-get nil \\"export_file_name\\")))
-          (princ result)))"'''
+    form = (f"(progn (require 'org) {find_heading_form(org_file, node_id)} "
+            f"(princ (org-entry-get nil \"export_file_name\")))")
     try:
-        result = subprocess.run(command, check=True, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        export_base = result.stdout.strip().strip('"')
-        if export_base.endswith(".pdf") or export_base.endswith(".tex"):
-            export_base = os.path.splitext(export_base)[0]
-        if export_base.startswith("./"):
-            org_file_dir = os.path.dirname(os.path.abspath(org_file))
-            export_base = os.path.join(org_file_dir, export_base[2:])
-        md_path = export_base + ".md"
-        return md_path
+        result = subprocess.run([EMACS, "--batch", "-l", EMACS_INIT, "--eval", form],
+                                check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         print(f"Command failed with error: {e.stderr}")
         raise
+    export_base = result.stdout.strip().strip('"')
+    if export_base.endswith(".pdf") or export_base.endswith(".tex"):
+        export_base = os.path.splitext(export_base)[0]
+    if export_base.startswith("./"):
+        org_file_dir = os.path.dirname(os.path.abspath(org_file))
+        export_base = os.path.join(org_file_dir, export_base[2:])
+    return export_base + ".md"
+
 
 if __name__ == "__main__":
     main()
+#+end_src
 
+*** Paired export tests
+:PROPERTIES:
+:ID:       1cd73e6f-d412-4fb3-9c43-8591bcb6aa48
+:END:
+
+Tests of =emacs_export_header_to_markdown.py=, run with =~/miniconda3/envs/basecamp/bin/python -m pytest ~/repos/emacs/tests/export -q=. The test document, its inputs and the frozen Markdown baseline (the 2026-10-10 script, with the heading looked up by ID in the named file) are plain files in =tests/export/= and are not tangled. Each test export keeps its Org ID index in a file of its own: Org adds every visited file to the batch index =~/.emacs.d/org-id-locations=, so a shared index would let an export of one copy link to another copy, and a later production export link to a test copy; =isolated_id_index/site-start.el= points Org at the per-test file.
+
+#+begin_src python :tangle ./tests/export/check_paired_export.py :mkdirp yes
+#!/usr/bin/env python3
+"""Check that a Markdown and an HTML export of one Org heading carry the same content.
+
+Usage: check_paired_export.py MD_FILE HTML_FILE [--expect-val VALUE]
+
+Checks:
+  1  an in-page link (#x) with no anchor x, in either file
+  2  different numbers of captioned figures, captioned tables, bibliography
+     entries or footnotes in the two files
+  3  different ordered lists of "Figure N" / "Table N" link texts
+  4  an HTML "Figure N" / "Table N" link whose target caption has another number
+  5  the HTML's last caption::before or figcaption::before rule does not set
+     content: none (the stylesheet would print a second number)
+  6  an image that is not embedded, or an external stylesheet or script
+  7  an href, src or data attribute in the HTML that is not #, data:, http(s): or
+     mailto: (a link a reader of the single file cannot open)
+  8  the expected value missing from either file
+Each failure prints "FAIL <check> <message>" and the exit status is 1. On success the
+script prints the HTML's counts and exits 0.
+"""
+import argparse
+import re
+import sys
+from html.parser import HTMLParser
+
+OPENABLE = ("#", "data:", "http://", "https://", "mailto:")
+XREF = re.compile(r"^(Figure|Table) (\d+)$")
+MD_XREF = re.compile(r"\[(Figure|Table) (\d+)\]\(#[^)]*\)|<a href=\"#[^\"]*\">(Figure|Table) (\d+)</a>")
+
+
+class Page(HTMLParser):
+    """Ids, link attributes, anchor texts, images, stylesheets, scripts and style text."""
+
+    def __init__(self, text):
+        super().__init__(convert_charrefs=True)
+        self.ids = set()
+        self.attrs = []
+        self.anchors = []
+        self.images = []
+        self.stylesheets = []
+        self.script_srcs = []
+        self.styles = []
+        self.text = []
+        self._open = []
+        self._in_style = False
+        self.feed(text)
+        self.close()
+
+    def handle_starttag(self, tag, attrs):
+        a = {k: (v or "") for k, v in attrs}
+        if "id" in a:
+            self.ids.add(a["id"])
+        for key in ("href", "src", "data"):
+            if key in a:
+                self.attrs.append((tag, key, a[key]))
+        if tag == "img":
+            self.images.append(a.get("src", ""))
+        elif tag == "link" and "stylesheet" in a.get("rel", ""):
+            self.stylesheets.append(a.get("href", ""))
+        elif tag == "script" and a.get("src"):
+            self.script_srcs.append(a["src"])
+        elif tag == "style":
+            self._in_style = True
+        elif tag == "a":
+            self._open.append([a.get("href", ""), ""])
+
+    def handle_endtag(self, tag):
+        if tag == "style":
+            self._in_style = False
+        elif tag == "a" and self._open:
+            href, text = self._open.pop()
+            self.anchors.append((href, " ".join(text.split())))
+
+    def handle_data(self, data):
+        if self._in_style:
+            self.styles.append(data)
+            return
+        for anchor in self._open:
+            anchor[1] += data
+        self.text.append(data)
+
+
+def github_slug(text):
+    """GitHub's heading anchor: lowercase, punctuation removed, spaces as hyphens."""
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"<[^>]+>", "", text).lower()
+    return re.sub(r"[^\w\- ]", "", text).replace(" ", "-")
+
+
+def md_anchors(md, page):
+    ids = set(page.ids)
+    seen = {}
+    for m in re.finditer(r"^#{1,6} (.+?)\s*$", md, re.M):
+        base = github_slug(m.group(1))
+        n = seen.get(base, 0)
+        ids.add(base if n == 0 else f"{base}-{n}")
+        seen[base] = n + 1
+    return ids
+
+
+def md_counts(md):
+    return {"figures": len(re.findall(r"^\*Figure \d+: ", md, re.M)),
+            "tables": len(re.findall(r"^\*Table \d+: ", md, re.M)),
+            "bibliography": md.count('class="csl-entry"'),
+            "footnotes": len(re.findall(r"^\[\^[^\]]+\]: ", md, re.M))}
+
+
+def html_counts(html):
+    return {"figures": html.count('class="figure-number"'),
+            "tables": html.count('class="table-number"'),
+            "bibliography": html.count('class="csl-entry"'),
+            "footnotes": html.count('class="footdef"')}
+
+
+def caption_number(html, target, kind):
+    """The number in the caption of the figure or table whose id is TARGET, or None."""
+    t = re.escape(target)
+    if kind == "Figure":
+        m = re.search(rf'<div id="{t}" class="figure">(.*?)</div>', html, re.S)
+        n = m and re.search(r'class="figure-number">Figure (\d+):', m.group(1))
+    else:
+        m = re.search(rf'<table id="{t}"[^>]*>(.*?)</table>', html, re.S)
+        n = m and re.search(r'class="table-number">Table (\d+):', m.group(1))
+    return int(n.group(1)) if n else None
+
+
+def last_rule_body(css, selector_re):
+    body = None
+    for m in re.finditer(r"([^{}]+)\{([^}]*)\}", css):
+        if re.search(selector_re, m.group(1)):
+            body = m.group(2)
+    return body
+
+
+def check(md_text, html_text, expect_val=None):
+    failures = []
+    md_page, page = Page(md_text), Page(html_text)
+
+    # 1
+    md_ids = md_anchors(md_text, md_page)
+    md_links = re.findall(r"\]\(#([^)]+)\)", md_text) + \
+        [h[1:] for h, _ in md_page.anchors if h.startswith("#")]
+    for x in md_links:
+        if x not in md_ids:
+            failures.append((1, f"Markdown link #{x} has no anchor"))
+    for h, _ in page.anchors:
+        if h.startswith("#") and h[1:] not in page.ids:
+            failures.append((1, f"HTML link {h} has no anchor"))
+
+    # 2
+    mc, hc = md_counts(md_text), html_counts(html_text)
+    for key in mc:
+        if mc[key] != hc[key]:
+            failures.append((2, f"{key}: Markdown {mc[key]}, HTML {hc[key]}"))
+
+    # 3
+    md_xrefs = [f"{m[0] or m[2]} {m[1] or m[3]}" for m in MD_XREF.findall(md_text)]
+    html_xrefs = [(h, t) for h, t in page.anchors if h.startswith("#") and XREF.match(t)]
+    if md_xrefs != [t for _, t in html_xrefs]:
+        failures.append((3, f"cross-references differ: Markdown {md_xrefs}, "
+                            f"HTML {[t for _, t in html_xrefs]}"))
+
+    # 4
+    for h, t in html_xrefs:
+        kind, n = XREF.match(t).groups()
+        if caption_number(html_text, h[1:], kind) != int(n):
+            failures.append((4, f"link '{t}' to {h}: caption shows "
+                                f"{caption_number(html_text, h[1:], kind)}"))
+
+    # 5
+    css = re.sub(r"/\*.*?\*/", "", "\n".join(page.styles), flags=re.S)
+    for name, sel in (("caption::before", r"(?<![\w-])caption::before"),
+                      ("figcaption::before", r"figcaption::before")):
+        body = last_rule_body(css, sel)
+        if body is not None and not re.search(r"content\s*:\s*none", body):
+            failures.append((5, f"last {name} rule does not set content: none"))
+
+    # 6
+    for src in page.images:
+        if not src.startswith("data:"):
+            failures.append((6, f"image not embedded: {src}"))
+    for href in page.stylesheets:
+        failures.append((6, f"external stylesheet: {href}"))
+    for src in page.script_srcs:
+        failures.append((6, f"external script: {src}"))
+
+    # 7
+    for tag, key, value in page.attrs:
+        if not value.startswith(OPENABLE):
+            failures.append((7, f"<{tag} {key}=\"{value}\"> cannot be opened from the file"))
+
+    # 8
+    if expect_val is not None:
+        if expect_val not in md_text:
+            failures.append((8, f"{expect_val} not in Markdown"))
+        if expect_val not in "".join(page.text):
+            failures.append((8, f"{expect_val} not in HTML text"))
+
+    counts = dict(hc, crossrefs=len(html_xrefs))
+    return failures, counts
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("md")
+    ap.add_argument("html")
+    ap.add_argument("--expect-val")
+    args = ap.parse_args()
+    with open(args.md) as f:
+        md = f.read()
+    with open(args.html) as f:
+        html = f.read()
+    failures, counts = check(md, html, args.expect_val)
+    for n, msg in failures:
+        print(f"FAIL {n} {msg}")
+    if failures:
+        sys.exit(1)
+    print("OK " + " ".join(f"{k}={v}" for k, v in counts.items()))
+
+
+if __name__ == "__main__":
+    main()
+#+end_src
+
+#+begin_src python :tangle ./tests/export/conftest.py :mkdirp yes
+"""Paths and the export runner shared by the paired-export tests.
+
+The tests run in two layouts: the staging folder dev/method-html-export/tests/ of an
+rmeth worktree, and the installed folder ~/repos/emacs/tests/export/. Each path is the
+first candidate that exists.
+
+Every export a test runs gets its own empty Org ID index (isolated_env), so an id:
+link resolves to the copy being exported, as it does to the original in production,
+and no test writes temporary paths into the shared batch index.
+"""
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+HOME = Path.home()
+
+
+def first_existing(*candidates):
+    for c in candidates:
+        if Path(c).exists():
+            return Path(c)
+    raise FileNotFoundError(f"none of {candidates} exists")
+
+
+SCRIPT = first_existing(HERE.parent / "emacs_export_header_to_markdown.py",
+                        HOME / "repos/emacs/scripts/emacs_export_header_to_markdown.py")
+INLINE_HTML = first_existing(HERE.parent / "inline_html.py",
+                             HOME / "repos/science/resources/inline_html.py")
+TEMPLATE = first_existing(HERE.parent / "template" / "__BIOPIPE_PROJECT__.org",
+                          HOME / "repos/science/resources/biopipe-template/__BIOPIPE_PROJECT__.org")
+ORG_UPDATE = first_existing(HERE.parent / "patches" / "rmeth" / "org_update.sh",
+                            HOME / "repos/rmeth/tools/shell/org_update.sh")
+RMETH_ORG = first_existing(HERE.parents[2] / "rmeth.org", HOME / "repos/rmeth/rmeth.org")
+BASELINE = HERE / "baseline_export_header_to_markdown.py"
+CHECK = HERE / "check_paired_export.py"
+FIXTURE = HERE / "fixture"
+FIXTURE_ID = "11111111-2222-4333-8444-555555555555"
+ID_INDEX_SITE = HERE / "isolated_id_index"
+
+
+def isolated_env(index_file, **extra):
+    """The environment for a batch export whose Org ID index is INDEX_FILE.
+
+    isolated_id_index/site-start.el, first on EMACSLOADPATH, points Org at
+    INDEX_FILE after latex_init.el has named the shared batch index.
+    """
+    load_path = str(ID_INDEX_SITE) + os.pathsep + os.environ.get("EMACSLOADPATH", "")
+    return dict(os.environ, EMACSLOADPATH=load_path,
+                PAIRED_TEST_ORG_ID_LOCATIONS=str(index_file), **extra)
+
+
+def run_export(script, workdir, org_name, node_id, fmt=None, env=None, check=True):
+    """Run an export script on WORKDIR/ORG_NAME with WORKDIR as the working directory.
+
+    The script writes its output beside the org file and post-processes the path
+    relative to the working directory, so both must be WORKDIR. The run starts
+    from an empty Org ID index of its own.
+    """
+    cmd = [sys.executable, str(script), "--org_file", str(Path(workdir) / org_name),
+           "--node_id", node_id]
+    if fmt:
+        cmd += ["--format", fmt]
+    with tempfile.TemporaryDirectory() as index_dir:
+        full_env = isolated_env(Path(index_dir) / "org-id-locations",
+                                EXPORT_INLINE_HTML=str(INLINE_HTML), **(env or {}))
+        result = subprocess.run(cmd, cwd=workdir, capture_output=True, text=True,
+                                env=full_env, timeout=1800)
+    if check:
+        assert result.returncode == 0, result.stdout + result.stderr
+    return result
+#+end_src
+
+#+begin_src python :tangle ./tests/export/test_check_paired_export.py :mkdirp yes
+"""Each check of check_paired_export fails on its own defect and on no other."""
+from check_paired_export import check
+
+GOOD_MD = """# Overview
+
+See [Figure 1](#fig-a) and [Table 1](#tab-a), cited <a href="#citeproc_bib_item_1">1</a>.[^n]
+
+<a id="fig-a"></a>
+
+![A figure.](resources/figures/a.svg)
+
+,*Figure 1: A figure.*
+
+<table id="tab-a">
+<tr><td>1</td></tr>
+</table>
+
+,*Table 1: A table.*
+
+# References
+
+<div class="csl-bib-body">
+<div class="csl-entry"><a id="citeproc_bib_item_1"></a>1. Alpha.</div>
+</div>
+
+Value 3.1.
+
+[^n]: A note.
+"""
+
+ORG_CSS_STYLE = ('<style type="text/css">table { counter-increment: table; }\n'
+                 'caption::before { content: "Table " counter(table) ". "; font-weight: bold; }\n'
+                 'figcaption::before { content: "Figure " counter(figure) ". "; }</style>')
+NONE_STYLE = '<style type="text/css">caption::before, figcaption::before { content: none; }</style>'
+
+GOOD_HTML = """<html><head>
+ORG_CSS
+NONE
+</head><body>
+<h2 id="overview">Overview</h2>
+<p>See <a href="#fig-a">Figure 1</a> and <a href="#tab-a">Table 1</a>, cited <a href="#citeproc_bib_item_1">1</a>.<sup><a id="fnr.n" class="footref" href="#fn.n">1</a></sup></p>
+<div id="fig-a" class="figure">
+<p><img src="data:image/svg+xml;base64,AAAA" alt="a.svg" /></p>
+<p><span class="figure-number">Figure 1: </span>A figure.</p>
+</div>
+<div class="table-scroll"><table id="tab-a">
+<caption class="t-bottom"><span class="table-number">Table 1:</span> A table.</caption>
+<tr><td>1</td></tr>
+</table></div>
+<div class="csl-bib-body"><div class="csl-entry"><a id="citeproc_bib_item_1"></a>1. Alpha.</div></div>
+<p>Value 3.1.</p>
+<div id="footnotes"><div class="footdef"><sup><a id="fn.n" class="footnum" href="#fnr.n">1</a></sup> <div class="footpara"><p class="footpara">A note.</p></div></div></div>
+<p><a href="https://orgmode.org/">Org</a></p>
+</body></html>
+""".replace("ORG_CSS", ORG_CSS_STYLE).replace("NONE", NONE_STYLE)
+
+
+def failed(md, html, val=None):
+    return {n for n, _ in check(md, html, val)[0]}
+
+
+def test_good_pair_passes_with_counts():
+    failures, counts = check(GOOD_MD, GOOD_HTML, "3.1")
+    assert failures == []
+    assert counts == {"figures": 1, "tables": 1, "bibliography": 1, "footnotes": 1,
+                      "crossrefs": 2}
+
+
+def test_1_md_link_without_anchor():
+    assert failed(GOOD_MD + "\n[x](#nowhere)\n", GOOD_HTML) == {1}
+
+
+def test_1_html_link_without_anchor():
+    html = GOOD_HTML.replace("</body>", '<a href="#nowhere">x</a></body>')
+    assert failed(GOOD_MD, html) == {1}
+
+
+def test_1_md_heading_slug_is_an_anchor():
+    assert failed(GOOD_MD + "\n[o](#overview)\n# Overview\n[o2](#overview-1)\n",
+                  GOOD_HTML) == set()
+
+
+def test_2_count_mismatch():
+    assert failed(GOOD_MD + "\n*Figure 2: Extra.*\n", GOOD_HTML) == {2}
+
+
+def test_3_crossref_order_differs():
+    md = GOOD_MD.replace("See [Figure 1](#fig-a) and [Table 1](#tab-a)",
+                         "See [Table 1](#tab-a) and [Figure 1](#fig-a)")
+    assert failed(md, GOOD_HTML) == {3}
+
+
+def test_4_caption_number_differs_from_link():
+    html = GOOD_HTML.replace("Figure 1: </span>", "Figure 2: </span>")
+    assert failed(GOOD_MD, html) == {4}
+
+
+def test_5_counter_rule_after_none_rule():
+    html = GOOD_HTML.replace(ORG_CSS_STYLE + "\n" + NONE_STYLE, NONE_STYLE + "\n" + ORG_CSS_STYLE)
+    assert failed(GOOD_MD, html) == {5}
+
+
+def test_6_and_7_image_not_embedded():
+    html = GOOD_HTML.replace("data:image/svg+xml;base64,AAAA", "resources/figures/a.svg")
+    assert failed(GOOD_MD, html) == {6, 7}
+
+
+def test_6_external_script():
+    html = GOOD_HTML.replace("</head>", '<script src="https://cdn.example/x.js"></script></head>')
+    assert failed(GOOD_MD, html) == {6}
+
+
+def test_7_relative_link():
+    html = GOOD_HTML.replace("</body>", '<a href="config/x.yaml">x</a></body>')
+    assert failed(GOOD_MD, html) == {7}
+
+
+def test_7_object_data():
+    html = GOOD_HTML.replace("</body>", '<object data="a.svg"></object></body>')
+    assert failed(GOOD_MD, html) == {7}
+
+
+def test_8_val_missing():
+    assert failed(GOOD_MD, GOOD_HTML, "9.9") == {8}
+#+end_src
+
+#+begin_src python :tangle ./tests/export/test_inline_html.py :mkdirp yes
+"""inline_html.py labels each embedded image with the MIME type of its suffix."""
+import subprocess
+import sys
+
+from conftest import INLINE_HTML
+
+
+def test_svg_png_jpeg_mime(tmp_path):
+    (tmp_path / "a.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    (tmp_path / "b.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (tmp_path / "c.jpg").write_bytes(b"\xff\xd8\xff")
+    page = tmp_path / "page.html"
+    page.write_text('<img src="a.svg" /><img src="b.png" /><img src="c.jpg" />')
+    subprocess.run([sys.executable, str(INLINE_HTML), str(page)], check=True)
+    html = page.read_text()
+    assert "data:image/svg+xml;base64," in html
+    assert "data:image/png;base64," in html
+    assert "data:image/jpeg;base64," in html
+#+end_src
+
+#+begin_src python :tangle ./tests/export/test_paired_export.py :mkdirp yes
+"""Exports of the test document: Markdown regression and the paired HTML."""
+import shutil
+import subprocess
+import sys
+
+from conftest import BASELINE, CHECK, FIXTURE, FIXTURE_ID, SCRIPT, run_export
+
+
+def copy_fixture(dest):
+    shutil.copytree(FIXTURE, dest)
+    return dest
+
+
+def test_md_matches_baseline(tmp_path):
+    base, new = copy_fixture(tmp_path / "base"), copy_fixture(tmp_path / "new")
+    run_export(BASELINE, base, "proj.org", FIXTURE_ID)
+    run_export(SCRIPT, new, "proj.org", FIXTURE_ID)
+    assert (new / "METHOD.md").read_bytes() == (base / "METHOD.md").read_bytes()
+
+
+def test_id_not_in_file_fails(tmp_path):
+    d = copy_fixture(tmp_path / "proj")
+    r = run_export(SCRIPT, d, "proj.org", "00000000-0000-4000-8000-000000000000", check=False)
+    assert r.returncode != 0
+    assert "is not in" in r.stdout + r.stderr
+
+
+def export_both(tmp_path):
+    d = copy_fixture(tmp_path / "proj")
+    run_export(SCRIPT, d, "proj.org", FIXTURE_ID, "both")
+    return d
+
+
+def test_both_formats_pass_check(tmp_path):
+    d = export_both(tmp_path)
+    r = subprocess.run([sys.executable, str(CHECK), str(d / "METHOD.md"), str(d / "METHOD.html"),
+                        "--expect-val", "3.1"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout
+    assert r.stdout.strip() == "OK figures=2 tables=2 bibliography=2 footnotes=1 crossrefs=4"
+
+
+def test_both_md_still_matches_baseline(tmp_path):
+    d = export_both(tmp_path)
+    base = copy_fixture(tmp_path / "base")
+    run_export(BASELINE, base, "proj.org", FIXTURE_ID)
+    assert (d / "METHOD.md").read_bytes() == (base / "METHOD.md").read_bytes()
+
+
+def test_repo_links_are_text_and_title_set(tmp_path):
+    html = (export_both(tmp_path) / "METHOD.html").read_text()
+    assert "<code>scripts/count.py</code>" in html
+    assert 'href="scripts/' not in html and 'href="proj.org' not in html
+    assert "Validation, Checks" in html and "the validation section" in html
+    assert 'href="https://orgmode.org/"' in html
+    assert "<title>proj Method: paired export test document</title>" in html
+
+
+def test_duplicate_titles_get_distinct_anchors(tmp_path):
+    html = (export_both(tmp_path) / "METHOD.html").read_text()
+    assert 'id="notes"' in html and 'id="notes-1"' in html
+
+
+def test_missing_image_fails_and_names_it(tmp_path):
+    d = copy_fixture(tmp_path / "proj")
+    (d / "resources/figures/demo.png").unlink()
+    r = run_export(SCRIPT, d, "proj.org", FIXTURE_ID, "html", check=False)
+    assert r.returncode != 0
+    assert "demo.png" in r.stdout + r.stderr
+    assert not (d / "METHOD.html").exists()
+#+end_src
+
+#+begin_src python :tangle ./tests/export/test_real_inputs.py :mkdirp yes
+"""Markdown regression on the sections whose org_update.sh runs this script.
+
+Each org file is copied to a temporary directory; the baseline and the new script
+export the same section from separate copies, and the outputs must be byte-identical.
+"""
+import shutil
+from pathlib import Path
+
+import pytest
+
+from conftest import BASELINE, RMETH_ORG, SCRIPT, run_export
+
+HOME = Path.home()
+INPUTS = [
+    ("rmeth-readme", RMETH_ORG, "9f6d5e1e-f8bd-43f6-a4b5-a75f1d7b3b4f", "README.md"),
+    ("rmeth-method", RMETH_ORG, "f731ab06-7b9a-44ad-a47d-4bcadf1fe4ba", "METHOD.md"),
+    ("frag-readme", HOME / "repos/frag/frag.org", "339b69f6-6c09-4e9d-a2ec-27bdf5747163", "README.md"),
+    ("emseq-readme", HOME / "repos/emseq/emseq.org", "bda70cff-0713-4e32-8da1-ee83924b8f00", "README.md"),
+]
+
+
+@pytest.mark.parametrize("name,org,node,out", INPUTS, ids=[i[0] for i in INPUTS])
+def test_md_byte_identical(tmp_path, name, org, node, out):
+    results = {}
+    for side, script in (("base", BASELINE), ("new", SCRIPT)):
+        d = tmp_path / side
+        d.mkdir()
+        shutil.copy(org, d / org.name)
+        run_export(script, d, org.name, node, "md" if side == "new" else None)
+        results[side] = (d / out).read_bytes()
+    assert results["new"] == results["base"]
+#+end_src
+
+#+begin_src python :tangle ./tests/export/test_scaffold.py :mkdirp yes
+"""A repository scaffolded from the biopipe template exports README and Method in both formats."""
+import shutil
+import subprocess
+import sys
+
+from conftest import CHECK, SCRIPT, TEMPLATE, run_export
+
+README_ID = "aaaaaaaa-0000-4000-8000-00000000000a"
+METHOD_ID = "aaaaaaaa-0000-4000-8000-00000000000b"
+
+
+def test_scaffold_exports_both_formats(tmp_path):
+    org = tmp_path / "demo.org"
+    shutil.copy(TEMPLATE, org)
+    # The substitution of the biopipe_org recipe in ~/repos/science/tools/sci-process-makefile.
+    subprocess.run(["sed", "-i", "s/__BIOPIPE_PROJECT__/demo/g; s/__BIOPIPE_YEAR__/2026/g; "
+                    "s/__BIOPIPE_DATE__/2026-10-10/g", str(org)], check=True)
+    text = org.read_text()
+    assert "METHOD_NODE=REPLACE_WITH_METHOD_ID" in text
+    assert "--format html" in text and "METHOD.html export failed" in text
+    assert "#+MACRO: val (eval" in text
+    for name, node in (("README", README_ID), ("METHOD", METHOD_ID)):
+        old = f":export_file_name: {name}\n"
+        assert text.count(old) == 1, name
+        text = text.replace(old, f"{old}:ID:       {node}\n")
+    org.write_text(text)
+    for name, node in (("README", README_ID), ("METHOD", METHOD_ID)):
+        run_export(SCRIPT, tmp_path, "demo.org", node, "both")
+        r = subprocess.run([sys.executable, str(CHECK), str(tmp_path / f"{name}.md"),
+                            str(tmp_path / f"{name}.html")], capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout
+#+end_src
+
+#+begin_src python :tangle ./tests/export/test_org_update_fallback.py :mkdirp yes
+"""A failed METHOD.html export in org_update.sh does not stop the Markdown exports."""
+import re
+import shutil
+import subprocess
+
+from conftest import INLINE_HTML, ORG_UPDATE, RMETH_ORG, SCRIPT, isolated_env
+
+
+def test_html_failure_does_not_stop_markdown(tmp_path):
+    d = tmp_path / "rmeth"
+    d.mkdir()
+    shutil.copy(RMETH_ORG, d / "rmeth.org")
+    shutil.copytree(RMETH_ORG.parent / "resources" / "figures", d / "resources" / "figures")
+    func = re.search(r"^update_exports\(\) \{.*?^\}", ORG_UPDATE.read_text(), re.S | re.M).group(0)
+    script = f"set -euo pipefail\n{func}\nupdate_exports\necho AFTER_EXPORTS\n"
+    env = isolated_env(tmp_path / "org-id-locations",
+                       REPO_DIR=str(d), README_ORG=str(d / "rmeth.org"),
+                       README_NODE="9f6d5e1e-f8bd-43f6-a4b5-a75f1d7b3b4f",
+                       METHOD_NODE="f731ab06-7b9a-44ad-a47d-4bcadf1fe4ba",
+                       README_EXPORT=str(SCRIPT), EXPORT_ORG_CSS="/nonexistent/org.css",
+                       EXPORT_INLINE_HTML=str(INLINE_HTML))
+    r = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=3600)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "METHOD.html export failed" in r.stdout
+    assert "AFTER_EXPORTS" in r.stdout
+    assert (d / "README.md").exists() and (d / "METHOD.md").exists()
+#+end_src
+
+#+begin_src emacs-lisp :tangle ./tests/export/isolated_id_index/site-start.el :mkdirp yes
+;;; site-start.el --- per-test Org ID index for batch exports  -*- lexical-binding: t -*-
+;; Batch Emacs loads site-start.el from the load path at startup. The tests put
+;; this folder first on EMACSLOADPATH, so every export they run keeps its Org ID
+;; index in the file named by PAIRED_TEST_ORG_ID_LOCATIONS, not in the shared
+;; batch index ~/.emacs.d/org-id-locations that latex_init.el names.
+;; Org resolves an id: link through that index and adds every visited file to
+;; it, so with the shared index an export of one test copy can link to another
+;; copy, and a later production export can link to a test copy.
+(with-eval-after-load "latex_init"
+  (let ((index (getenv "PAIRED_TEST_ORG_ID_LOCATIONS")))
+    (when (and index (not (string-empty-p index)))
+      (setq org-id-locations-file index))))
+#+end_src
+
+#+begin_src toml :tangle ./tests/export/ruff.toml :mkdirp yes
+# The baseline is a frozen copy of the 2026-10-10 export script, kept byte for
+# byte apart from its heading lookup, so lint findings in it are not fixed.
+extend-exclude = ["baseline_export_header_to_markdown.py"]
 #+end_src
 
 *** org_export_to_beamer.sh
@@ -7528,11 +8318,12 @@ Suppress zenuml/core stderr popup on every mermaid eval.
   :ensure nil  ; installed via system package (maildir-utils)
   :commands mu4e
   :config
-  ;; Core
+  ;; Core.  The local Gmail copy lives on jeff-beast only, so other hosts
+  ;; never fetch mail ("true" is a no-op command).
   (setq mu4e-maildir "~/Mail"
-        mu4e-get-mail-command "mbsync -a"
+        mu4e-get-mail-command (if (string= (system-name) "jeff-beast") "mbsync -a" "true")
         mu4e-mu-binary "/usr/local/bin/mu"
-        mu4e-update-interval 300
+        mu4e-update-interval (and (string= (system-name) "jeff-beast") 300)
         mu4e-index-update-in-background t
         mu4e-hide-index-messages t)
 
