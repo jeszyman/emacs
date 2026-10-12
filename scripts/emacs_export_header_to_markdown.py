@@ -421,13 +421,24 @@ def find_heading_form(org_file, node_id):
     )
 
 
+# Review marks (a <~ ... ~> note to Claude, a <g{ ... }g> highlight of Claude's
+# last changes) are shown by the user's Emacs config, which the batch export
+# does not load, so a leftover mark would print literally. The export stops at
+# the first mark in the heading's subtree and names its line.
+REVIEW_MARK_CHECK = r"""(save-excursion
+  (let ((end (save-excursion (org-end-of-subtree t t))))
+    (when (re-search-forward "<~\\|<g{" end t)
+      (error "Review mark left at line %d of %s: resolve every <~ ~> note and remove every <g{ }g> highlight before export"
+             (line-number-at-pos) (buffer-file-name)))))"""
+
+
 def run_export(org_file, node_id, overrides_el, export_call):
     with tempfile.NamedTemporaryFile("w", suffix=".el", delete=False) as f:
         f.write(overrides_el)
         overrides = f.name
     form = (
         f"(progn (require 'org) (require 'org-id) (setq org-confirm-babel-evaluate nil) "
-        f"{find_heading_form(org_file, node_id)} {export_call} (kill-emacs))"
+        f"{find_heading_form(org_file, node_id)} {REVIEW_MARK_CHECK} {export_call} (kill-emacs))"
     )
     try:
         result = subprocess.run(
