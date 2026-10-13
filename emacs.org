@@ -3349,15 +3349,18 @@ and a changed-on-disk file is reread without asking."
         (unless m (error "jg/org-at-id-nosteal: no entry with ID %s" id))
         (unwind-protect
             (with-current-buffer (marker-buffer m)
-              (org-with-wide-buffer
-               (goto-char m)
-               (prog1 (funcall fn)
-                 ;; `org-add-log-setup' adds the note to the global hook; the
-                 ;; buffer's own `post-command-hook' is buffer-local, so check both.
-                 (when (or (memq 'org-add-log-note post-command-hook)
-                           (memq 'org-add-log-note (default-value 'post-command-hook)))
-                   (org-add-log-note))
-                 (let ((inhibit-message t)) (save-buffer)))))
+              ;; A region left active in the buffer would make org-schedule,
+              ;; org-todo and org-set-tags act on every heading inside it.
+              (let ((mark-active nil))
+                (org-with-wide-buffer
+                 (goto-char m)
+                 (prog1 (funcall fn)
+                   ;; `org-add-log-setup' adds the note to the global hook; the
+                   ;; buffer's own `post-command-hook' is buffer-local, so check both.
+                   (when (or (memq 'org-add-log-note post-command-hook)
+                             (memq 'org-add-log-note (default-value 'post-command-hook)))
+                     (org-add-log-note))
+                   (let ((inhibit-message t)) (save-buffer))))))
           (move-marker m nil)))
     (error (format "ERROR: %S" err))))
 #+end_src
