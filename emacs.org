@@ -2508,6 +2508,8 @@ MD_OVERRIDES = SHARED_OVERRIDES + MD_WRITER
 #    in the repository and to headings in other files are kept as text, since
 #    the reader has only the HTML file. Images stay images.
 # 4. A wide table scrolls sideways inside the page; its caption stays under it.
+# 5. Hovering a citation number shows its bibliography entry, and hovering a
+#    "Table N" / "Figure N" link shows its caption (the link's title attribute).
 HTML_WRITER = r'''
 (setq org-html-table-caption-above nil
       org-html-head-include-default-style nil
@@ -2519,10 +2521,21 @@ HTML_WRITER = r'''
       org-html-head "<link rel=\"stylesheet\" type=\"text/css\" href=\"@ORG_CSS@\"/>"
       org-html-head-extra "<style type=\"text/css\">
 caption::before, figcaption::before { content: none; }
-caption, div.figure > p + p { font-style: italic; }
-caption { text-align: left; }
-.table-scroll { overflow-x: auto; }
-</style>")
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    var a = links[i], href = a.getAttribute('href');
+    if (!href || href.charAt(0) !== '#') continue;
+    var t = document.getElementById(href.slice(1));
+    if (!t) continue;
+    var num = t.querySelector('.figure-number');
+    var src = t.closest('.csl-entry') || t.querySelector('caption') || (num && num.parentElement);
+    if (src) a.title = src.textContent.replace(/\\s+/g, ' ').trim();
+  }
+});
+</script>")
 (defun paired-html-unlinked (desc path)
   "DESC, or PATH as code when DESC is empty: the text of a link the reader cannot open."
   (or (org-string-nw-p desc)
@@ -3113,6 +3126,19 @@ from conftest import BASELINE, CHECK, FIXTURE, FIXTURE_ID, SCRIPT, run_export
 def copy_fixture(dest):
     shutil.copytree(FIXTURE, dest)
     return dest
+
+
+def test_html_writer_styles_only_path_specific_rules():
+    # Styling shared by every HTML document lives in the shared stylesheet
+    # org.css, which the template's other HTML route also links. The writer's
+    # own <style> keeps only what must differ on this route: Org numbers
+    # captions here, so org.css's caption counters are switched off
+    # (2026-10-13: three general rules sat here and the other route missed them).
+    import re
+    src = open(SCRIPT).read()
+    block = re.search(r"org-html-head-extra \"<style[^>]*>(.*?)</style>", src, re.S).group(1)
+    rules = [r.strip() for r in block.strip().splitlines() if r.strip()]
+    assert rules == ["caption::before, figcaption::before { content: none; }"], rules
 
 
 def test_md_matches_baseline(tmp_path):
