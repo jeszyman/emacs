@@ -12,6 +12,22 @@ def copy_fixture(dest):
     return dest
 
 
+def test_html_writer_styles_only_path_specific_rules():
+    # Styling shared by every HTML document lives in the shared stylesheet
+    # org.css, which the template's other HTML route also links. The writer's
+    # own <style> keeps only what must differ on this route: Org numbers
+    # captions here, so org.css's caption counters are switched off
+    # (2026-10-13: three general rules sat here and the other route missed them).
+    import re
+
+    src = open(SCRIPT).read()
+    block = re.search(
+        r"org-html-head-extra \"<style[^>]*>(.*?)</style>", src, re.S
+    ).group(1)
+    rules = [r.strip() for r in block.strip().splitlines() if r.strip()]
+    assert rules == ["caption::before, figcaption::before { content: none; }"], rules
+
+
 def test_md_matches_baseline(tmp_path):
     base, new = copy_fixture(tmp_path / "base"), copy_fixture(tmp_path / "new")
     run_export(BASELINE, base, "proj.org", FIXTURE_ID)

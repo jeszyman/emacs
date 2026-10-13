@@ -2657,6 +2657,7 @@ def extract_md_path(org_file, node_id):
 if __name__ == "__main__":
     main()
 #+end_src
+- [2026-10-13 Tue] Claude session "spatial-manager-method-review": [[elisp:(start-process "claude-resume" nil (expand-file-name "~/.claude/bin/claude-resume") "717ce2fb-7131-4c78-a495-0a6fb29b1a5a" "/home/jeszyman/repos/spatial-rads")][resume]]
 
 *** Paired export tests
 :PROPERTIES:
@@ -5868,6 +5869,14 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
 ;; require here because this block tangles before the key-chord package setup.
 (with-eval-after-load 'org
   (key-chord-define org-mode-map "HH" #'jg/org-mark-dispatch))
+
+(defun jg/org-mark-note ()
+  "Wrap the region in a note mark, or insert an empty one with point inside."
+  (interactive)
+  (jg/org-mark-apply 'comment))
+
+(with-eval-after-load 'org
+  (key-chord-define org-mode-map "NN" #'jg/org-mark-note))
 #+end_src
 ****** org.hl                                                           :yas:
 #+begin_src bash :comment no :tangle ~/repos/basecamp/emacs/public_yasnippets/org-mode/org.hl

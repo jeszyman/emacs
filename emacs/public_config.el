@@ -1002,6 +1002,14 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
 ;; require here because this block tangles before the key-chord package setup.
 (with-eval-after-load 'org
   (key-chord-define org-mode-map "HH" #'jg/org-mark-dispatch))
+
+(defun jg/org-mark-note ()
+  "Wrap the region in a note mark, or insert an empty one with point inside."
+  (interactive)
+  (jg/org-mark-apply 'comment))
+
+(with-eval-after-load 'org
+  (key-chord-define org-mode-map "NN" #'jg/org-mark-note))
 ;; Tags
 
         (setq
@@ -2860,11 +2868,12 @@ With no marks, copies the current selection's display text."
   :ensure nil  ; installed via system package (maildir-utils)
   :commands mu4e
   :config
-  ;; Core
+  ;; Core.  The local Gmail copy lives on jeff-beast only, so other hosts
+  ;; never fetch mail ("true" is a no-op command).
   (setq mu4e-maildir "~/Mail"
-        mu4e-get-mail-command "mbsync -a"
+        mu4e-get-mail-command (if (string= (system-name) "jeff-beast") "mbsync -a" "true")
         mu4e-mu-binary "/usr/local/bin/mu"
-        mu4e-update-interval 300
+        mu4e-update-interval (and (string= (system-name) "jeff-beast") 300)
         mu4e-index-update-in-background t
         mu4e-hide-index-messages t)
 

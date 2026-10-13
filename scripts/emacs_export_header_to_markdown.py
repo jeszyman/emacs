@@ -327,6 +327,8 @@ MD_OVERRIDES = SHARED_OVERRIDES + MD_WRITER
 #    in the repository and to headings in other files are kept as text, since
 #    the reader has only the HTML file. Images stay images.
 # 4. A wide table scrolls sideways inside the page; its caption stays under it.
+# 5. Hovering a citation number shows its bibliography entry, and hovering a
+#    "Table N" / "Figure N" link shows its caption (the link's title attribute).
 HTML_WRITER = r"""
 (setq org-html-table-caption-above nil
       org-html-head-include-default-style nil
@@ -338,10 +340,21 @@ HTML_WRITER = r"""
       org-html-head "<link rel=\"stylesheet\" type=\"text/css\" href=\"@ORG_CSS@\"/>"
       org-html-head-extra "<style type=\"text/css\">
 caption::before, figcaption::before { content: none; }
-caption, div.figure > p + p { font-style: italic; }
-caption { text-align: left; }
-.table-scroll { overflow-x: auto; }
-</style>")
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    var a = links[i], href = a.getAttribute('href');
+    if (!href || href.charAt(0) !== '#') continue;
+    var t = document.getElementById(href.slice(1));
+    if (!t) continue;
+    var num = t.querySelector('.figure-number');
+    var src = t.closest('.csl-entry') || t.querySelector('caption') || (num && num.parentElement);
+    if (src) a.title = src.textContent.replace(/\\s+/g, ' ').trim();
+  }
+});
+</script>")
 (defun paired-html-unlinked (desc path)
   "DESC, or PATH as code when DESC is empty: the text of a link the reader cannot open."
   (or (org-string-nw-p desc)
