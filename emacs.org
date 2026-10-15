@@ -311,11 +311,9 @@ sequenceDiagram
 #+end_src
 
 #+call: ExampleMermaid[:file /tmp/exampleMermaid.png]
-[[file:/tmp/exampleMermaid.png]]
 
 
 #+call: ExampleMermaid[:file /tmp/exampleMermaid.svg]
-[[file:/tmp/exampleMermaid.svg]]
 **** Not blocks- launching code from links and text
 **** Code and code blocks
 - Results header args
@@ -421,7 +419,7 @@ Noweb for blocks
 
 See also example on stack overflow https://stackoverflow.com/questions/47058372/in-org-mode-how-to-call-code-block-to-evaluate-from-other-org-file/61580716#61580716
 
-Target file for this example is [[file:/tmp/test.sh]].
+Target file for this example is =/tmp/test.sh=.
 
 #+begin_src bash :tangle /tmp/test.sh
 # For buffer-local noweb blocks:
@@ -890,7 +888,6 @@ EOF
 #+END_SRC
 
 #+RESULTS:
-[[file:/tmp/hello.svg]]
 
 **** Backup
 :PROPERTIES:
@@ -1291,6 +1288,12 @@ https://github.com/tarsius/moody
 #+end_src
   - ideas
     - https://github.com/p3r7/friendly-shell
+    - custom send to shell functions https://emacs.stackexchange.com/questions/37887/send-region-to-shell-in-another-buffer
+    - libvterm https://github.com/akermu/emacs-libvterm
+    - isend mode
+      - https://github.com/ffevotte/isend-mode.el/blob/master/isend-mode.el
+      - https://stat.ethz.ch/pipermail/ess-help/2015-July/010628.html
+      - https://github.com/ffevotte/isend-mode.el
   - https://www.eigenbahn.com/2020/07/07/emacs-remote-shell-interpreter-conf
   - https://www.masteringemacs.org/article/running-shells-in-emacs-overview
     #+begin_src emacs-lisp
@@ -1301,7 +1304,6 @@ https://github.com/tarsius/moody
     #+begin_src emacs-lisp
   (setq comint-scroll-to-bottom-on-output t)
   #+end_src
-- https://github.com/riscy/shx-for-emacs#from-melpa
 - https://www.youtube.com/watch?app=desktop&v=9xLeqwl_7n0&ab_channel=EmacsConfandEmacshangouts
 - https://xenodium.com/yasnippet-in-emacs-eshell/
 - emacs-native-shell-complete
@@ -1312,36 +1314,17 @@ https://github.com/tarsius/moody
   - https://github.com/riscy/shx-for-emacs#description
   - eshell
     - https://old.reddit.com/r/emacs/comments/cyu4is/anyone_actually_using_eshells_smart_display/
-  - https://old.reddit.com/r/emacs/comments/cyu4is/anyone_actually_using_eshells_smart_display/
 - https://github.com/manateelazycat/aweshell
-- bash-completion https://github.com/szermatt/emacs-bash-completion
-    #+begin_src emacs-lisp
-;; (use-package bash-completion)
-
-;;         (autoload 'bash-completion-dynamic-complete
-;;           "bash-completion"
-;;           "BASH completion hook")
-;;         (add-hook 'shell-dynamic-complete-functions
-;;           'bash-completion-dynamic-complete)
-
-;;(bash-completion-dynamic-complete-nocomint COMP-START COMP-POS DYNAMIC-TABLE)
-
-
-   #+end_src
 
 - https://superuser.com/questions/1698921/how-to-step-through-a-shell-script-line-by-line-and-send-each-line-to-the-termin
 - bash linting - http://www.skybert.net/emacs/bash-linting-in-emacs/
 - https://www.reddit.com/r/emacs/comments/x2mmfc/from_vanilla_emacs_to_bash_ide_in_17_minutes/
 
-- https://www.emacswiki.org/emacs/essh.el
 - essh.el- tools to send lines in emacs to shell
   - https://www.emacswiki.org/emacs/essh.el
 - essh.el in my config
 - bash-completion package
 - [[id:f73673dd-e2fe-4228-97c5-efcabcf8f69b][shx package]]
-- https://github.com/p3r7/friendly-shell
-- https://www.eigenbahn.com/2020/07/07/emacs-remote-shell-interpreter-conf
-- https://www.masteringemacs.org/article/running-shells-in-emacs-overview
 - https://stackoverflow.com/questions/12224909/is-there-a-way-to-get-my-emacs-to-recognize-my-bash-aliases-and-custom-functions
 
 
@@ -1366,6 +1349,60 @@ active process."
                       (process-list)))))
   (process-send-region tws-process-target beg end))
 #+end_src
+- [[http://ergoemacs.org/emacs/emacs_shell_vs_terminal.html][Why Run Shell in Emacs?]]
+- https://www.reddit.com/r/emacs/comments/1ext5f0/help_me_make_mx_shell_better_by_making_comint/
+- use windows for bash script and *shell*
+- Use essh.el commands to pipe line-by-line to *shell*
+  - C-c C-p pipe line to shell and skip
+- Other useful shell functionality
+  - put output of one-liner into current buffer: C-u M-!
+  - https://www.emacswiki.org/emacs/EshellRedirection
+- https://www.reddit.com/r/emacs/comments/onpv90/emacs_as_shell_script_ide/
+- name shell by starting with C-u M-x
+checkout tramp
+https://www.gnu.org/software/tramp/#Overview
+
+#+BEGIN_SRC emacs-lisp
+
+;; ;; TEST remove projectile global mode for SSH login:
+
+;; (setq projectile-mode-line nil)
+
+;; (setq tramp-ssh-controlmaster-options "-o ControlPath=%%C -o
+;; ControlMaster=auto -o ControlPersist=no")
+
+
+;; ;; essh.el
+;; ;; ------------------------------------------------------------------ ;;
+;; ;; TO INSTALL:                                                        ;;
+;; ;; 1. add essh.el in your load-path.                                  ;;
+;; ;;                                                                    ;;
+;; ;; 2. add to your .emacs file:                                        ;;
+;; ;;                                                                    ;;
+;; (require 'essh)                                                    ;;
+;; (defun essh-sh-hook ()                                             ;;
+;;   (define-key sh-mode-map "\C-c\C-r" 'pipe-region-to-shell)        ;;
+;;   (define-key sh-mode-map "\C-c\C-b" 'pipe-buffer-to-shell)        ;;
+;; ;;  (define-key sh-mode-map "\C-c\C-j" 'pipe-line-to-shell)          ;;
+;;   (define-key sh-mode-map "C-RET" 'pipe-line-to-shell)          ;;
+;;   (define-key sh-mode-map "\C-c\C-n" 'pipe-line-to-shell-and-step) ;;
+;;   (define-key sh-mode-map "\C-c\C-f" 'pipe-function-to-shell)      ;;
+;;   (define-key sh-mode-map "\C-c\C-d" 'shell-cd-current-directory)) ;;
+;; (add-hook 'sh-mode-hook 'essh-sh-hook)                             ;;
+;; ;; ------------------------------------------------------------------ ;;
+
+;; ;;  path?
+;; (setenv "PATH" (concat "/opt/local/bin/:" (getenv "PATH")))
+
+;; ;; https://www.youtube.com/watch?v=FRu8SRWuUko
+
+
+;; (when (memq window-system '(mac ns))
+;;   (exec-path-from-shell-initialize))
+
+#+END_SRC
+https://www.reddit.com/r/emacs/comments/17rghxv/emacs_as_a_replacement_tmux/
+- interfaces
 *** Bibtex
 :PROPERTIES:
 :ID:       b9213e5b-1c3a-4da0-a648-10eed94179c4
@@ -1454,7 +1491,6 @@ When a project has elisp that should load on buffer open or provides helper func
 - https://www.reddit.com/r/emacs/comments/1azmh4j/nearly_halfed_my_config_with_new_emacs_30/
 - https://www.reddit.com/r/emacs/comments/10a42eo/nondevelopers_who_started_without_other/
 - https://github.com/joshpetit/dotfiles
-- https://alhassy.github.io/emacs.d/
 - Customization
 - profiling and optimization
   - https://stackoverflow.com/questions/5762098/how-do-i-profile-my-emacs-configuration
@@ -1462,26 +1498,7 @@ When a project has elisp that should load on buffer open or provides helper func
 - https://github.com/ianpan870102/.emacs.d/blob/master/config.org
 - linux setup using apt
   - https://docs.docker.com/install/linux/linux-postinstall/
-- [[https://superuser.com/questions/637979/install-emacs-without-sudo][Server install how to]]
 - https://askubuntu.com/questions/598985/how-to-upgrade-to-the-latest-emacs
-- Init file examples
-  - https://gitlab.com/Kaligule/emacs-config/-/blob/master/config.org
-  - https://github.com/wasamasa/dotemacs/blob/master/init.org
-  - https://github.com/pprevos/EmacsLife/blob/master/InitFiles.org
-  - [[http://pages.sachachua.com/.emacs.d/Sacha.html][Chua emacs config]]
-  - https://github.com/c02y/dotemacs.d/blob/master/init.el#L182-L207
-  - https://ogbe.net/emacsconfig.html
-  - "init file bankrupcy"
-  - .emacs configs
-    - http://pages.sachachua.com/.emacs.d/Sacha.html
-    - https://www.reddit.com/r/emacs/comments/585n3j/i_have_created_a_list_of_people_with_nice_config/
-  - https://www.emacswiki.org/emacs/RobertAdesamConfig
-  - https://github.com/grettke/home/blob/master/ALEC.txt#L3256
-  - http://nullman.net/emacs/files/init-emacs.org
-  - https://github.com/KaratasFurkan/.emacs.d
-  - https://github.com/senny/emacs.d/blob/master/init.el
-  - https://muto.ca/posts/my-emacs-configuration.html
-  - https://www.reddit.com/r/emacs/comments/m9zxw6/444_days_of_literate_configuration_450_days_using/
 - https://config.phundrak.com/emacs/
 **** configuration and Init
 :PROPERTIES:
@@ -1493,6 +1510,7 @@ When a project has elisp that should load on buffer open or provides helper func
 - https://github.com/pprevos/EmacsLife/blob/master/InitFiles.org
 - [[http://pages.sachachua.com/.emacs.d/Sacha.html][Chua emacs config]]
 - https://github.com/c02y/dotemacs.d/blob/master/init.el#L182-L207
+- https://github.com/c02y/dotemacs.d/blob/81153dcce335b0d2ef4b2416eae6e1ca3c70cd76/init.el#L2955-L3098
 - https://ogbe.net/emacsconfig.html
 - "init file bankrupcy"
 - .emacs configs
@@ -1506,6 +1524,16 @@ When a project has elisp that should load on buffer open or provides helper func
 - https://muto.ca/posts/my-emacs-configuration.html
 - https://www.reddit.com/r/emacs/comments/m9zxw6/444_days_of_literate_configuration_450_days_using/
 - https://github.com/DiamondBond/emacs
+- https://shreyas.ragavan.co/docs/emacs-config/
+- https://github.com/jzohrab/emacs.d/blob/master/init.el#L31
+- https://emacs.christianbaeuerlein.com/#org7a4a164
+- https://www.reddit.com/r/emacs/comments/eewwyh/officially_introducing_memacs/
+- https://jmonlong.github.io/Hippocamplus/emacs/
+- https://github.com/0pendev/dotfiles/blob/master/emacs/config.org
+- [[https://github.com/xgarrido/emacs-starter-kit/blob/master/starter-kit.org][github: xgarrido emacs starter kit]]
+- https://www.reddit.com/r/emacs/comments/1r6g20h/how_long_is_your_initel_file_these_days/
+- https://github.com/Izder456/Emacs-Config
+- https://randomgeekery.org/config/emacs/nano/
 *** Debugging, troubleshooting
 - https://www.reddit.com/r/emacs/comments/1hsxub9/how_to_know_what_is_slowing_down_emacs/
 - 27.6 Running Debuggers
@@ -1526,93 +1554,6 @@ https://emacsrocks.com/e13.html
 https://www.reddit.com/r/emacs/comments/17gqjsy/using_ruff_format_with_emacs_to_reformat_python/
 - https://github.com/alhassy/repl-driven-development
 - [[id:340af0cc-4211-4ae2-8bb2-4acdb1e2de2b][Show or identify whitespace]]
-*** Emacs as shell IDE
-:PROPERTIES:
-:ID:       5857e608-7dbc-4cf2-93fd-6e786e2b0c11
-:END:
-#+begin_src emacs-lisp
-;;https://emacs.stackexchange.com/questions/37887/send-region-to-shell-in-another-buffer
-(defun tws-region-to-process (arg beg end)
-  "Send the current region to a process buffer.
-The first time it's called, will prompt for the buffer to
-send to. Subsequent calls send to the same buffer, unless a
-prefix argument is used (C-u), or the buffer no longer has an
-active process."
-  (interactive "P\nr")
-  (if (or arg ;; user asks for selection
-          (not (boundp 'tws-process-target)) ;; target not set
-          ;; or target is not set to an active process:
-          (not (process-live-p (get-buffer-process
-                                tws-process-target))))
-      (setq tws-process-target
-            (completing-read
-             "Process: "
-             (seq-map (lambda (el) (buffer-name (process-buffer el)))
-                      (process-list)))))
-  (process-send-region tws-process-target beg end))
-#+end_src
-- [[http://ergoemacs.org/emacs/emacs_shell_vs_terminal.html][Why Run Shell in Emacs?]]
-- https://www.reddit.com/r/emacs/comments/1ext5f0/help_me_make_mx_shell_better_by_making_comint/
-- use windows for bash script and *shell*
-- Use essh.el commands to pipe line-by-line to *shell*
-  - C-c C-p pipe line to shell and skip
-- Other useful shell functionality
-  - put output of one-liner into current buffer: C-u M-!
-  - https://www.emacswiki.org/emacs/EshellRedirection
-- shells
-  - https://www.reddit.com/r/emacs/comments/r2p12t/eshellmode/
-  - - https://emacs.stackexchange.com/questions/50539/sending-code-to-an-ansi-term-via-isend-mode-how-to-modify-default-buffer-chosen
-  - [[https://emacs.stackexchange.com/questions/43711/displaying-a-second-buffer-with-a-shell][see send-line-to-region-and-step]]
-  - https://github.com/riscy/shx-for-emacs#description
-  - eshell
-    - https://old.reddit.com/r/emacs/comments/cyu4is/anyone_actually_using_eshells_smart_display/
-  - https://old.reddit.com/r/emacs/comments/cyu4is/anyone_actually_using_eshells_smart_display/
-- https://www.reddit.com/r/emacs/comments/onpv90/emacs_as_shell_script_ide/
-- name shell by starting with C-u M-x
-- https://github.com/manateelazycat/aweshell/blob/master/README.md
-- [[http://ergoemacs.org/emacs/emacs_shell_vs_terminal.html][Why Run Shell in Emacs?]]
-checkout tramp
-https://www.gnu.org/software/tramp/#Overview
-
-#+BEGIN_SRC emacs-lisp
-
-;; ;; TEST remove projectile global mode for SSH login:
-
-;; (setq projectile-mode-line nil)
-
-;; (setq tramp-ssh-controlmaster-options "-o ControlPath=%%C -o
-;; ControlMaster=auto -o ControlPersist=no")
-
-
-;; ;; essh.el
-;; ;; ------------------------------------------------------------------ ;;
-;; ;; TO INSTALL:                                                        ;;
-;; ;; 1. add essh.el in your load-path.                                  ;;
-;; ;;                                                                    ;;
-;; ;; 2. add to your .emacs file:                                        ;;
-;; ;;                                                                    ;;
-;; (require 'essh)                                                    ;;
-;; (defun essh-sh-hook ()                                             ;;
-;;   (define-key sh-mode-map "\C-c\C-r" 'pipe-region-to-shell)        ;;
-;;   (define-key sh-mode-map "\C-c\C-b" 'pipe-buffer-to-shell)        ;;
-;; ;;  (define-key sh-mode-map "\C-c\C-j" 'pipe-line-to-shell)          ;;
-;;   (define-key sh-mode-map "C-RET" 'pipe-line-to-shell)          ;;
-;;   (define-key sh-mode-map "\C-c\C-n" 'pipe-line-to-shell-and-step) ;;
-;;   (define-key sh-mode-map "\C-c\C-f" 'pipe-function-to-shell)      ;;
-;;   (define-key sh-mode-map "\C-c\C-d" 'shell-cd-current-directory)) ;;
-;; (add-hook 'sh-mode-hook 'essh-sh-hook)                             ;;
-;; ;; ------------------------------------------------------------------ ;;
-
-;; ;;  path?
-;; (setenv "PATH" (concat "/opt/local/bin/:" (getenv "PATH")))
-
-;; ;; https://www.youtube.com/watch?v=FRu8SRWuUko
-
-
-;; (when (memq window-system '(mac ns))
-;;   (exec-path-from-shell-initialize))
-
-#+END_SRC
 *** Emacs custom development
 :PROPERTIES:
 :ID:       e5bf7c5d-80dc-4ee8-bccd-775be35ee7ad
@@ -1643,12 +1584,6 @@ https://www.gnu.org/software/tramp/#Overview
 
 
 
-*** Emacs shell IDE
-:PROPERTIES:
-:ID:       07b8634c-70a6-4a99-90b5-0f5083ccaf04
-:END:
-https://www.reddit.com/r/emacs/comments/17rghxv/emacs_as_a_replacement_tmux/
-- interfaces
 *** Emacs sql
 leuvenleuven
 https://chatgpt.com/c/9d4cfab7-2187-4059-8b07-c72bc5ec5a83
@@ -2021,7 +1956,7 @@ https://www.reddit.com/r/emacs/comments/1au10ha/i_want_to_learn_what_emacs_offer
 - [[id:5d29a241-3165-4a3b-a88c-c3fe122d2ff9][Jupyter integration]]
 - [[id:e33cbb04-6299-4a46-bcbd-116bdd72e99d][Rmd integration]]
 - Python integration
-- [[id:07b8634c-70a6-4a99-90b5-0f5083ccaf04][Emacs shell IDE]]
+- [[id:f2557e40-0d81-438a-93e9-6917a40c1d8e][Emacs shell IDE]]
 *** Interfaces
 - https://github.com/emacs-slack/emacs-slack/
 *** LaTeX integration
@@ -4077,13 +4012,7 @@ https://emacs.stackexchange.com/questions/18688/radio-targets-in-external-org-mo
 https://orgmode.org/manual/External-Links.html
 note phrase matching works outside of org
 note brave doesn't do copy link to highlight
-**** Literate programming
-:PROPERTIES:
-:ID:       f310dfff-4fc0-4223-900c-9a77a245ce9b
-:END:
-- https://www.reddit.com/r/emacs/comments/n2dw4n/replacing_jupyter_notebook_with_org_mode/
-
-http://www.howardism.org/Technical/Emacs/literate-programming-tutorial.html
+**** [[id:10af5937-004b-46f8-818d-b81d30462164][Literate programming]]
 **** Mobile access
 :PROPERTIES:
 :ID:       533cfba1-d18c-4cad-ae4c-ec69a50a9fd0
@@ -4566,7 +4495,6 @@ graph TD
   PC -->|"org-agenda-files"| ORGF
 #+end_src
 #+RESULTS:
-[[file:/tmp/emacs-config-map.png]]
 
 **** Package configuration entries
 
@@ -7664,7 +7592,7 @@ Belt-and-suspenders for the case where ide-diff is ever re-enabled: claude-code-
               (setq ediff-window-setup-function 'ediff-setup-windows-multiframe)))
 #+end_src
 
-**** [[file:config/public_emacs_config.el][Compiled elisp file]]
+**** [[file:~/repos/emacs/emacs/public_config.el][Compiled elisp file]]
 **** Conda
 - https://github.com/necaris/conda.el
 
@@ -8813,7 +8741,6 @@ https://chatgpt.com/c/6841f0e8-c080-8005-a3ed-fc6d67a76e19
 #+end_src
 https://github.com/LionyxML/ros
 
-[[file:./resources/test3.png][test3.png]]
 **** org-table-widget
 :PROPERTIES:
 :ID:       43dc6823-b58d-4d2e-bb5f-c1e904476b68
@@ -9698,6 +9625,9 @@ needs an install?
 #+end_src
 
 ** General reference and miscellaneous
+:PROPERTIES:
+:ID:       4cb5f373-3d0a-41fe-b2f4-5de8c835ab51
+:END:
 - https://www.reddit.com/r/emacs/comments/1rldrb5/emacs_internal_part_02_deconstructing_lisp_object/
 - https://www.reddit.com/r/emacs/comments/1bkw1j6/use_information_theory_to_choose_better/
 - https://www.reddit.com/r/emacs/comments/1bnj5xe/announcing_casual_an_opinionated_porcelain_for/
@@ -9705,6 +9635,78 @@ needs an install?
 - [[id:BF9D824A-02EF-4580-97A1-B887299AD461][Lisp]]
 - Alternative documentation https://www2.lib.uchicago.edu/keith/emacs/#org9f6793b
 - https://arxiv.org/pdf/2008.06030
+- https://github.com/MiniApollo/kickstart.emacs/blob/main/config.org#language-support--lsp
+- https://www.reddit.com/r/emacs/comments/18frlq4/packages_that_you_would_like_to_be_in_emacs_core/
+- https://www.reddit.com/r/emacs/comments/18ian37/my_modern_emacs_ui_setup/
+https://www.reddit.com/r/emacs/comments/1802hag/how_can_i_become_a_more_proficient_emacs_user_esp/
+- https://rebeja.eu/posts/python-ide-with-emacs-and-docker/
+- Emacs from scratch
+  - https://www.youtube.com/watch?app=desktop&time_continue=781&v=JkI-sdgpOoA&embeds_euri=https%3A%2F%2Fwww.reddit.com%2F&source_ve_path=MjM4NTE&feature=emb_title&ab_channel=lxsameer&themeRefresh=1
+  -
+  - https://www.reddit.com/r/emacs/comments/k5cqwb/emacs_ide_python_development_configuration_live/
+- https://github.com/ahendriksen/ob-tmux
+- https://www.reddit.com/r/emacs/comments/zxetet/i_made_a_chatgpt_client_for_emacs_and_so_can_you/
+- skeletons
+  ;;;;;;;;;;;;;;;;;
+  ;;; SKELETONS ;;;
+  ;;;;;;;;;;;;;;;;;
+
+  (define-skeleton meeting-skeleton
+    "meeting skeleton" nil
+    \n >
+    "date"
+    \n >
+    "recording"
+    \n >
+    "sox -d PATH/FILENAME.wav rate 5k"
+    )
+
+  (define-skeleton fuckwork-skeleton
+    "Write a greeting"
+    "Type nmae of user: "
+    "hello, " str "!")
+  (define-skeleton vote
+        "Electoral motion results"
+        nil
+        > "|----------------+----------+--------------|" \n
+        > "|Vote:           |For: "
+        (setq v1 (skeleton-read "How many for? "))
+        "    |Against: "
+        (setq v2 (skeleton-read "How many against? "))
+        "    |" \n
+        > "|----------------+----------+--------------|" \n
+        "|" (if (< (string-to-number v1)(string-to-number v2))
+                "Not Carried                               |"
+              "Carried                                    |")
+        \n
+        > "|------------------------------------------|" \n)
+
+  (global-set-key (kbd "\C-c v") 'vote)
+- General education
+  - [[https://www.youtube.com/c/SystemCrafters/videos?app=desktop&view=0&sort=p&flow=list][system crafters youtube]]
+  - - https://www.reddit.com/r/emacs/comments/ta6s74/steveys_tech_talk_e39_a_guided_tour_of_emacs/
+- ;;https://superuser.com/questions/602510/how-to-insert-tab-character-in-text-mode
+- [X] generate local byte-compiled elisp
+  - if VC makes a newer .el, .elc will load, but with warning to recompile
+  - http://ergoemacs.org/emacs/emacs_byte_compile.html
+- [cite:@monnier2020]
+- https://bofh.org.uk/2019/02/25/baking-with-emacs/
+- https://www.reddit.com/user/publicvoit/
+- https://github.com/alphapapa/unpackaged.el
+- https://www.google.com/search?q="emacs"+"shell"+tab+complete+slow+lag+freeze
+- https://www.google.com/search?client=ubuntu&hs=MjH&sxsrf=ALeKk00pCsDFnS4Sdtxwh9bZU8HhLT0sJw%3A1613614369863&ei=Ic0tYPqPLu-E9PwPkOC1iAc&q=emacs+remote+bash+completion+slow&oq=emacs+remote+bash+completion+slow&gs_lcp=Cgdnd3Mtd2l6EAMyBQghEKABOgcIABBHELADOgQIABBDOgUIABCRAjoICAAQsQMQgwE6BQgAELEDOgIIADoICC4QsQMQgwE6BQguELEDOggIABCxAxCRAjoHCAAQsQMQCjoGCAAQFhAeOggIABAWEAoQHjoFCCEQqwI6CAghEBYQHRAeOgcIIRAKEKABUPxUWIx-YPqAAWgBcAJ4AIABmQGIAcEUkgEEMjMuNpgBAKABAaoBB2d3cy13aXrIAQLAAQE&sclient=gws-wiz&ved=0ahUKEwi6pMH6rfLuAhVvAp0JHRBwDXEQ4dUDCA0&uact=5
+- https://www.google.com/search?q=emacs+paste+without+line+breaks&oq=emacs+paste+without+line+breaks&aqs=chrome..69i57.9783j0j7&client=ubuntu&sourceid=chrome&ie=UTF-8
+- https://karl-voit.at/2020/01/01/appendorgheading/
+- https://www.reddit.com/r/emacs/comments/gmsc2o/best_way_to_learn_enough_to_contribute_to_emacs/
+- https://www.reddit.com/r/emacs/comments/gumld3/svg_rounded_box_experiment/
+- https://emacs.stackexchange.com/questions/3105/how-to-use-an-external-program-as-the-default-way-to-open-pdfs-from-emacs
+- http://ergoemacs.org/emacs/elisp_compact_empty_lines.html
+https://github.com/politza/pdf-tools
+- [[https://www.emacswiki.org/emacs/TabCompletion][tab complete]]
+- [ ] [[https://emacs.stackexchange.com/questions/14833/debugging-warning-reference-to-free-variable][stack:emacs: Debugging “Warning: Reference to free variable”]]
+- https://github.com/Fuco1/smartparens
+- [[https://github.com/emacs-evil/evil/blob/master/README.md][EVIL mode]]
+- https://github.com/emacs-tw/awesome-emacs
 *** Tutorials and Challenges
 - Emacs from scratch youtube https://www.youtube.com/watch?v=zkfndJuDzsA
 - [[https://blog.markhepburn.com/2013/12/07/andrew-hyatts-emacs-calc-tutorials][Andrew Hyatt's emacs calc tutorials]]
@@ -9716,22 +9718,15 @@ needs an install?
   - [-] tuhdo
     - [X] https://tuhdo.github.io/emacs-tutor.html
     - [ ] https://tuhdo.github.io/emacs-tutor2.html
+    - [ ] https://tuhdo.github.io/emacs-tutor3.html
   - http://emacslife.com/
   - http://emacsrocks.com/
   - [[http://emacs.stackexchange.com/questions?sort=votes][emacs stack exchange questions by vote]]
   - [[https://pawelbx.github.io/emacs-theme-gallery/][nice emacs theme gallary]]
-  - cite:bingmann2015
+  - [cite:@bingmann2015]
   - not useful
     - [[http://david.rothlis.net/emacs/howtolearn.html][Rothlisberger How to Learn Emacs]]
-*** config/init file examples
-- https://shreyas.ragavan.co/docs/emacs-config/
-- https://github.com/jzohrab/emacs.d/blob/master/init.el#L31
-- https://emacs.christianbaeuerlein.com/#org7a4a164
-- https://www.reddit.com/r/emacs/comments/eewwyh/officially_introducing_memacs/
-- https://jmonlong.github.io/Hippocamplus/emacs/
-- https://github.com/0pendev/dotfiles/blob/master/emacs/config.org
-- [[https://github.com/xgarrido/emacs-starter-kit/blob/master/starter-kit.org][github: xgarrido emacs starter kit]]
-- https://www.reddit.com/r/emacs/comments/1r6g20h/how_long_is_your_initel_file_these_days/
+*** [[id:efe58eb5-c583-4fa8-90e5-346216d70940][config/init file examples]]
 *** Emacs conference
 - https://emacsconf.org/2024/talks/
 - https://emacsconf.org/2021/all/
@@ -9740,6 +9735,11 @@ needs an install?
 - https://karthinks.com/software/batteries-included-with-emacs/
 - https://sheer.tj/the_way_of_emacs.html
 - https://github.com/LaurenceWarne/reddit-emacs-tips-n-tricks/blob/master/out.md
+- https://www.reddit.com/r/emacs/comments/y0i0wz/shortdoc_is_fantasti/
+- https://www.reddit.com/user/mickeyp/submitted/
+- https://www.reddit.com/r/emacs/comments/ucldkz/are_we_living_in_the_golden_age_of_emacs/
+- https://www.reddit.com/r/emacs/comments/f2c99b/you_can_play_doom_inside_emacs_using_eaf/
+- [[https://www.reddit.com/r/emacs/comments/60nb8b/favorite_builtin_emacs_commands/][reddit: favorite emacs command]]
 *** Pre-configured distributions
 - https://github.com/sunnyhasija/DOOMEmacs
 - For emacs use in science- https://github.com/rougier
@@ -9749,11 +9749,170 @@ needs an install?
 - https://github.com/a-schaefers/grokEmacs
 - https://lambdaland.org/posts/2025-07-15_bedrock_release/
   - https://lambdaland.org/posts/2024-12-14_emacs_catchup/
+*** Emacs [[https://www.gnu.org/software/emacs/manual/html_node/emacs/index.html#SEC_Contents][Documentation]]
+:PROPERTIES:
+:ID:       6a66a393-75c0-4576-b77d-e259dbd5d252
+:END:
+- Local with C-h r
+  - Navigating documentation
+    - C-h i g
+    - [[http://stackoverflow.com/questions/14915572/how-do-i-get-started-using-emacs-documentation][intro to documentation]]
+- 8
+  - 8.4 Completion
+    - Minibuffer - https://www.reddit.com/r/emacs/comments/rxa29k/is_it_possible_to_have_a_window_which_is_just_the/
+- 5
+  - 5.24  - [[https://www.gnu.org/software/emacs/manual/html_mono/efaq.html#Turning-off-beeping][stop emacs beeps]]
+  - [[https://www.gnu.org/software/emacs/manual/html_mono/efaq.html#Matching-parentheses][5.27 Parenthesis matching]]
+  - 5.33 How do I insert <some text> at the beginning of every line?
+- 12 Hippie Expansion
+  - 12.5 Rectangles
+    - add leading comment symbol with string-input-rectangle
+- 13
+  - 13.8 Bookmarks
+    - prototypical use of bookmarks is to record where you were reading in various files
+    - https://wooww.emacswiki.org/emacs/BookMarks
+- [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Display.html#Display][14 Controlling the Display]]
+  - https://github.com/joostkremers/visual-fill-column
+- 17 Keyboard Macros
+  - 17.5
+- 18 File handling
+  - https://old.reddit.com/r/orgmode/comments/p1raro/executable_org_file_bootstrapping/
+- 10 Help
+  | type    | action         | command |
+  | help    | info program   | C-h i   |
+  | help    | function doc   | C-h f   |
+  | help    | variable doc   | C-h v   |
+  | help    | key combo      | C-h k   |
+  | help    | curr buff mode | C-h m   |
+  |         |                |         |
+  | help    | list all cmmds | C-h m   |
+  |         |                |         |
+  | display | all key bind   | X-b     |
+  |         |                |         |
+  | help    | info directory | C-h i d |
+  |         |                |         |
+  |         | show mode info | C-h m   |
+- [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Windows.html#Windows][20 Multiple Windows]]
+  - [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Split-Window.html#Split-Window][20.2 Splitting Windows]]
+- 21 Frames and Graphical Displays
+  | type   | action       | command     |
+  | resize | shrink h     | S-C-<left>  |
+  |        | enlarge h    | S-C-<right> |
+  |        | shrink v     | S-C-<down>  |
+  |        | enlarge v    | S-C-<up>    |
+  |        |              |             |
+  | buffer | kill current | C-x k       |
+  |        |              |             |
+  | Text   | Larger/small | C-x-+/-     |
+  - ;; Prevents local frame splitting  (set-frame-parameter nil 'unsplittable t)
+  - - Frames
+    - https://www.emacswiki.org/emacs/OneOnOneEmacs
+- 22 input methods
+- 23 Major and Minor Modes
+  - [[https://www.gnu.org/software/emacs/manual/html_mono/forms.html#Forms-Example][forms mode]]
+  - [[https://www.gnu.org/software/tramp/][Tramp mode]]
+  - Minor Modes
+    - Flyspell
+      - Commands
+      - Personal dictionary sync (aspell → LibreOffice)
+
+#+begin_src bash
+ASPELL_DICT=~/repos/org/resources/aspell.en.pws
+LO_DICT=~/.config/libreoffice/4/user/wordbook/standard.dic
+
+aspell_words=$(tail -n +2 "$ASPELL_DICT" | sort)
+lo_words=$(awk '/^---$/{found=1; next} found{print}' "$LO_DICT" | sort)
+
+new_words=$(comm -23 <(echo "$aspell_words") <(echo "$lo_words"))
+
+if [ -z "$new_words" ]; then
+  echo "No new words to add."
+  exit 0
+fi
+
+echo "Adding:"
+echo "$new_words"
+echo "$new_words" >> "$LO_DICT"
+#+end_src
+    - next
+
+    | type    | action            | command        |
+    | frames  | new window        | C-x 5 2        |
+    |         |                   |                |
+    | windows | new below         | C-x 2          |
+    |         | new side          | C-x 3          |
+    |         | max current       | C-x 1          |
+    |         |                   |                |
+    | buffer  | list              | C-x C-b        |
+    |         | switch            | C-x <l/r>      |
+    |         | name switch       | C-x b          |
+    | text    | increase/decrease | C-x C+/C-      |
+    |         | color them        | M-x load-theme |
+    |         |                   |                |
+- 24.1 [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Indentation-Commands.html][Indentation Commands]]
+- 25. Commands for human languages
+  -
+  - 25.15 [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Text-Based-Tables.html#Text-Based-Tables][Editing Text-based Tables]]
+    - https://stackoverflow.com/questions/22837229/how-to-compute-the-dot-product-of-two-column-think-full-column-as-a-vector
+- 26
+  - eldoc
+    - https://www.gnu.org/software/emacs/manual/html_node/emacs/Lisp-Doc.html
+    - - http://elpa.gnu.org/packages/eldoc.html
+- 27 Compiling and Testing Programs
+    - Debugging
+  - 27.8 Libraries of Lisp Code for Emacs
+    - variables
+      - load-path
+- 28
+- 39. [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Emacs-Server.html][Using Emacs as a Server]]
+- 40. Operating system interface
+  - Batch Mode
+    - https://www.google.com/search?q=emacs+batch+bash+variable+in+command
+
+- 41. [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Sorting.html][to auto-sort a region]]
+- 44 [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Saving-Emacs-Sessions.html][Saving Emacs Sessions]]
+  - Don't! takes incredibly long to load
+    #+begin_src emacs-lisp
+  ;;(desktop-save-mode 1)
+    #+end_src
 ** Ideas                                                              :ideas:
 :PROPERTIES:
 :ID:       C3586683-6101-4AA1-B9E9-964EE587FBAE
 :END:
 - [[id:d536d279-9088-4ade-ba9d-7bd5b516f668][Claude build ideas]]
+- Fix Warning (bytecomp): reference to free variable ‘oauth--token-data’ type warnings
+- Load org-mode buffers at startup
+- https://www.reddit.com/r/emacs/comments/5oo51r/wolframalpha_integration_with_emacs/
+- Print the visiting file name
+  #+begin_src emacs-lisp
+  (buffer-file-name)
+  #+end_src
+*** Don't tangle Property drawers
+:PROPERTIES:
+:ID:       4fc29cfc-0064-47f5-99b1-e35e80fa246d
+:END:
+#+begin_src emacs-lisp
+(defun suppress-file-are-same-warning (orig-fun &rest args)
+  "Suppress warnings when `file-truename' identifies files as the same."
+  (let ((warning-minimum-level :error))
+    (apply orig-fun args)))
+
+(advice-add 'file-truename :around #'suppress-file-are-same-warning)
+
+#+end_src
+#+begin_src emacs-lisp
+(with-eval-after-load 'files
+  (setq find-file-suppress-same-file-warnings t))
+
+#+end_src
+#+begin_src emacs-lisp
+(setq text-scale-mode-step 1.01)
+
+#+end_src
+#+begin_src emacs-lisp
+;;https://github.com/joaotavora/yasnippet/pull/789
+(advice-remove 'yas--auto-fill-wrapper #'ignore)
+#+end_src
 *** Appearance and visual
 - [[https://www.reddit.com/r/emacs/comments/1n24uuj/simple_themes_in_emacs/][simple themes in Emacs]]
 - [[https://www.reddit.com/r/emacs/comments/1ltp2j0/announcing_flyover_modern_aesthetic_overlay_for/][flyover — modern aesthetic overlay]]
