@@ -1078,8 +1078,11 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
         (wl . wl)))
 ;; Set org-file-apps to use xdg-open for all file extensions
 
+;; A file link to a PDF that ends in =::N= opens the PDF at page N in okular. Usage: =[[file:~/library/lopez2015foodlab.pdf::897][page 897]]=. N is the PDF's page index, not the number printed on the page. A PDF link without =::N= opens with xdg-open. Org replaces =%1= with the page captured by the entry's regexp group and =%s= with the shell-quoted file path, so the command needs no quotes around =%s=.
+
 (setq org-file-apps
       `((directory . "/usr/bin/gnome-terminal --working-directory=\"%s\"")
+        ("\\.pdf::\\([0-9]+\\)\\'" . "setsid -w okular -p %1 %s")
         ("\\.pdf\\'" . "setsid -w xdg-open \"%s\"")
         ("\\.pptx\\'" . "setsid -w xdg-open \"%s\"")
         ("\\.svg\\'" . "setsid -w xdg-open \"%s\"")
@@ -1097,6 +1100,38 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
                           "--socket-name" "/home/jeszyman/.emacs.d/server/server"
                           "-c" (expand-file-name file))))
         (t . "setsid -w xdg-open \"%s\"")))
+;; okular: insert a link to the page shown in okular
+
+;; =C-c C-l=, then =okular= at the link prompt, inserts a file link to the PDF and page shown in okular, with the text =page N= offered as its description. When more than one okular window shows a document, it asks which file. Okular reports its file and page over D-Bus, and the link it builds opens through the PDF page entry in =org-file-apps= above. No link of type =okular:= is written; the name exists only as a choice at the link prompt.
+
+(defun jg/okular-views ()
+  "Return (FILE . PAGE) for each okular window that shows a document."
+  (require 'dbus)
+  (delq nil
+        (mapcar (lambda (svc)
+                  (ignore-errors
+                    (let ((file (dbus-call-method :session svc "/okular" "org.kde.okular" "currentDocument")))
+                      (unless (string-empty-p file)
+                        (cons (abbreviate-file-name file)
+                              (dbus-call-method :session svc "/okular" "org.kde.okular" "currentPage"))))))
+                (seq-filter (lambda (s) (string-match-p "\\`org\\.kde\\.okular\\(-[0-9]+\\)?\\'" s))
+                            (dbus-list-names :session)))))
+
+(defun jg/org-okular-page-link-complete (&optional _arg)
+  "Return a file link to the page shown in okular, asking which window when there are several."
+  (let* ((views (jg/okular-views))
+         (file (cond ((null views) (user-error "No okular window shows a document"))
+                     ((cdr views) (completing-read "Okular window: " views nil t))
+                     (t (caar views)))))
+    (format "file:%s::%d" file (cdr (assoc file views)))))
+
+(org-link-set-parameters "okular" :complete #'jg/org-okular-page-link-complete)
+
+(org-link-set-parameters
+ "file"
+ :insert-description (lambda (link _desc)
+                       (when (string-match "\\.pdf::\\([0-9]+\\)\\'" link)
+                         (format "page %s" (match-string 1 link)))))
 ;; ssh: link type
 
 ;; Opens a gnome-terminal SSH session. Usage: =[[ssh:jeff-beast][label]]=
