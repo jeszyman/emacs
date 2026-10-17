@@ -1471,6 +1471,33 @@ With prefix arg on citations, skip PDF and open DOI > URL."
 
 ;; ;; Bind it to a convenient key
 ;; (define-key org-mode-map (kbd "C-c x") 'org-toggle-checkbox-and-children)
+
+;; - [ ] a set
+;;   - [ ] of
+;;     - [ ] nested
+;;     - [ ] check
+;;       - [ ] boxes
+
+;; #+name: org-checkbox-auto-done
+
+(defun jg/org-checkbox-auto-done ()
+  "Set the heading to DONE when its checkbox cookie shows all boxes checked.
+The cookie is [n/n] or [100%] on the heading line.  The function changes
+only a heading that has a TODO keyword and is not already done."
+  (save-excursion
+    (org-back-to-heading t)
+    (let ((end (line-end-position)))
+      (when (and (org-get-todo-state)
+                 (not (org-entry-is-done-p))
+                 (re-search-forward
+                  "\\[\\(?:\\(100\\)%\\|\\([0-9]+\\)/\\([0-9]+\\)\\)\\]" end t)
+                 (or (match-beginning 1)
+                     (and (string= (match-string 2) (match-string 3))
+                          (not (string= (match-string 2) "0")))))
+        ;; Name DONE: (org-todo 'done) takes the first done keyword, CLOSEOUT.
+        (org-todo "DONE")))))
+
+(add-hook 'org-checkbox-statistics-hook #'jg/org-checkbox-auto-done)
 ;; Capture
 
 ;; Make C-o a prefix key
