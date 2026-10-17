@@ -5970,6 +5970,7 @@ A file link to a PDF that ends in =::N= opens the PDF at page N in okular. Usage
                           "-c" (expand-file-name file))))
         (t . "setsid -w xdg-open \"%s\"")))
 #+end_src
+- [2026-10-17 Sat] Claude session "pdf-page-links": [[elisp:(start-process "claude-resume" nil (expand-file-name "~/.claude/bin/claude-resume") "a6e41e04-70ae-4f4c-800b-532268cdfd14" "/home/jeszyman/repos/gastronomy")][resume]]
 
 ****** okular: insert a link to the page shown in okular
 
