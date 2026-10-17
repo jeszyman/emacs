@@ -1513,6 +1513,8 @@ With prefix arg on citations, skip PDF and open DOI > URL."
 ;;     - [ ] check
 ;;       - [ ] boxes
 
+;; Checking the last box counted by a heading's checkbox cookie sets the heading to DONE (=jg/org-checkbox-auto-done=, below). Published versions run the same kind of function on =org-checkbox-statistics-hook= and set the wrong state with these TODO keywords. The [[https://orgmode.org/worg/org-hacks.html#mark-done-when-all-checkboxes-checked][Worg Org Hacks function]] and its guarded [[https://emacs.stackexchange.com/questions/19843/how-to-automatically-adjust-an-org-task-state-with-its-children-checkboxes][Emacs Stack Exchange 19843]] variant set CLOSEOUT, the first done keyword, and set INPROCESS back to TODO while the list is incomplete. [[https://github.com/ag91/org-active-statistics][ag91/org-active-statistics]] makes the same INPROCESS-to-TODO change. [[https://elpa.gnu.org/packages/org-edna.html][org-edna]] acts only on a change to a done state, so a checkbox toggle never reaches it. A heading with a repeater repeats as with =C-c C-t d=. Its boxes are cleared for the next cycle only with =:RESET_CHECK_BOXES: t= (org-checklist). Without that property, the next cycle starts complete and checking a box never triggers the change. These results come from 2026-10-17 tests: =emacs -Q= batch runs with these TODO keywords, and temporary buffers in the running Emacs covering =+1d=, =+1d= with =RESET_CHECK_BOXES=, and =REPEAT_CRON=.
+
 ;; #+name: org-checkbox-auto-done
 
 (defun jg/org-checkbox-auto-done ()
