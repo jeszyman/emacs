@@ -6427,6 +6427,7 @@ When called with two prefix arguments, ARG, run the original function without pr
 ****** [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][Emacs LaTeX setup]]
 ***** Open URLs in new window with C-u C-c C-o
 - [2026-10-18 Sun] C-u C-c C-o on a heading or an agenda line now opens the link picked from the entry in a new window; test: [[file:tests/test_open_link_new_window.el]].
+- In the agenda, C-c C-o runs Org's own ~org-agenda-open-link~, which never calls ~my-org-open-at-point~; with C-u it shows the same link picker but opens the pick in the current frame, so ~org-agenda-mode-map~ binds C-c C-o to ~my-org-agenda-open-link~. Picked relative ~file:~ links are expanded in the entry's own buffer; otherwise they resolve against the home folder. Jeff confirmed the agenda path works on [2026-10-18 Sun].
 #+begin_src emacs-lisp
 (defun my-org-open-in-brave-new-window (link)
   "Open the LINK in Brave browser in a new window."
@@ -6537,6 +6538,7 @@ Without ARG, run `org-agenda-open-link'."
   (define-key org-agenda-mode-map (kbd "C-c C-o") 'my-org-agenda-open-link))
 
 #+end_src
+- [2026-10-18 Sun] Claude session "org-link-new-window": [[elisp:(start-process "claude-resume" nil (expand-file-name "~/.claude/bin/claude-resume") "65eec017-7771-45f5-942f-53b559728e32" "/home/jeszyman/repos/emacs")][resume]]
 
 ***** Checkboxes
 

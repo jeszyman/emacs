@@ -1412,15 +1412,17 @@ When called with two prefix arguments, ARG, run the original function without pr
       org-export-with-todo-keywords nil)
 (setq org-odt-preferred-output-format "docx")
 ;; Open URLs in new window with C-u C-c C-o
+;; - [2026-10-18 Sun] C-u C-c C-o on a heading or an agenda line now opens the link picked from the entry in a new window; test: [[file:tests/test_open_link_new_window.el]].
 
 (defun my-org-open-in-brave-new-window (link)
   "Open the LINK in Brave browser in a new window."
   (start-process "brave-new-window" nil "brave-browser" "--new-window" link))
 
-(defun org-link-frame-open-id-or-file-in-new-frame (link)
-  "Open the FILE or ID LINK in a new frame."
+(defun org-link-frame-open-id-or-file-in-new-frame (link &optional link-type)
+  "Open the FILE or ID LINK in a new frame.
+LINK-TYPE defaults to the type of the link at point."
   (let ((location (cond
-                   ((string= (org-element-property :type (org-element-context)) "id")
+                   ((string= (or link-type (org-element-property :type (org-element-context))) "id")
                     (org-id-find link 'marker))
                    (t
                     link)))) ; Assume it's a file link directly usable by `find-file-noselect`
@@ -1434,10 +1436,42 @@ When called with two prefix arguments, ARG, run the original function without pr
       (select-frame (make-frame))
       (find-file link))))
 
+(defun my-org-open-link-in-new-window (link-type raw-link link-path)
+  "Open a link of LINK-TYPE in a new Brave window (URLs) or Emacs frame (ID, file)."
+  (cond
+   ((or (string= link-type "http") (string= link-type "https"))
+    (my-org-open-in-brave-new-window raw-link))
+   ((or (string= link-type "id") (string= link-type "file"))
+    (org-link-frame-open-id-or-file-in-new-frame link-path link-type))
+   (t
+    (message "No special handling for this link type: %s" link-type))))
+
+(defun my-org-open-picked-link-in-new-window (buffer pos &optional line)
+  "Offer the links of the entry at POS in BUFFER and open the pick in a new window.
+LINE is extra text to search for a link, as the agenda passes its entry line."
+  ;; Org's link picker returns a link string (a list after RET), parsed back
+  ;; into a link element. File paths are expanded in BUFFER, since the new
+  ;; frame's buffer has a different `default-directory'.
+  (dolist (s (ensure-list (car (org-offer-links-in-entry buffer pos nil line))))
+    (with-current-buffer buffer
+      (let ((link (with-temp-buffer
+                    (let ((org-inhibit-startup nil))
+                      (insert s)
+                      (org-mode)
+                      (goto-char (point-min))
+                      (org-element-link-parser)))))
+        (when link
+          (let ((type (org-element-property :type link))
+                (path (org-element-property :path link)))
+            (my-org-open-link-in-new-window
+             type (org-element-property :raw-link link)
+             (if (string= type "file") (expand-file-name path) path))))))))
+
 (defun my-org-open-at-point (&optional arg)
   "Open the link at point.
 Use a new window in Brave if ARG is non-nil and the link is a URL.
 Open in a new Emacs frame if ARG is non-nil for ID or file links.
+On a heading with ARG, pick one of the entry's links and open it the same way.
 On citations, use jg/citar-open-smart (PDF > DOI > URL).
 With prefix arg on citations, skip PDF and open DOI > URL."
   (interactive "P")
@@ -1463,18 +1497,30 @@ With prefix arg on citations, skip PDF and open DOI > URL."
           (jg/citar-open-smart key arg))))
      ;; Prefix arg: special handling for links
      ((and arg link-type)
-      (cond
-       ((or (string= link-type "http") (string= link-type "https"))
-        (my-org-open-in-brave-new-window raw-link))
-       ((or (string= link-type "id") (string= link-type "file"))
-        (org-link-frame-open-id-or-file-in-new-frame link-path))
-       (t
-        (message "No special handling for this link type: %s" link-type))))
+      (my-org-open-link-in-new-window link-type raw-link link-path))
+     ;; Prefix arg on a heading: pick one of the entry's links
+     ((and arg (memq etype '(headline inlinetask)))
+      (my-org-open-picked-link-in-new-window (current-buffer) (point)))
      ;; Default
      (t (org-open-at-point)))))
 
-;; Rebind C-c C-o in org mode to our custom function
+(defun my-org-agenda-open-link (&optional arg)
+  "Open a link of the agenda entry at point.
+With ARG, pick one of the entry's links and open it in a new window.
+Without ARG, run `org-agenda-open-link'."
+  (interactive "P")
+  (let ((marker (or (org-get-at-bol 'org-hd-marker)
+                    (org-get-at-bol 'org-marker))))
+    (if (and arg marker)
+        (my-org-open-picked-link-in-new-window
+         (marker-buffer marker) marker
+         (buffer-substring (line-beginning-position) (line-end-position)))
+      (org-agenda-open-link))))
+
+;; Rebind C-c C-o in org mode and the agenda to our custom functions
 (define-key org-mode-map (kbd "C-c C-o") 'my-org-open-at-point)
+(with-eval-after-load 'org-agenda
+  (define-key org-agenda-mode-map (kbd "C-c C-o") 'my-org-agenda-open-link))
 ;; Checkboxes
 
 ;; (defun org-toggle-checkbox-and-children ()
