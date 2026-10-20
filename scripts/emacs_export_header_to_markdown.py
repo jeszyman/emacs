@@ -153,6 +153,50 @@ def link_caption_words(md_path):
 SHARED_OVERRIDES = r"""
 (require 'ox)
 (require 'ox-html)
+;; Acronyms and glossary terms (org-glossary), for a heading that opts in with a
+;; #+print_glossary: keyword: a term defined under an Acronyms or Glossary
+;; heading anywhere in the file is expanded at its first use in the exported
+;; text, and the keyword prints the terms the export used. A heading without
+;; the keyword exports as before, since org-glossary also strips every heading
+;; named Glossary or Index from the export. Two org-glossary steps scan the
+;; whole file with org-element-cache-map while the export copy is narrowed to
+;; the subtree, and in Org 9.7 that scan restarts forever at the narrowed end
+;; (2026-10-20); they run widened.
+(defun paired-glossary-maybe ()
+  "Load org-glossary when the subtree at point holds a #+print_glossary: keyword."
+  (when (save-excursion
+          (re-search-forward "^[ \t]*#\\+print_glossary:"
+                             (save-excursion (org-end-of-subtree t t)) t))
+    (require 'org-glossary)
+    (setq org-glossary-toplevel-only nil)
+    (dolist (f '(org-glossary--get-terms-cached org-glossary--strip-headings))
+      (advice-add f :around
+                  (lambda (orig &rest args) (save-restriction (widen) (apply orig args)))
+                  '((name . paired-glossary-widen))))
+    ;; Printed terms are description lists, like the notebook's own lists.
+    (org-glossary-set-export-spec t t :definition-structure "- %d :: %v\n")
+    ;; Only a term's first use links to its definition; later uses are plain
+    ;; text (Markdown derives from the HTML backend and follows it).
+    (org-glossary-set-export-spec 'html t
+      :use "%t"
+      :first-use "<a class=\"org-gls\" href=\"#gls.%K\" id=\"glsr.%K.%r\">%t</a>")
+    (org-glossary-set-export-spec 'html 'acronym
+      :first-use "%v (<a class=\"org-gls\" href=\"#gls.%K\" id=\"glsr.%K.%r\">%t</a>)")
+    ;; org-glossary exports a term's text as a one-line paragraph: the HTML
+    ;; backend wraps it in <p> ... </p> inside the sentence that uses it, and
+    ;; under org-export-preserve-breaks (latex_init.el) the paragraph's final
+    ;; newline becomes a <br /> before the "(ACRONYM)" of a first use
+    ;; (2026-10-20). Both are removed from the exported term text.
+    (dolist (f '(org-glossary--export-term org-glossary--export-term-str))
+      (advice-add f :filter-return
+                  (lambda (s)
+                    (if (stringp s)
+                        (string-trim
+                         (replace-regexp-in-string
+                          "\\(<br />\\|</p>\\)[ \t\n]*\\'" ""
+                          (replace-regexp-in-string "\\`<p>[ \t\n]*" "" s)))
+                      s))
+                  '((name . paired-glossary-unwrap))))))
 ;; INFO carries the export's image rules; without it Org falls back to a
 ;; default list that has no svg.
 (defun paired-figure-p (el info)
@@ -451,7 +495,7 @@ def run_export(org_file, node_id, overrides_el, export_call):
         overrides = f.name
     form = (
         f"(progn (require 'org) (require 'org-id) (setq org-confirm-babel-evaluate nil) "
-        f"{find_heading_form(org_file, node_id)} {REVIEW_MARK_CHECK} {export_call} (kill-emacs))"
+        f"{find_heading_form(org_file, node_id)} {REVIEW_MARK_CHECK} (paired-glossary-maybe) {export_call} (kill-emacs))"
     )
     try:
         result = subprocess.run(
