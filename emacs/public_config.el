@@ -1,4 +1,4 @@
-(defun jg/org-at-id-nosteal (id fn)
+(defun js/org-at-id-nosteal (id fn)
   "Call FN with point at org entry ID. Never touches windows, frames, or folds.
 For programmatic edits from emacsclient --eval. Saves the buffer.
 A prompt opened inside an --eval blocks every emacsclient call until someone answers it
@@ -11,7 +11,7 @@ and a changed-on-disk file is reread without asking."
              (org-inhibit-logging 'note)
              (query-about-changed-file nil)
              (m (org-id-find id 'marker)))
-        (unless m (error "jg/org-at-id-nosteal: no entry with ID %s" id))
+        (unless m (error "js/org-at-id-nosteal: no entry with ID %s" id))
         (unwind-protect
             (with-current-buffer (marker-buffer m)
               ;; A region left active in the buffer would make org-schedule,
@@ -468,30 +468,45 @@ the space left in the window instead of jumping past them."
 (defvar jg--server-eval-no-prompts nil
   "Non-nil while a frameless emacsclient --eval runs.")
 
-(defun jg/server-eval-refuse-prompt (orig prompt &rest args)
+(defun js/server-eval-refuse-prompt (orig prompt &rest args)
   (if jg--server-eval-no-prompts
       (error "emacsclient --eval refused to ask: %s"
              (string-trim (format "%s" prompt)))
     (apply orig prompt args)))
 
-(defun jg/server-eval-refuse-supersession (orig filename)
+(defun js/server-eval-refuse-supersession (orig filename)
   (if jg--server-eval-no-prompts
       (signal 'file-supersession
               (list "File changed on disk since visited; emacsclient --eval did not edit the buffer"
                     filename))
     (funcall orig filename)))
 
-(defun jg/server-eval-without-prompts (orig expr proc)
+(defun js/server-eval-without-prompts (orig expr proc)
   (if (and proc (process-get proc 'frame))
       (funcall orig expr proc)
     (let ((jg--server-eval-no-prompts t)
           (revert-without-query '(".")))
       (funcall orig expr proc))))
 
-(advice-add 'yes-or-no-p :around #'jg/server-eval-refuse-prompt)
-(advice-add 'y-or-n-p :around #'jg/server-eval-refuse-prompt)
-(advice-add 'ask-user-about-supersession-threat :around #'jg/server-eval-refuse-supersession)
-(advice-add 'server-eval-and-print :around #'jg/server-eval-without-prompts)
+(advice-add 'yes-or-no-p :around #'js/server-eval-refuse-prompt)
+(advice-add 'y-or-n-p :around #'js/server-eval-refuse-prompt)
+(advice-add 'ask-user-about-supersession-threat :around #'js/server-eval-refuse-supersession)
+(advice-add 'server-eval-and-print :around #'js/server-eval-without-prompts)
+
+;; An emacsclient run under a timeout (the Claude Code edit hooks use 3 s) is
+;; killed while the daemon is still busy; when the daemon then writes the reply,
+;; process-send-string fails with EPIPE and Emacs raises "process server <N> no
+;; longer connected to pipe; closed it" into the echo area and *Messages*. The
+;; eval has already run and nothing can read the reply, so the error is dropped.
+;; Live check: scripts/test-server-send-dead-client.sh (block below).
+(defun js/server-send-string-ignore-dead-client (orig proc string)
+  (condition-case err
+      (funcall orig proc string)
+    (error (unless (string-match-p "no longer connected to pipe"
+                                   (error-message-string err))
+             (signal (car err) (cdr err))))))
+
+(advice-add 'server-send-string :around #'js/server-send-string-ignore-dead-client)
 (defun toggle-theme ()
   "Toggle between dark and light themes."
   (interactive)
@@ -606,14 +621,14 @@ Requires pdfannots to be installed and on PATH."
 ;; cua-mode
 
 (cua-mode t)
-(defun jg/cua-paste-clean (orig-fun &rest args)
+(defun js/cua-paste-clean (orig-fun &rest args)
   "When called with C-u prefix, paste with line breaks replaced by spaces."
   (if current-prefix-arg
       (let ((clipboard-content (current-kill 0)))
         (insert (replace-regexp-in-string "\n" " " clipboard-content)))
     (apply orig-fun args)))
 
-(advice-add 'cua-paste :around #'jg/cua-paste-clean)
+(advice-add 'cua-paste :around #'js/cua-paste-clean)
 ;; Emacs caches the X clipboard selection (gui--last-selected-text-clipboard)
 ;; and returns stale text when an external app overwrites CLIPBOARD after
 ;; Emacs last set it.  Fix: clear the cache before every paste so
@@ -658,7 +673,7 @@ Requires pdfannots to be installed and on PATH."
 (setq org-startup-with-inline-images t)
 (setq org-hide-emphasis-markers t)
 ;; Custom inline marks
-;; Registry-driven inline markup (modeled on John Kitchin's scimax-editmarks, rebuilt lean). Each mark wraps text as =<SIGIL{ text }SIGIL>= (sigil empty for the original red highlight; the comment uses =<~ text ~>=). Type the Invoke key and it auto-expands; the delimiters show while the cursor is inside a mark and hide when you move away (reveal-on-cursor, so the hiding never fights the live yasnippet field). Each mark is a single row in =jg/org-marks=; adding a mark is a one-row change. Marks are single-line and must not cross an Org element boundary or nest.
+;; Registry-driven inline markup (modeled on John Kitchin's scimax-editmarks, rebuilt lean). Each mark wraps text as =<SIGIL{ text }SIGIL>= (sigil empty for the original red highlight; the comment uses =<~ text ~>=). Type the Invoke key and it auto-expands; the delimiters show while the cursor is inside a mark and hide when you move away (reveal-on-cursor, so the hiding never fights the live yasnippet field). Each mark is a single row in =js/org-marks=; adding a mark is a one-row change. Marks are single-line and must not cross an Org element boundary or nest.
 
 ;; | Type             | Invoke   | Sigil  | Role                | Export (LaTeX / HTML)             |
 ;; |------------------+----------+--------+---------------------+-----------------------------------|
@@ -674,47 +689,47 @@ Requires pdfannots to be installed and on PATH."
 
 ;; Faces, one per mark.
 
-(defface jg/org-mark-comment-face
+(defface js/org-mark-comment-face
   '((t :foreground "#5c6370" :slant italic))
   "Comment / note, <~ ... ~>: muted slate-grey, recedes.")
 
 ;; Highlights use a highlighter-pen look: a muted fill of the hue plus a
 ;; brighter underline of the same hue -- reads like a marker swipe on a dark
 ;; theme, and the underline keeps it legible where a flat dark fill would not.
-(defface jg/org-mark-hl-red-face
+(defface js/org-mark-hl-red-face
   '((t :background "#3d1f22" :underline (:color "#e06c75" :style line)))
   "Red highlight, <{ ... }>.")
 
-(defface jg/org-mark-hl-yellow-face
+(defface js/org-mark-hl-yellow-face
   '((t :background "#3d3d1f" :underline (:color "#fff176" :style line)))
   "Yellow highlight, <y{ ... }y>.")
 
-(defface jg/org-mark-hl-green-face
+(defface js/org-mark-hl-green-face
   '((t :background "#243d1f" :underline (:color "#aed581" :style line)))
   "Green highlight, <g{ ... }g>.")
 
-(defface jg/org-mark-strong-face
+(defface js/org-mark-strong-face
   '((t :background "#ffd54f" :foreground "black"))
   "Strong / loud highlight -- classic bright fill, <i{ ... }i>.")
 
-(defface jg/org-mark-strike-face
+(defface js/org-mark-strike-face
   '((t :strike-through "#e06c75" :foreground "#9aa0a6"))
   "Strike: cut / delete / done, <x{ ... }x>.")
 
-(defface jg/org-mark-key-face
+(defface js/org-mark-key-face
   '((t :foreground "#61afef" :weight bold))
   "Key term / emphasis -- bold colored ink, no fill, <b{ ... }b>.")
 
 ;; The registry: each row is (NAME :open :close :face :export).
 
-(defvar jg/org-marks
-  '((comment   :open "<~"  :close "~>"  :face jg/org-mark-comment-face   :export jg/org-mark-export-comment)
-    (hl-red    :open "<{"  :close "}>"  :face jg/org-mark-hl-red-face    :export jg/org-mark-export-hl-red)
-    (hl-yellow :open "<y{" :close "}y>" :face jg/org-mark-hl-yellow-face :export jg/org-mark-export-hl-yellow)
-    (hl-green  :open "<g{" :close "}g>" :face jg/org-mark-hl-green-face  :export jg/org-mark-export-hl-green)
-    (strong    :open "<i{" :close "}i>" :face jg/org-mark-strong-face    :export jg/org-mark-export-strong)
-    (strike    :open "<x{" :close "}x>" :face jg/org-mark-strike-face    :export jg/org-mark-export-strike)
-    (key       :open "<b{" :close "}b>" :face jg/org-mark-key-face       :export jg/org-mark-export-key))
+(defvar js/org-marks
+  '((comment   :open "<~"  :close "~>"  :face js/org-mark-comment-face   :export js/org-mark-export-comment)
+    (hl-red    :open "<{"  :close "}>"  :face js/org-mark-hl-red-face    :export js/org-mark-export-hl-red)
+    (hl-yellow :open "<y{" :close "}y>" :face js/org-mark-hl-yellow-face :export js/org-mark-export-hl-yellow)
+    (hl-green  :open "<g{" :close "}g>" :face js/org-mark-hl-green-face  :export js/org-mark-export-hl-green)
+    (strong    :open "<i{" :close "}i>" :face js/org-mark-strong-face    :export js/org-mark-export-strong)
+    (strike    :open "<x{" :close "}x>" :face js/org-mark-strike-face    :export js/org-mark-export-strike)
+    (key       :open "<b{" :close "}b>" :face js/org-mark-key-face       :export js/org-mark-export-key))
   "Registry of custom inline Org marks.
 Each entry is (NAME :open STR :close STR :face FACE :export FN).  FN is
 called with (CONTENT BACKEND) and returns the replacement string emitted
@@ -724,25 +739,25 @@ boundaries or nest.")
 
 ;; In-buffer fontification with reveal-on-cursor: content carries the mark face; delimiters are hidden with =display ""= ONLY while point is outside the mark. While the cursor is inside (typing manually or in a yas field), the delimiters are shown, so the hiding never fights the live yas field overlay (the failure that broke snippet editing). Same idea as =org-appear= for emphasis markers.
 
-(defvar-local jg/org-marks--reveal-region nil
+(defvar-local js/org-marks--reveal-region nil
   "(BEG . END) whole-match bounds of the mark currently revealed.
-`jg/org-marks--display-spec' consults this so a mark's delimiters show
+`js/org-marks--display-spec' consults this so a mark's delimiters show
 while the cursor is within it and hide otherwise.")
 
-(defun jg/org-marks--display-spec ()
+(defun js/org-marks--display-spec ()
   "Font-lock FACESPEC for a mark delimiter (group 1 or 3).
 Hide it with =display \"\"= unless its mark (the whole match) is the one
-under point, i.e. equals `jg/org-marks--reveal-region'."
-  (if (and jg/org-marks--reveal-region
-           (=  (match-beginning 0) (car jg/org-marks--reveal-region))
-           (=  (match-end 0)       (cdr jg/org-marks--reveal-region)))
+under point, i.e. equals `js/org-marks--reveal-region'."
+  (if (and js/org-marks--reveal-region
+           (=  (match-beginning 0) (car js/org-marks--reveal-region))
+           (=  (match-end 0)       (cdr js/org-marks--reveal-region)))
       '(face nil)
     '(face nil display "")))
 
-(defun jg/org-marks--keywords ()
-  "Build font-lock keywords from `jg/org-marks'.
+(defun js/org-marks--keywords ()
+  "Build font-lock keywords from `js/org-marks'.
 Content is `.+?' (>=1 char) so an empty mark shows its delimiters; the
-delimiter display is point-aware via `jg/org-marks--display-spec'."
+delimiter display is point-aware via `js/org-marks--display-spec'."
   (mapcar
    (lambda (mark)
      (let* ((pl    (cdr mark))
@@ -751,18 +766,18 @@ delimiter display is point-aware via `jg/org-marks--display-spec'."
             (face  (plist-get pl :face))
             (re    (concat "\\(" open "\\)\\(.+?\\)\\(" close "\\)")))
        `(,re
-         (1 (jg/org-marks--display-spec) prepend)
+         (1 (js/org-marks--display-spec) prepend)
          (2 ',face prepend)
-         (3 (jg/org-marks--display-spec) prepend))))
-   jg/org-marks))
+         (3 (js/org-marks--display-spec) prepend))))
+   js/org-marks))
 
-(defun jg/org-marks--mark-at-point ()
+(defun js/org-marks--mark-at-point ()
   "Return (BEG . END) whole-match bounds of the mark containing point, else nil.
 Only the current line is scanned (marks are single-line)."
   (let ((p (point)) found)
     (save-excursion
       (let ((eol (line-end-position)))
-        (dolist (mark jg/org-marks)
+        (dolist (mark js/org-marks)
           (unless found
             (let ((re (concat (regexp-quote (plist-get (cdr mark) :open))
                               ".+?"
@@ -773,27 +788,27 @@ Only the current line is scanned (marks are single-line)."
                   (setq found (cons (match-beginning 0) (match-end 0))))))))))
     found))
 
-(defun jg/org-marks-reveal ()
+(defun js/org-marks-reveal ()
   "Reveal the mark under point and re-hide the previously revealed one.
 On `post-command-hook' so cursor motion (not just edits) toggles delimiters."
-  (let ((cur (jg/org-marks--mark-at-point)))
-    (unless (equal cur jg/org-marks--reveal-region)
-      (let ((old jg/org-marks--reveal-region))
-        (setq jg/org-marks--reveal-region cur)
+  (let ((cur (js/org-marks--mark-at-point)))
+    (unless (equal cur js/org-marks--reveal-region)
+      (let ((old js/org-marks--reveal-region))
+        (setq js/org-marks--reveal-region cur)
         (when old (font-lock-flush (car old) (cdr old)))
         (when cur (font-lock-flush (car cur) (cdr cur)))))))
 
-(defun jg/org-marks-setup ()
+(defun js/org-marks-setup ()
   "Install custom inline-mark fontification + reveal-on-cursor in this buffer."
-  (let ((kw (jg/org-marks--keywords)))
+  (let ((kw (js/org-marks--keywords)))
     (font-lock-remove-keywords nil kw)
     (font-lock-add-keywords nil kw 'append))
-  (add-hook 'post-command-hook #'jg/org-marks-reveal nil t)
+  (add-hook 'post-command-hook #'js/org-marks-reveal nil t)
   (when font-lock-mode (font-lock-flush)))
 
 ;; Export helpers: escape content per backend, wrap it.
 
-(defun jg/org-marks--latex-escape (s)
+(defun js/org-marks--latex-escape (s)
   "Escape LaTeX special characters in S in a single pass.
 Org does not escape the content of an @@latex:...@@ export snippet, so we
 must protect it ourselves before wrapping it in a LaTeX command."
@@ -806,14 +821,14 @@ must protect it ourselves before wrapping it in a LaTeX command."
        ("^" "\\textasciicircum{}") ("~" "\\textasciitilde{}")))
    s t t))
 
-(defun jg/org-marks--latex-hl (rgb content &optional fg-rgb)
+(defun js/org-marks--latex-hl (rgb content &optional fg-rgb)
   "Return an @@latex@@ colorbox of CONTENT in background RGB, optional FG-RGB text."
-  (let ((body (jg/org-marks--latex-escape content)))
+  (let ((body (js/org-marks--latex-escape content)))
     (format "@@latex:\\colorbox[rgb]{%s}{%s}@@"
             rgb
             (if fg-rgb (format "\\textcolor[rgb]{%s}{%s}" fg-rgb body) body))))
 
-(defun jg/org-marks--html-hl (bg content &optional fg)
+(defun js/org-marks--html-hl (bg content &optional fg)
   "Return an @@html@@ span of CONTENT with background BG, optional color FG."
   (format "@@html:<span style=\"background-color:%s%s\">%s</span>@@"
           bg (if fg (format ";color:%s" fg) "")
@@ -821,67 +836,67 @@ must protect it ourselves before wrapping it in a LaTeX command."
 
 ;; The per-mark export functions referenced by the registry.
 
-(defun jg/org-mark-export-comment (content backend)
+(defun js/org-mark-export-comment (content backend)
   "Export a comment mark: a visible margin note in LaTeX/HTML, bracketed elsewhere."
   (cond
    ((org-export-derived-backend-p backend 'latex)
-    (format "@@latex:\\todo{%s}@@" (jg/org-marks--latex-escape content)))
+    (format "@@latex:\\todo{%s}@@" (js/org-marks--latex-escape content)))
    ((org-export-derived-backend-p backend 'html)
     (format "@@html:<span style=\"color:#d35400;font-style:italic\">[%s]</span>@@"
             (org-html-encode-plain-text content)))
    (t (format "[NOTE: %s]" content))))
 
-(defun jg/org-mark-export-hl-red (content backend)
+(defun js/org-mark-export-hl-red (content backend)
   "Export the red highlight mark."
   (cond
    ((org-export-derived-backend-p backend 'latex)
-    (jg/org-marks--latex-hl "0.70,0.13,0.13" content "1,1,1"))
+    (js/org-marks--latex-hl "0.70,0.13,0.13" content "1,1,1"))
    ((org-export-derived-backend-p backend 'html)
-    (jg/org-marks--html-hl "#b22222" content "#ffffff"))
+    (js/org-marks--html-hl "#b22222" content "#ffffff"))
    (t content)))
 
-(defun jg/org-mark-export-hl-yellow (content backend)
+(defun js/org-mark-export-hl-yellow (content backend)
   "Export the yellow highlight mark."
   (cond
    ((org-export-derived-backend-p backend 'latex)
-    (jg/org-marks--latex-hl "1,0.95,0.46" content))
+    (js/org-marks--latex-hl "1,0.95,0.46" content))
    ((org-export-derived-backend-p backend 'html)
-    (jg/org-marks--html-hl "#fff176" content))
+    (js/org-marks--html-hl "#fff176" content))
    (t content)))
 
-(defun jg/org-mark-export-hl-green (content backend)
+(defun js/org-mark-export-hl-green (content backend)
   "Export the green highlight mark."
   (cond
    ((org-export-derived-backend-p backend 'latex)
-    (jg/org-marks--latex-hl "0.68,0.84,0.50" content))
+    (js/org-marks--latex-hl "0.68,0.84,0.50" content))
    ((org-export-derived-backend-p backend 'html)
-    (jg/org-marks--html-hl "#aed581" content))
+    (js/org-marks--html-hl "#aed581" content))
    (t content)))
 
-(defun jg/org-mark-export-strong (content backend)
+(defun js/org-mark-export-strong (content backend)
   "Export the strong / loud highlight (bright fill)."
   (cond
    ((org-export-derived-backend-p backend 'latex)
-    (jg/org-marks--latex-hl "1,0.835,0.31" content "0,0,0"))
+    (js/org-marks--latex-hl "1,0.835,0.31" content "0,0,0"))
    ((org-export-derived-backend-p backend 'html)
-    (jg/org-marks--html-hl "#ffd54f" content "#000000"))
+    (js/org-marks--html-hl "#ffd54f" content "#000000"))
    (t content)))
 
-(defun jg/org-mark-export-strike (content backend)
+(defun js/org-mark-export-strike (content backend)
   "Export the strike mark (cut / delete / done)."
   (cond
    ((org-export-derived-backend-p backend 'latex)
-    (format "@@latex:\\sout{%s}@@" (jg/org-marks--latex-escape content)))
+    (format "@@latex:\\sout{%s}@@" (js/org-marks--latex-escape content)))
    ((org-export-derived-backend-p backend 'html)
     (format "@@html:<s>%s</s>@@" (org-html-encode-plain-text content)))
    (t content)))
 
-(defun jg/org-mark-export-key (content backend)
+(defun js/org-mark-export-key (content backend)
   "Export the key / emphasis mark (bold colored ink)."
   (cond
    ((org-export-derived-backend-p backend 'latex)
     (format "@@latex:\\textbf{\\textcolor[rgb]{0.38,0.686,0.937}{%s}}@@"
-            (jg/org-marks--latex-escape content)))
+            (js/org-marks--latex-escape content)))
    ((org-export-derived-backend-p backend 'html)
     (format "@@html:<strong style=\"color:#61afef\">%s</strong>@@"
             (org-html-encode-plain-text content)))
@@ -889,7 +904,7 @@ must protect it ourselves before wrapping it in a LaTeX command."
 
 ;; The export hook: rewrite marks to backend output before Org parses, skipping src/example/verbatim contexts and trimming the captured text.
 
-(defun jg/org-marks--protected-p (pos)
+(defun js/org-marks--protected-p (pos)
   "Non-nil if POS is in an Org context where marks must not be rewritten."
   (save-excursion
     (goto-char pos)
@@ -899,10 +914,10 @@ must protect it ourselves before wrapping it in a LaTeX command."
         (memq (org-element-type (org-element-context))
               '(code verbatim)))))
 
-(defun jg/org-marks-preprocess (backend)
+(defun js/org-marks-preprocess (backend)
   "Rewrite custom inline marks to BACKEND output before Org parses the buffer."
   (org-with-wide-buffer
-   (dolist (mark jg/org-marks)
+   (dolist (mark js/org-marks)
      (let* ((pl  (cdr mark))
             (efn (plist-get pl :export))
             (re  (concat (regexp-quote (plist-get pl :open))
@@ -916,7 +931,7 @@ must protect it ourselves before wrapping it in a LaTeX command."
          (let* ((mbeg    (match-beginning 0))
                 (mend    (match-end 0))
                 (content (string-trim (match-string 1))))
-           (if (jg/org-marks--protected-p mbeg)
+           (if (js/org-marks--protected-p mbeg)
                (goto-char mend)
              (let ((rep (funcall efn content backend)))
                (delete-region mbeg mend)
@@ -928,8 +943,8 @@ must protect it ourselves before wrapping it in a LaTeX command."
 (remove-hook 'org-mode-hook #'org-add-persistent-highlights)
 (remove-hook 'org-mode-hook #'org-hide-markers-without-space)
 
-(add-hook 'org-mode-hook #'jg/org-marks-setup)
-(add-hook 'org-export-before-processing-functions #'jg/org-marks-preprocess)
+(add-hook 'org-mode-hook #'js/org-marks-setup)
+(add-hook 'org-export-before-processing-functions #'js/org-marks-preprocess)
 
 (with-eval-after-load 'ox-latex
   (add-to-list 'org-latex-packages-alist '("" "todonotes" nil) t))
@@ -937,7 +952,7 @@ must protect it ourselves before wrapping it in a LaTeX command."
 ;; Org always tangles a final newline, but the inline-mark snippets must end
 ;; exactly at the body or expansion inserts a stray line break on field exit.
 ;; Strip the trailing newline from these snippet files after every tangle.
-(defun jg/org-marks-strip-yas-newline ()
+(defun js/org-marks-strip-yas-newline ()
   "Strip trailing newlines from a freshly tangled inline-mark snippet file."
   (when (and buffer-file-name
              (string-match-p "/public_yasnippets/org-mode/org\\.\\(h[a-z]\\|note\\)\\'"
@@ -948,25 +963,25 @@ must protect it ourselves before wrapping it in a LaTeX command."
       (delete-region (point) (point-max))
       (save-buffer))))
 
-(add-hook 'org-babel-post-tangle-hook #'jg/org-marks-strip-yas-newline)
+(add-hook 'org-babel-post-tangle-hook #'js/org-marks-strip-yas-newline)
 
-;; Imposing a mark on existing text: the yas keys insert a fresh mark as you type, but to wrap text you have ALREADY written, select it and use =jg/org-mark-region= (reads the type) or the =HH= key-chord transient (one key per type). Both wrap the active region in the chosen mark's delimiters using the same registry; with no region they insert an empty mark, point inside. The region is captured before the transient opens, so transient's own keymap can't lose it.
+;; Imposing a mark on existing text: the yas keys insert a fresh mark as you type, but to wrap text you have ALREADY written, select it and use =js/org-mark-region= (reads the type) or the =HH= key-chord transient (one key per type). Both wrap the active region in the chosen mark's delimiters using the same registry; with no region they insert an empty mark, point inside. The region is captured before the transient opens, so transient's own keymap can't lose it.
 
 (require 'transient)
 (require 'key-chord)
 
-(defvar jg/org-mark--region nil
+(defvar js/org-mark--region nil
   "(BEG . END) captured when the mark transient opens; consumed by the next apply.")
 
-(defun jg/org-mark-apply (type)
+(defun js/org-mark-apply (type)
   "Wrap the region in inline mark TYPE, or insert an empty TYPE mark at point.
-Prefers the region captured by `jg/org-mark-dispatch', else the live region."
-  (let* ((pl    (cdr (assq type jg/org-marks)))
+Prefers the region captured by `js/org-mark-dispatch', else the live region."
+  (let* ((pl    (cdr (assq type js/org-marks)))
          (open  (plist-get pl :open))
          (close (plist-get pl :close))
-         (reg   (or jg/org-mark--region
+         (reg   (or js/org-mark--region
                     (and (use-region-p) (cons (region-beginning) (region-end))))))
-    (setq jg/org-mark--region nil)
+    (setq js/org-mark--region nil)
     (if reg
         (let ((beg (car reg)) (end (cdr reg)))
           (goto-char end) (insert close)
@@ -975,44 +990,44 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
       (insert open close)
       (backward-char (length close)))))
 
-(defun jg/org-mark-region (type)
+(defun js/org-mark-region (type)
   "Impose inline mark TYPE on the region (or insert an empty one).  Reads TYPE."
   (interactive
    (list (intern (completing-read
-                  "Mark: " (mapcar (lambda (m) (symbol-name (car m))) jg/org-marks) nil t))))
-  (jg/org-mark-apply type))
+                  "Mark: " (mapcar (lambda (m) (symbol-name (car m))) js/org-marks) nil t))))
+  (js/org-mark-apply type))
 
-(transient-define-prefix jg/org-mark-transient ()
+(transient-define-prefix js/org-mark-transient ()
   "Impose an inline mark on the region (or insert one)."
   [["Highlight"
-    ("r" "red"    (lambda () (interactive) (jg/org-mark-apply 'hl-red)))
-    ("y" "yellow" (lambda () (interactive) (jg/org-mark-apply 'hl-yellow)))
-    ("g" "green"  (lambda () (interactive) (jg/org-mark-apply 'hl-green)))]
+    ("r" "red"    (lambda () (interactive) (js/org-mark-apply 'hl-red)))
+    ("y" "yellow" (lambda () (interactive) (js/org-mark-apply 'hl-yellow)))
+    ("g" "green"  (lambda () (interactive) (js/org-mark-apply 'hl-green)))]
    ["Other"
-    ("i" "strong" (lambda () (interactive) (jg/org-mark-apply 'strong)))
-    ("x" "strike" (lambda () (interactive) (jg/org-mark-apply 'strike)))
-    ("b" "key"    (lambda () (interactive) (jg/org-mark-apply 'key)))
-    ("c" "note"   (lambda () (interactive) (jg/org-mark-apply 'comment)))]])
+    ("i" "strong" (lambda () (interactive) (js/org-mark-apply 'strong)))
+    ("x" "strike" (lambda () (interactive) (js/org-mark-apply 'strike)))
+    ("b" "key"    (lambda () (interactive) (js/org-mark-apply 'key)))
+    ("c" "note"   (lambda () (interactive) (js/org-mark-apply 'comment)))]])
 
-(defun jg/org-mark-dispatch ()
+(defun js/org-mark-dispatch ()
   "Capture the active region (if any) and open the inline-mark transient."
   (interactive)
-  (setq jg/org-mark--region (and (use-region-p)
+  (setq js/org-mark--region (and (use-region-p)
                                  (cons (region-beginning) (region-end))))
-  (jg/org-mark-transient))
+  (js/org-mark-transient))
 
 ;; Bound as a key-chord (HH) rather than C-c m, which a minor-mode map shadowed.
 ;; require here because this block tangles before the key-chord package setup.
 (with-eval-after-load 'org
-  (key-chord-define org-mode-map "HH" #'jg/org-mark-dispatch))
+  (key-chord-define org-mode-map "HH" #'js/org-mark-dispatch))
 
-(defun jg/org-mark-note ()
+(defun js/org-mark-note ()
   "Wrap the region in a note mark, or insert an empty one with point inside."
   (interactive)
-  (jg/org-mark-apply 'comment))
+  (js/org-mark-apply 'comment))
 
 (with-eval-after-load 'org
-  (key-chord-define org-mode-map "NN" #'jg/org-mark-note))
+  (key-chord-define org-mode-map "NN" #'js/org-mark-note))
 ;; Tags
 
         (setq
@@ -1104,7 +1119,7 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
 
 ;; =C-c C-l=, then =okular= at the link prompt, inserts a file link to the PDF and page shown in okular, with the text =page N= offered as its description. When more than one okular window shows a document, it asks which file. Okular reports its file and page over D-Bus, and the link it builds opens through the PDF page entry in =org-file-apps= above. No link of type =okular:= is written; the name exists only as a choice at the link prompt.
 
-(defun jg/okular-views ()
+(defun js/okular-views ()
   "Return (FILE . PAGE) for each okular window that shows a document."
   (require 'dbus)
   (delq nil
@@ -1117,15 +1132,15 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
                 (seq-filter (lambda (s) (string-match-p "\\`org\\.kde\\.okular\\(-[0-9]+\\)?\\'" s))
                             (dbus-list-names :session)))))
 
-(defun jg/org-okular-page-link-complete (&optional _arg)
+(defun js/org-okular-page-link-complete (&optional _arg)
   "Return a file link to the page shown in okular, asking which window when there are several."
-  (let* ((views (jg/okular-views))
+  (let* ((views (js/okular-views))
          (file (cond ((null views) (user-error "No okular window shows a document"))
                      ((cdr views) (completing-read "Okular window: " views nil t))
                      (t (caar views)))))
     (format "file:%s::%d" file (cdr (assoc file views)))))
 
-(org-link-set-parameters "okular" :complete #'jg/org-okular-page-link-complete)
+(org-link-set-parameters "okular" :complete #'js/org-okular-page-link-complete)
 
 (org-link-set-parameters
  "file"
@@ -1251,7 +1266,7 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
       org-babel-noweb-wrap-end "#>")
 ;; Strip properties drawers from tangled output
 
-(defun jg/strip-properties-from-tangle ()
+(defun js/strip-properties-from-tangle ()
   "Remove tangled :PROPERTIES: drawer comments and collapse excess blank lines."
   (save-excursion
     (goto-char (point-min))
@@ -1262,7 +1277,7 @@ Prefers the region captured by `jg/org-mark-dispatch', else the live region."
       (replace-match "\n\n")))
   (save-buffer))
 
-(add-hook 'org-babel-post-tangle-hook #'jg/strip-properties-from-tangle)
+(add-hook 'org-babel-post-tangle-hook #'js/strip-properties-from-tangle)
 ;; Distinguish Org Edit Special buffers
 
 ;; Distinguish Org Edit Special buffers
@@ -1413,6 +1428,7 @@ When called with two prefix arguments, ARG, run the original function without pr
 (setq org-odt-preferred-output-format "docx")
 ;; Open URLs in new window with C-u C-c C-o
 ;; - [2026-10-18 Sun] C-u C-c C-o on a heading or an agenda line now opens the link picked from the entry in a new window; test: [[file:tests/test_open_link_new_window.el]].
+;; - In the agenda, C-c C-o runs Org's own ~org-agenda-open-link~, which never calls ~my-org-open-at-point~; with C-u it shows the same link picker but opens the pick in the current frame, so ~org-agenda-mode-map~ binds C-c C-o to ~my-org-agenda-open-link~. Picked relative ~file:~ links are expanded in the entry's own buffer; otherwise they resolve against the home folder. Jeff confirmed the agenda path works on [2026-10-18 Sun].
 
 (defun my-org-open-in-brave-new-window (link)
   "Open the LINK in Brave browser in a new window."
@@ -1472,7 +1488,7 @@ LINE is extra text to search for a link, as the agenda passes its entry line."
 Use a new window in Brave if ARG is non-nil and the link is a URL.
 Open in a new Emacs frame if ARG is non-nil for ID or file links.
 On a heading with ARG, pick one of the entry's links and open it the same way.
-On citations, use jg/citar-open-smart (PDF > DOI > URL).
+On citations, use js/citar-open-smart (PDF > DOI > URL).
 With prefix arg on citations, skip PDF and open DOI > URL."
   (interactive "P")
   (let* ((context (org-element-context))
@@ -1494,7 +1510,7 @@ With prefix arg on citations, skip PDF and open DOI > URL."
                        (when (re-search-forward "@\\([-[:alnum:]_:.]+\\)" end t)
                          (match-string-no-properties 1)))))))
         (when key
-          (jg/citar-open-smart key arg))))
+          (js/citar-open-smart key arg))))
      ;; Prefix arg: special handling for links
      ((and arg link-type)
       (my-org-open-link-in-new-window link-type raw-link link-path))
@@ -1559,11 +1575,11 @@ Without ARG, run `org-agenda-open-link'."
 ;;     - [ ] check
 ;;       - [ ] boxes
 
-;; Checking the last box counted by a heading's checkbox cookie sets the heading to DONE (=jg/org-checkbox-auto-done=, below). Published versions run the same kind of function on =org-checkbox-statistics-hook= and set the wrong state with these TODO keywords. The [[https://orgmode.org/worg/org-hacks.html#mark-done-when-all-checkboxes-checked][Worg Org Hacks function]] and its guarded [[https://emacs.stackexchange.com/questions/19843/how-to-automatically-adjust-an-org-task-state-with-its-children-checkboxes][Emacs Stack Exchange 19843]] variant set CLOSEOUT, the first done keyword, and set INPROCESS back to TODO while the list is incomplete. [[https://github.com/ag91/org-active-statistics][ag91/org-active-statistics]] makes the same INPROCESS-to-TODO change. [[https://elpa.gnu.org/packages/org-edna.html][org-edna]] acts only on a change to a done state, so a checkbox toggle never reaches it. A heading with a repeater repeats as with =C-c C-t d=. Its boxes are cleared for the next cycle only with =:RESET_CHECK_BOXES: t= (org-checklist). Without that property, the next cycle starts complete and checking a box never triggers the change. These results come from 2026-10-17 tests: =emacs -Q= batch runs with these TODO keywords, and temporary buffers in the running Emacs covering =+1d=, =+1d= with =RESET_CHECK_BOXES=, and =REPEAT_CRON=.
+;; Checking the last box counted by a heading's checkbox cookie sets the heading to DONE (=js/org-checkbox-auto-done=, below). Published versions run the same kind of function on =org-checkbox-statistics-hook= and set the wrong state with these TODO keywords. The [[https://orgmode.org/worg/org-hacks.html#mark-done-when-all-checkboxes-checked][Worg Org Hacks function]] and its guarded [[https://emacs.stackexchange.com/questions/19843/how-to-automatically-adjust-an-org-task-state-with-its-children-checkboxes][Emacs Stack Exchange 19843]] variant set CLOSEOUT, the first done keyword, and set INPROCESS back to TODO while the list is incomplete. [[https://github.com/ag91/org-active-statistics][ag91/org-active-statistics]] makes the same INPROCESS-to-TODO change. [[https://elpa.gnu.org/packages/org-edna.html][org-edna]] acts only on a change to a done state, so a checkbox toggle never reaches it. A heading with a repeater repeats as with =C-c C-t d=. Its boxes are cleared for the next cycle only with =:RESET_CHECK_BOXES: t= (org-checklist). Without that property, the next cycle starts complete and checking a box never triggers the change. These results come from 2026-10-17 tests: =emacs -Q= batch runs with these TODO keywords, and temporary buffers in the running Emacs covering =+1d=, =+1d= with =RESET_CHECK_BOXES=, and =REPEAT_CRON=.
 
 ;; #+name: org-checkbox-auto-done
 
-(defun jg/org-checkbox-auto-done ()
+(defun js/org-checkbox-auto-done ()
   "Set the heading to DONE when its checkbox cookie shows all boxes checked.
 The cookie is [n/n] or [100%] on the heading line.  The function changes
 only a heading that has a TODO keyword and is not already done."
@@ -1580,7 +1596,7 @@ only a heading that has a TODO keyword and is not already done."
         ;; Name DONE: (org-todo 'done) takes the first done keyword, CLOSEOUT.
         (org-todo "DONE")))))
 
-(add-hook 'org-checkbox-statistics-hook #'jg/org-checkbox-auto-done)
+(add-hook 'org-checkbox-statistics-hook #'js/org-checkbox-auto-done)
 ;; Capture
 
 ;; Make C-o a prefix key
@@ -2107,13 +2123,13 @@ skipped and nothing is inserted for it."
 (prefer-coding-system 'utf-8)
 (set-language-environment "UTF-8")
 
-(defun jg/force-utf8-on-revert ()
+(defun js/force-utf8-on-revert ()
   "Ensure org buffers revert as UTF-8.
 Prevents Syncthing mid-write race from setting no-conversion."
   (when (derived-mode-p 'org-mode)
     (setq-local coding-system-for-read 'utf-8-unix)))
 
-(add-hook 'before-revert-hook #'jg/force-utf8-on-revert)
+(add-hook 'before-revert-hook #'js/force-utf8-on-revert)
 ;; Alpha key
 
 (global-set-key (kbd "C-x a") (lambda () (interactive) (insert "α")))
@@ -2396,14 +2412,14 @@ from being silently re-rendered."
   :no-require
   :config (citar-embark-mode))
 
-(defun jg/citar-open-doi (citekey)
+(defun js/citar-open-doi (citekey)
   "Open the DOI for CITEKEY in a browser."
   (let ((doi (citar-get-value "doi" citekey)))
     (if doi
         (browse-url (concat "https://doi.org/" doi))
       (message "No DOI found for %s" citekey))))
 
-(defun jg/citar-open-smart (citekey &optional skip-pdf)
+(defun js/citar-open-smart (citekey &optional skip-pdf)
   "Open CITEKEY: existing PDF if available, else DOI, else URL.
 With SKIP-PDF, skip local PDF and go straight to DOI > URL."
   (let* ((files-ht (citar-get-files citekey))
@@ -2418,11 +2434,11 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
      (url (browse-url url))
      (t (message "No PDF, DOI, or URL found for %s" citekey)))))
 
-(setq citar-at-point-function 'jg/citar-open-smart)
+(setq citar-at-point-function 'js/citar-open-smart)
 
 (with-eval-after-load 'citar-embark
   (keymap-set citar-embark-citation-map "o" #'citar-open-files)
-  (keymap-set citar-embark-citation-map "d" #'jg/citar-open-doi))
+  (keymap-set citar-embark-citation-map "d" #'js/citar-open-doi))
 
 (advice-add 'citar-file--parse-file-field :around
             (lambda (orig &rest args)
@@ -2827,7 +2843,7 @@ With no marks, copies the current selection's display text."
 
 ;; Suggested keys (optional)
 ;; C-c C-w is org’s default refile; bind jump to C-c j
-(defun jg/helm-org-nohelm-filter (candidates)
+(defun js/helm-org-nohelm-filter (candidates)
   "Filter :nohelm: tagged headings, org-id link headings, and cal.org from helm-org."
   (cl-remove-if
    (lambda (cand)
@@ -2843,7 +2859,7 @@ With no marks, copies the current selection's display text."
    candidates))
 
 (advice-add 'helm-org--get-candidates-in-file :filter-return
-            'jg/helm-org-nohelm-filter)
+            'js/helm-org-nohelm-filter)
 ;; helm-org-rifle
 
 (use-package helm-org-rifle
@@ -3040,26 +3056,26 @@ With no marks, copies the current selection's display text."
 ;; Immediate refile (archive)
 
 (with-eval-after-load 'mu4e
-  (defun jg/mu4e-refile-now ()
+  (defun js/mu4e-refile-now ()
     "Refile message at point immediately."
     (interactive)
     (mu4e-headers-mark-for-refile)
     (mu4e-mark-execute-all 'no-confirmation)
     (delete-other-windows))
 
-  (defun jg/mu4e-refile-thread-now ()
+  (defun js/mu4e-refile-thread-now ()
     "Refile entire thread at point immediately."
     (interactive)
     (mu4e-headers-mark-thread-using-markpair '(refile) t)
     (mu4e-mark-execute-all 'no-confirmation)
     (delete-other-windows))
 
-  (define-key mu4e-headers-mode-map (kbd "r") #'jg/mu4e-refile-now)
-  (define-key mu4e-headers-mode-map (kbd "T") #'jg/mu4e-refile-thread-now))
+  (define-key mu4e-headers-mode-map (kbd "r") #'js/mu4e-refile-now)
+  (define-key mu4e-headers-mode-map (kbd "T") #'js/mu4e-refile-thread-now))
 ;; Org thread link storage
 
 (with-eval-after-load 'mu4e
-  (defun jg/mu4e-org-store-thread-link ()
+  (defun js/mu4e-org-store-thread-link ()
     "Store an org link to the mu4e thread at point using msgid query."
     (when (and (derived-mode-p 'mu4e-headers-mode 'mu4e-view-mode)
                (mu4e-message-at-point t))
@@ -3073,7 +3089,7 @@ With no marks, copies the current selection's display text."
              (desc (concat clean-subject " thread")))
         (org-link-store-props :type "mu4e" :link link :description desc)
         link)))
-  (org-link-set-parameters "mu4e" :store #'jg/mu4e-org-store-thread-link))
+  (org-link-set-parameters "mu4e" :store #'js/mu4e-org-store-thread-link))
 ;; Display buffer rules
 
 (with-eval-after-load 'mu4e
@@ -3086,15 +3102,15 @@ With no marks, copies the current selection's display text."
 ;; Transient
 
 (with-eval-after-load 'mu4e
-  (transient-define-prefix jg/mu4e-transient ()
+  (transient-define-prefix js/mu4e-transient ()
     "mu4e actions"
     [["Message"
       ("R" "Reply" mu4e-compose-reply)
       ("F" "Forward" mu4e-compose-forward)
       ("C" "Compose new" mu4e-compose-new)]
      ["Archive"
-      ("r" "Archive message" jg/mu4e-refile-now)
-      ("T" "Archive thread" jg/mu4e-refile-thread-now)]
+      ("r" "Archive message" js/mu4e-refile-now)
+      ("T" "Archive thread" js/mu4e-refile-thread-now)]
      ["Mark"
       ("d" "Trash" mu4e-headers-mark-for-trash)
       ("D" "Delete" mu4e-headers-mark-for-delete)
@@ -3109,7 +3125,7 @@ With no marks, copies the current selection's display text."
       ("g" "Refresh" mu4e-headers-rerun-search)
       ("j" "Jump to maildir" mu4e~headers-jump-to-maildir)
       ("l" "Store org link" org-store-link)]])
-  (define-key mu4e-headers-mode-map (kbd "?") #'jg/mu4e-transient))
+  (define-key mu4e-headers-mode-map (kbd "?") #'js/mu4e-transient))
 ;; Use-package
 
 (use-package openwith
@@ -3142,10 +3158,11 @@ With no marks, copies the current selection's display text."
 ;; - org-cite-style management of glossary/acronyms/index terms: defined under a =* Acronyms= description list per document, referenced in prose, expanded on export.
 ;; - Auto-detects terms in body text; headings are excluded by default (=org-glossary-autodetect-in-headings= is nil), so heading text stays literal for forced short forms.
 ;; - Default export does its own "long (short)" first-use expansion, so no LaTeX package is required. The LaTeX =acronym= package is kept loaded as a manual backup for edge cases; see [[id:12e76db8-fe85-4ed3-b88e-7aff3b931daf][Emacs LaTeX setup]] in latex.org.
-;; - ~org-glossary-mode~ turns on in every file-visiting org buffer from an idle timer that ~jg/org-glossary-mode-maybe~ sets on ~org-mode-hook~, except basenames listed in ~jg/org-glossary-exclude-files~ (cal.org); a failure only logs a message. Export works without the minor mode.
+;; - ~org-glossary-mode~ turns on in every file-visiting org buffer from an idle timer that ~js/org-glossary-mode-maybe~ sets on ~org-mode-hook~, except basenames listed in ~js/org-glossary-exclude-files~ (cal.org); a failure only logs a message. Export works without the minor mode.
 ;; - [2026-10-05 Mon] An empty nested =*** Glossary= under career.org's =** Acronyms= made ~org-glossary-mode~ raise =args-out-of-range=, which aborted ~org-mode-hook~ before font-lock was enabled, so org buffers lost syntax highlighting on open and on auto-revert. ~jg/org-glossary-mode-maybe~ now wraps the call in ~with-demoted-errors~; the empty heading was deleted; regression test =tests/org-glossary-hook-test.el= (block below).
 ;; - [2026-10-05 Mon] CPU profile of one revert plus full ~font-lock-ensure~ of career.org in the daemon, glossary mode on: 4.9 s (one run). ~org-glossary--fontify-find-next~ took 1138 samples, 30% of the profile, mostly in recursive ~org-glossary--within-definition-p~. Earlier the same day, a revert and tangle of emacs.org and a revert of career.org each held the daemon at 100% CPU for over 2 minutes. This profile does not reproduce that because glossary was not the slow step: a later profile found ~org-table-widget-mode~ spending 99.1% of a 670 s career.org revert measuring cell widths (see [[id:43dc6823-b58d-4d2e-bb5f-c1e904476b68][org-table-widget]]).
 ;; - [2026-10-05 Mon] A C-g during a slow career.org revert (11:07) left the buffer unfontified again: a quit is not an error, so ~with-demoted-errors~ did not catch it, and it stopped ~org-mode-hook~ before font-lock. ~jg/org-glossary-mode-maybe~ now schedules the mode on a 0.5 s idle timer instead of enabling it inside the hook; test ~jg/org-glossary-quit-keeps-font-lock~. The slow step was ~org-table-widget-mode~ (see [[id:43dc6823-b58d-4d2e-bb5f-c1e904476b68][org-table-widget]]).
+;; - [2026-10-20 Tue] A subtree export (the batch export program run on one heading) never finished with org-glossary loaded: its term collection scans the whole file with ~org-element-cache-map~ while the export copy is still narrowed to the subtree, and in Org 9.7.11 that scan restarts its traversal at the narrowed end forever (979,196 restarts in 90 s, point one character past the subtree end). Whole-file exports never hit it. Advice that widens the buffer around ~org-glossary--get-terms-cached~ and ~org-glossary--strip-headings~ fixes it: a 40-line heading then exports in 12.6 s against 2.5 s without org-glossary (one run each). The same glossary block sets the HTML templates that link only a term's first use; it loads only for a heading holding a =#+print_glossary:= keyword (emacs.org line ~2272, committed 0c94f71).
 
 (use-package org-glossary
   :after org
@@ -3186,16 +3203,16 @@ Patched: VISITED is a global hash-set of already-processed path-specs."
 ;; while normal large prose is fine (career.org, 1.1 MB, works). The factorial
 ;; startup hang is separately fixed by the override above. Add basenames to the
 ;; exclude list as you find others.
-(defvar jg/org-glossary-exclude-files '("cal.org")
+(defvar js/org-glossary-exclude-files '("cal.org")
   "Basenames of org files where `org-glossary-mode' must NOT auto-enable.")
-(defun jg/org-glossary-mode-maybe ()
-  "Schedule `org-glossary-mode' for this buffer unless its file is in `jg/org-glossary-exclude-files'.
+(defun js/org-glossary-mode-maybe ()
+  "Schedule `org-glossary-mode' for this buffer unless its file is in `js/org-glossary-exclude-files'.
 The mode is enabled from an idle timer after `org-mode-hook' returns, so an
 error, a slow term scan, or a C-g during the enable cannot stop the rest of the
 hook (including `global-font-lock-mode-enable-in-buffer')."
   (when (and buffer-file-name
              (not (member (file-name-nondirectory buffer-file-name)
-                          jg/org-glossary-exclude-files)))
+                          js/org-glossary-exclude-files)))
     (let ((buf (current-buffer)))
       (run-with-idle-timer
        0.5 nil
@@ -3212,8 +3229,8 @@ hook (including `global-font-lock-mode-enable-in-buffer')."
 ;; buffers pay the per-buffer parse/fontify cost at once (career.org ~2.3s cold,
 ;; then cached) — a one-time startup lag, not a hang. cal.org is excluded because
 ;; its calendar content wedges jit-lock fontification outright; add other heavy
-;; basenames to jg/org-glossary-exclude-files as you find them.
-(add-hook 'org-mode-hook #'jg/org-glossary-mode-maybe)
+;; basenames to js/org-glossary-exclude-files as you find them.
+(add-hook 'org-mode-hook #'js/org-glossary-mode-maybe)
 
 ;; Show org-glossary term definitions in the echo area when point idles on
 ;; a term. org-glossary attaches the definition as a help-echo text
@@ -3228,16 +3245,17 @@ hook (including `global-font-lock-mode-enable-in-buffer')."
 ;; position, so the definition never reaches the minibuffer. Returning
 ;; non-nil from flyspell-incorrect-hook suppresses the overlay for any
 ;; term org-glossary already knows.
-(defun jg/flyspell-skip-glossary-terms (beg end _poss)
+(defun js/flyspell-skip-glossary-terms (beg end _poss)
   "Return non-nil so flyspell does NOT flag an org-glossary-defined term."
   (and (bound-and-true-p org-glossary-mode)
        (fboundp 'org-glossary--quicklookup)
        (org-glossary--quicklookup (buffer-substring-no-properties beg end))
        t))
-(add-hook 'flyspell-incorrect-hook #'jg/flyspell-skip-glossary-terms)
+(add-hook 'flyspell-incorrect-hook #'js/flyspell-skip-glossary-terms)
 ;; org-include-inline
 ;; [[https://github.com/yibie/org-include-inline][github: yibie/org-include-inline]]
 ;; - UUID-based includes work; CUSTOM_ID does not; export from UUID breaks
+;; - With the mode on, every =#+INCLUDE= that targets a CUSTOM_ID gets an error overlay on each refresh (198 overlays from two INCLUDE lines in rmeth.org, [2026-10-21 Wed]); the file on disk and Org's own export are unaffected; turning the mode off in that buffer clears them.
 ;; - Enable per buffer: ~M-x org-include-inline-mode~
 
 ;; Load only — enable per buffer with M-x org-include-inline-mode
@@ -3306,7 +3324,7 @@ hook (including `global-font-lock-mode-enable-in-buffer')."
 ;; - Draws Org tables as aligned widgets over the unchanged source text: long cells wrap to the window, tall tables scroll row by row, and a scrolled-off header row stays in the window's header line. Export, =#+TBLFM= formulas and Babel see the plain table.
 ;; - Editing: =e= on a drawn row shows the Org source with point on that row; leaving the table draws it again. ~M-x org-table-widget-toggle~ switches the table at point, ~M-x org-table-widget-mode~ the whole buffer. The keyboard cannot reach links in a drawn row (the row is one cursor stop); click them, or press =e= first.
 ;; - Needs TextUI from the same author and a graphical frame (terminal frames keep plain tables); neither is on MELPA. If org-modern is enabled, set =org-modern-table= to nil so the two do not style the same table.
-;; - Turned on by ~jg/org-table-widget-mode-maybe~ from a 0.5 s idle timer after ~org-mode-hook~, only in file-visiting buffers up to ~jg/org-table-widget-max-buffer-size~ (200 KB); larger files keep plain tables.
+;; - Turned on by ~js/org-table-widget-mode-maybe~ from a 0.5 s idle timer after ~org-mode-hook~, only in file-visiting buffers up to ~js/org-table-widget-max-buffer-size~ (200 KB); larger files keep plain tables.
 ;; - [2026-10-05 Mon] CPU profile of one career.org revert (1.2 MB, 498 table lines) in the daemon: 670 s, 99.1% inside ~org-table-widget-mode~, almost all in ~window-text-pixel-size~ called by ~org-table-widget--widths~ to measure cell widths. A C-g during that time stopped ~org-mode-hook~ before font-lock, leaving the buffer unfontified. After the size limit and idle timer: the same revert took 3.1 s (one run), with font-lock on. Tests ~jg/org-table-widget-quit-keeps-font-lock~ and ~jg/org-table-widget-skips-large-buffers~ in =tests/org-glossary-hook-test.el=.
 
 (use-package textui
@@ -3315,20 +3333,20 @@ hook (including `global-font-lock-mode-enable-in-buffer')."
 (use-package org-table-widget
   :after (org textui)
   :vc (:url "https://github.com/yibie/org-table-widget" :vc-backend Git :rev :newest)
-  :hook (org-mode . jg/org-table-widget-mode-maybe))
+  :hook (org-mode . js/org-table-widget-mode-maybe))
 
-(defvar jg/org-table-widget-max-buffer-size (* 200 1024)
+(defvar js/org-table-widget-max-buffer-size (* 200 1024)
   "Org buffers larger than this many characters keep plain tables.")
 
-(defun jg/org-table-widget-mode-maybe ()
-  "Schedule `org-table-widget-mode' for a file-visiting org buffer no larger than `jg/org-table-widget-max-buffer-size'.
+(defun js/org-table-widget-mode-maybe ()
+  "Schedule `org-table-widget-mode' for a file-visiting org buffer no larger than `js/org-table-widget-max-buffer-size'.
 The widget measures the pixel width of every table cell, which takes minutes in
 a large file (about 11 minutes for career.org, 1.2 MB with 498 table lines).
 It is enabled from an idle timer after `org-mode-hook' returns, so neither that
 time nor a C-g during it can stop the rest of the hook, including
 `global-font-lock-mode-enable-in-buffer'."
   (when (and buffer-file-name
-             (<= (buffer-size) jg/org-table-widget-max-buffer-size))
+             (<= (buffer-size) js/org-table-widget-max-buffer-size))
     (let ((buf (current-buffer)))
       (run-with-idle-timer
        0.5 nil
@@ -3501,7 +3519,7 @@ time nor a C-g during it can stop the rest of the hook, including
 
 ;; Apply an ansible playbook to a machine, in a vterm. TARGET-addressed: runs locally (=-c local=) when you are on TARGET, otherwise pushes over SSH (inventory =TARGET,=). Used by =elisp:= links in the maintenance.org weekly checklist so either machine can be maintained from either machine. The =--ask-vault-pass= prompt and output stay interactive in the vterm. Clears =ANSIBLE_SSH_ARGS= on the push path so an =ssh_args= setting in [[file:~/.ansible.cfg][~/.ansible.cfg]] (such as a ProxyCommand for a cloud VM) cannot route the connection elsewhere; TARGET is reached directly via [[file:~/.ssh/config.d/][~/.ssh/config.d]].
 
-(defun jg/ansible-run (playbook target &optional vault become)
+(defun js/ansible-run (playbook target &optional vault become)
   "Apply ansible PLAYBOOK to machine TARGET, in a vterm.
 If TARGET matches the local machine (`system-name'), run locally with
 -c local.  Otherwise push to TARGET over SSH (inventory \"TARGET,\"),
@@ -3522,9 +3540,9 @@ cannot route the connection elsewhere.  With VAULT add
       (vterm-send-string cmd)
       (vterm-send-return))))
 
-;; Run one shell command on a machine, in a vterm. Same host addressing as =jg/ansible-run=: runs directly when HOST is this machine, otherwise over =ssh -t HOST=. The remote command runs inside =bash -lc= because a bare ssh command gets a non-login PATH without =~/.local/bin=, where pip-installed tools such as trash-cli live. Used by =elisp:= links in the maintenance.org weekly checklist (trash review) so the command runs on the named machine from either machine and its output stays visible in the vterm.
+;; Run one shell command on a machine, in a vterm. Same host addressing as =js/ansible-run=: runs directly when HOST is this machine, otherwise over =ssh -t HOST=. The remote command runs inside =bash -lc= because a bare ssh command gets a non-login PATH without =~/.local/bin=, where pip-installed tools such as trash-cli live. Used by =elisp:= links in the maintenance.org weekly checklist (trash review) so the command runs on the named machine from either machine and its output stays visible in the vterm.
 
-(defun jg/vterm-run (host cmd)
+(defun js/vterm-run (host cmd)
   "Run shell CMD on HOST in a vterm.
 If HOST matches the local machine (`system-name'), run CMD directly;
 otherwise run it over `ssh -t HOST' inside a login shell so PATH
@@ -3555,13 +3573,13 @@ includes ~/.local/bin."
 ;; Reset a garbled vterm display (=C-c C-r=): clear scrollback and send =reset=.
 
 ;; Reset garbled vterm display (narrow columns, corrupted output, drifted TUI)
-(defun jg/vterm-reset-display ()
+(defun js/vterm-reset-display ()
   (interactive)
   (vterm-clear-scrollback)
   (vterm-send-string "reset\n"))
 
 (with-eval-after-load 'vterm
-  (define-key vterm-mode-map (kbd "C-c C-r") #'jg/vterm-reset-display))
+  (define-key vterm-mode-map (kbd "C-c C-r") #'js/vterm-reset-display))
 ;; Use-package
 
 (use-package web-mode
@@ -3717,40 +3735,40 @@ includes ~/.local/bin."
 ;; REPEAT_CRON so the package leaves these entries alone (it would add
 ;; a SCHEDULED line).
 
-(defvar jg/repeat-ts-cron-prop "REPEAT_TS_CRON"
+(defvar js/repeat-ts-cron-prop "REPEAT_TS_CRON"
   "Property holding the cron rule (3 or 5 fields) for the body timestamp.")
 
 (defvar org-state)                      ; bound by `org-todo' around its hooks
 
-(defvar jg/repeat-ts-cron--orig nil
+(defvar js/repeat-ts-cron--orig nil
   "Body timestamp as it was before this DONE transition shifted it.")
 
-(defconst jg/repeat-ts-cron--ts-re
+(defconst js/repeat-ts-cron--ts-re
   "<\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}[^>\n]*\\)>"
   "Plain active timestamp; diary sexps (<%%...>) do not match.")
 
-(defun jg/repeat-ts-cron--find ()
+(defun js/repeat-ts-cron--find ()
   "Put point after the first plain active timestamp in the entry body.
 The heading line, planning line, and drawers are skipped.  Match data
 is set on success; return nil when the body has no timestamp."
   (org-back-to-heading t)
   (let ((end (org-entry-end-position)))
     (org-end-of-meta-data t)
-    (re-search-forward jg/repeat-ts-cron--ts-re end t)))
+    (re-search-forward js/repeat-ts-cron--ts-re end t)))
 
-(defun jg/repeat-ts-cron--prepare ()
+(defun js/repeat-ts-cron--prepare ()
   "On a change to a DONE state, save the body timestamp and add a repeater.
 Runs from `org-after-todo-state-change-hook', before org's repeat step."
   (when (and (member org-state org-done-keywords)
-             (org-entry-get nil jg/repeat-ts-cron-prop))
+             (org-entry-get nil js/repeat-ts-cron-prop))
     (save-excursion
-      (when (jg/repeat-ts-cron--find)
+      (when (js/repeat-ts-cron--find)
         (let ((ts (match-string 0)))
-          (setq jg/repeat-ts-cron--orig ts)
+          (setq js/repeat-ts-cron--orig ts)
           (unless (string-match-p org-repeat-re ts)
             (replace-match (concat (substring ts 0 -1) " +1d>") t t)))))))
 
-(defun jg/repeat-ts-cron--next (rule orig &optional from-orig)
+(defun js/repeat-ts-cron--next (rule orig &optional from-orig)
   "Return the timestamp string for the first match of RULE after ORIG.
 The search starts at the later of ORIG and now, so a meeting marked
 DONE before it starts still moves to the following occurrence; with
@@ -3779,27 +3797,27 @@ series in order.  Time of day and range length are kept from ORIG."
               (or (org-repeat-by-cron--extract-time-range-end orig next) "")
               ">"))))
 
-(defun jg/repeat-ts-cron--on-done (change-plist)
+(defun js/repeat-ts-cron--on-done (change-plist)
   "Replace the body timestamp with the next cron match.
 Runs from `org-trigger-hook' after org's repeat step.  CHANGE-PLIST
 carries the :from and :to states."
   (let ((from (format "%s" (plist-get change-plist :from)))
         (to (format "%s" (plist-get change-plist :to)))
-        (rule (org-entry-get nil jg/repeat-ts-cron-prop))
-        (orig jg/repeat-ts-cron--orig))
+        (rule (org-entry-get nil js/repeat-ts-cron-prop))
+        (orig js/repeat-ts-cron--orig))
     ;; The reset to TODO inside `org-auto-repeat-maybe' re-enters this
     ;; hook (DONE -> TODO); only the outer TODO -> DONE call consumes ORIG.
     (when (and rule orig
                (not (member from org-done-keywords))
                (member to org-done-keywords))
-      (setq jg/repeat-ts-cron--orig nil)
-      (let ((new (jg/repeat-ts-cron--next rule orig)))
+      (setq js/repeat-ts-cron--orig nil)
+      (let ((new (js/repeat-ts-cron--next rule orig)))
         (if (not new)
             (message "[repeat-ts-cron] No match for rule %s" rule)
           (save-excursion
-            (when (jg/repeat-ts-cron--find)
+            (when (js/repeat-ts-cron--find)
               (replace-match new t t)
               (message "[repeat-ts-cron] Timestamp moved to %s" new))))))))
 
-(add-hook 'org-after-todo-state-change-hook #'jg/repeat-ts-cron--prepare)
-(add-hook 'org-trigger-hook #'jg/repeat-ts-cron--on-done)
+(add-hook 'org-after-todo-state-change-hook #'js/repeat-ts-cron--prepare)
+(add-hook 'org-trigger-hook #'js/repeat-ts-cron--on-done)

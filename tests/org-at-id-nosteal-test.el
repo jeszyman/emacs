@@ -1,4 +1,4 @@
-;;; org-at-id-nosteal-test.el --- jg/org-at-id-nosteal writes state-change notes at once  -*- lexical-binding: t; -*-
+;;; org-at-id-nosteal-test.el --- js/org-at-id-nosteal writes state-change notes at once  -*- lexical-binding: t; -*-
 ;; Run: /usr/local/bin/emacs -Q --batch -l tests/org-at-id-nosteal-test.el -f ert-run-tests-batch-and-exit
 (require 'ert)
 (require 'org)
@@ -11,7 +11,7 @@
 (with-temp-buffer
   (insert-file-contents nosteal-test--config)
   (goto-char (point-min))
-  (search-forward "(defun jg/org-at-id-nosteal")
+  (search-forward "(defun js/org-at-id-nosteal")
   (goto-char (match-beginning 0))
   (eval (read (current-buffer)) t))
 
@@ -30,7 +30,7 @@
           (with-current-buffer (find-file-noselect file)
             (org-mode)
             (org-id-add-location id file))
-          (jg/org-at-id-nosteal id (lambda () (org-todo "INPROCESS")))
+          (js/org-at-id-nosteal id (lambda () (org-todo "INPROCESS")))
           (should (string-match-p "State \"INPROCESS\"  from \"TODO\""
                                   (with-temp-buffer (insert-file-contents file) (buffer-string)))))
       (remove-hook 'post-command-hook #'org-add-log-note)
@@ -55,7 +55,7 @@ org-schedule through the helper looped over the region and failed with
             (org-id-add-location id file)
             (goto-char (point-min))
             (push-mark (point-max) t t))
-          (jg/org-at-id-nosteal id (lambda () (setq seen (org-region-active-p))))
+          (js/org-at-id-nosteal id (lambda () (setq seen (org-region-active-p))))
           (should-not seen)
           (should (buffer-local-value 'mark-active (find-buffer-visiting file))))
       (let ((b (find-buffer-visiting file))) (when b (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))
