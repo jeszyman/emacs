@@ -1375,7 +1375,8 @@ When called with a prefix ARG (C-u), also cycle global visibility, hide all src 
 (setq org-id-link-to-org-use-id 'use-existing)
 ;;https://stackoverflow.com/questions/28351465/emacs-orgmode-do-not-insert-line-between-headers
 
-(customize-set-variable 'org-enforce-todo-checkbox-dependencies t)
+;; Unchecked checkboxes never block a done state.
+(customize-set-variable 'org-enforce-todo-checkbox-dependencies nil)
 ;; don't adapt indentation to header level
 (setq org-adapt-indentation nil)
 
