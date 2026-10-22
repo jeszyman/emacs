@@ -3214,16 +3214,18 @@ hook (including `global-font-lock-mode-enable-in-buffer')."
   (when (and buffer-file-name
              (not (member (file-name-nondirectory buffer-file-name)
                           js/org-glossary-exclude-files)))
-    (let ((buf (current-buffer)))
-      (run-with-idle-timer
-       0.5 nil
-       (lambda ()
-         (when (buffer-live-p buf)
-           (with-current-buffer buf
-             (when (and (derived-mode-p 'org-mode)
-                        (not (bound-and-true-p org-glossary-mode)))
-               (with-demoted-errors "org-glossary-mode failed: %S"
-                 (org-glossary-mode 1))))))))))
+    ;; The buffer travels as a timer argument, not a closure variable: this
+    ;; file loads without lexical-binding, so a captured `buf' is void when the
+    ;; timer fires ("Error running timer: (void-variable buf)", 2026-10-22).
+    (run-with-idle-timer 0.5 nil #'js/org-glossary-mode-enable (current-buffer))))
+(defun js/org-glossary-mode-enable (buf)
+  "Enable `org-glossary-mode' in BUF when it is still a live org buffer."
+  (when (buffer-live-p buf)
+    (with-current-buffer buf
+      (when (and (derived-mode-p 'org-mode)
+                 (not (bound-and-true-p org-glossary-mode)))
+        (with-demoted-errors "org-glossary-mode failed: %S"
+          (org-glossary-mode 1))))))
 ;; Auto-enable ON (2026-07-24). The factorial startup hang is fixed by the
 ;; override above, so org-glossary-mode is enabled in every org buffer via this
 ;; hook. Caveat: org-alert force-opens all agenda files at startup, so many large
@@ -3348,16 +3350,17 @@ time nor a C-g during it can stop the rest of the hook, including
 `global-font-lock-mode-enable-in-buffer'."
   (when (and buffer-file-name
              (<= (buffer-size) js/org-table-widget-max-buffer-size))
-    (let ((buf (current-buffer)))
-      (run-with-idle-timer
-       0.5 nil
-       (lambda ()
-         (when (buffer-live-p buf)
-           (with-current-buffer buf
-             (when (and (derived-mode-p 'org-mode)
-                        (not (bound-and-true-p org-table-widget-mode)))
-               (with-demoted-errors "org-table-widget-mode failed: %S"
-                 (org-table-widget-mode 1))))))))))
+    ;; Buffer as a timer argument, not a closure variable (see
+    ;; js/org-glossary-mode-maybe).
+    (run-with-idle-timer 0.5 nil #'js/org-table-widget-mode-enable (current-buffer))))
+(defun js/org-table-widget-mode-enable (buf)
+  "Enable `org-table-widget-mode' in BUF when it is still a live org buffer."
+  (when (buffer-live-p buf)
+    (with-current-buffer buf
+      (when (and (derived-mode-p 'org-mode)
+                 (not (bound-and-true-p org-table-widget-mode)))
+        (with-demoted-errors "org-table-widget-mode failed: %S"
+          (org-table-widget-mode 1))))))
 ;; ox-gfm
 
 (use-package ox-gfm

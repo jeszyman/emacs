@@ -29,6 +29,7 @@
 [[file:docs/superpowers/plans/2026-03-14-mindjack-plan.md]]
 ** README                                                          :noexport:
 *** Change log
+- [2026-10-22 Thu] "Error running timer: (void-variable buf)" fixed: =js/org-glossary-mode-maybe= and =js/org-table-widget-mode-maybe= scheduled idle-timer lambdas that closed over a =let= variable, and =public_config.el= loads without lexical-binding, so =buf= was void when the timer fired and neither mode was enabled after a revert. Each now passes the buffer as a timer argument to a named enable function (=js/org-glossary-mode-enable=, =js/org-table-widget-mode-enable=). Live check =scripts/test-org-idle-timer-buffer-arg.sh=: 4 errors and both modes off with the old definitions, no error and both modes on with the new ones. The other timer lambdas in the tangled config capture no variable or already pass the buffer as an argument.
 - [2026-10-21 Wed] Unchecked checkboxes no longer block a heading from moving to a done state: =org-enforce-todo-checkbox-dependencies= is =nil= in Base Emacs > Org-mode > General (it was still =t= here, although the work.org change log of [2026-03-28 Sat] recorded it as disabled). Checked live on the rmeth package heading in career.org: the state change that was refused before the change went through after it. Live check =scripts/test-checkbox-noblocking.sh= (3 checks pass; with the checkbox blocker put back on =org-blocker-hook= the probe heading stays TODO).
 - [2026-10-21 Wed] The echo-area error "process server <N> no longer connected to pipe; closed it" is dropped: =js/server-send-string-ignore-dead-client= (block =server-eval-noprompt=) catches it when the daemon writes a reply to an emacsclient that a timeout already killed (the Claude Code edit hooks run emacsclient under =timeout 3=). Live check =scripts/test-server-send-dead-client.sh= (fails without the advice, passes with it).
 - [2026-10-03 Sat] Frameless =emacsclient --eval= calls no longer open file-changed-on-disk questions (=save-buffer= "Save anyway?", =find-file-noselect= "Reread from disk?", "really edit the buffer?") that blocked the server for every later call: block =server-eval-noprompt= under Miscellaneous rereads a stale unmodified buffer silently and returns an error for the rest. Regression test =scripts/test-server-eval-noprompt.sh= (9 checks pass). The Claude edit hook (=~/.claude/mods/emacs-sync=) now refuses an edit when that save fails, so its revert cannot discard unsaved buffer text.
@@ -8725,16 +8726,18 @@ hook (including `global-font-lock-mode-enable-in-buffer')."
   (when (and buffer-file-name
              (not (member (file-name-nondirectory buffer-file-name)
                           js/org-glossary-exclude-files)))
-    (let ((buf (current-buffer)))
-      (run-with-idle-timer
-       0.5 nil
-       (lambda ()
-         (when (buffer-live-p buf)
-           (with-current-buffer buf
-             (when (and (derived-mode-p 'org-mode)
-                        (not (bound-and-true-p org-glossary-mode)))
-               (with-demoted-errors "org-glossary-mode failed: %S"
-                 (org-glossary-mode 1))))))))))
+    ;; The buffer travels as a timer argument, not a closure variable: this
+    ;; file loads without lexical-binding, so a captured `buf' is void when the
+    ;; timer fires ("Error running timer: (void-variable buf)", 2026-10-22).
+    (run-with-idle-timer 0.5 nil #'js/org-glossary-mode-enable (current-buffer))))
+(defun js/org-glossary-mode-enable (buf)
+  "Enable `org-glossary-mode' in BUF when it is still a live org buffer."
+  (when (buffer-live-p buf)
+    (with-current-buffer buf
+      (when (and (derived-mode-p 'org-mode)
+                 (not (bound-and-true-p org-glossary-mode)))
+        (with-demoted-errors "org-glossary-mode failed: %S"
+          (org-glossary-mode 1))))))
 ;; Auto-enable ON (2026-07-24). The factorial startup hang is fixed by the
 ;; override above, so org-glossary-mode is enabled in every org buffer via this
 ;; hook. Caveat: org-alert force-opens all agenda files at startup, so many large
@@ -8967,16 +8970,52 @@ time nor a C-g during it can stop the rest of the hook, including
 `global-font-lock-mode-enable-in-buffer'."
   (when (and buffer-file-name
              (<= (buffer-size) js/org-table-widget-max-buffer-size))
-    (let ((buf (current-buffer)))
-      (run-with-idle-timer
-       0.5 nil
-       (lambda ()
-         (when (buffer-live-p buf)
-           (with-current-buffer buf
-             (when (and (derived-mode-p 'org-mode)
-                        (not (bound-and-true-p org-table-widget-mode)))
-               (with-demoted-errors "org-table-widget-mode failed: %S"
-                 (org-table-widget-mode 1))))))))))
+    ;; Buffer as a timer argument, not a closure variable (see
+    ;; js/org-glossary-mode-maybe).
+    (run-with-idle-timer 0.5 nil #'js/org-table-widget-mode-enable (current-buffer))))
+(defun js/org-table-widget-mode-enable (buf)
+  "Enable `org-table-widget-mode' in BUF when it is still a live org buffer."
+  (when (buffer-live-p buf)
+    (with-current-buffer buf
+      (when (and (derived-mode-p 'org-mode)
+                 (not (bound-and-true-p org-table-widget-mode)))
+        (with-demoted-errors "org-table-widget-mode failed: %S"
+          (org-table-widget-mode 1))))))
+#+end_src
+
+#+name: test-org-idle-timer-buffer-arg
+#+begin_src bash :tangle ./scripts/test-org-idle-timer-buffer-arg.sh :shebang "#!/usr/bin/env bash"
+# Live check for js/org-glossary-mode-maybe and js/org-table-widget-mode-maybe:
+# reverting an org buffer schedules both idle timers, and when they fire they
+# must enable their modes without "Error running timer: (void-variable buf)"
+# (public_config.el loads without lexical-binding, so a closure over a let
+# variable is void by then). Runs against the running daemon.
+set -u
+E=(emacsclient --socket-name "$HOME/.emacs.d/server/server")
+F=$(mktemp --suffix=.org); printf '* Idle timer test\nbody\n' > "$F"
+# Errors are counted by a temporary advice on `message': *Messages* folds a
+# repeated line into "[N times]", so counting its lines misses repeats.
+out=$("${E[@]}" --eval "(let* ((n 0)
+       (probe (lambda (orig fmt &rest args)
+                (when (and (stringp fmt) (string-prefix-p \"Error running timer\" fmt)
+                           (string-match-p \"void-variable buf\" (format \"%S\" args)))
+                  (setq n (1+ n)))
+                (apply orig fmt args)))
+       b)
+  (advice-add 'message :around probe)
+  (unwind-protect
+      (progn (setq b (find-file-noselect \"$F\"))
+             (with-current-buffer b (revert-buffer t t))
+             (sit-for 1.5))
+    (advice-remove 'message probe))
+  (prog1 (format \"%s %s %s\" n
+                 (if (buffer-local-value 'org-glossary-mode b) 1 0)
+                 (if (buffer-local-value 'org-table-widget-mode b) 1 0))
+    (kill-buffer b)))")
+rm -f "$F"
+read -r new gl tw <<<"$(echo "$out" | tr -d '"')"
+if [ "$new" = 0 ] && [ "$gl" = 1 ] && [ "$tw" = 1 ]; then echo "PASS: both idle timers enabled their modes, no void-variable error"; exit 0; fi
+echo "FAIL: new void-variable errors=$new glossary=$gl table-widget=$tw"; exit 1
 #+end_src
 
 **** ox-gfm
