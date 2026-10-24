@@ -6736,6 +6736,7 @@ only a heading that has a TODO keyword and is not already done."
 (setq org-use-property-inheritance t)
 #+end_src
 ***** (browse-org-table-urls-by-name)
+- Reads the named table from the current buffer (org-element-parse-buffer), so a call from emacsclient with any buffer other than work.org current finds no table and opens nothing; run it inside work.org. [2026-10-24 Sat]: Afternoon closeout step 1.4 opened no URLs on the first try for this reason.
 
 #+begin_src emacs-lisp
 (defun browse-org-table-urls-by-name (table-name)
