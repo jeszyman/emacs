@@ -2197,6 +2197,7 @@ def main():
         try:
             run_export(args.org_file, args.node_id, html_overrides(), "(org-html-export-to-html nil t)")
             subprocess.run([sys.executable, INLINE_HTML, html_path], check=True)
+            join_bibliography_numbers(html_path)
             check_self_contained(html_path)
         except BaseException:
             # After a failed export, no HTML file is left: a partial or older
@@ -2209,7 +2210,9 @@ def main():
 
 def join_bibliography_numbers(md_path):
     # A numeric csl style writes each entry's number and text as two <div>
-    # blocks, which GitHub shows on two lines. Join them into "N. text".
+    # blocks: GitHub shows them on two lines, and in HTML the number floats
+    # left with no padding, so a two-digit number abuts the author
+    # ("32.Altemose"). Join them into "N. text" in both outputs.
     with open(md_path) as f:
         text = f.read()
     text = re.sub(
