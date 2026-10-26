@@ -1641,6 +1641,7 @@ only a heading that has a TODO keyword and is not already done."
 
 (setq org-use-property-inheritance t)
 ;; (browse-org-table-urls-by-name)
+;; - Reads the named table from the current buffer (org-element-parse-buffer), so a call from emacsclient with any buffer other than work.org current finds no table and opens nothing; run it inside work.org. [2026-10-24 Sat]: Afternoon closeout step 1.4 opened no URLs on the first try for this reason.
 
 (defun browse-org-table-urls-by-name (table-name)
   "Browse URLs listed in an Org-mode table identified by TABLE-NAME.
@@ -3261,9 +3262,12 @@ hook (including `global-font-lock-mode-enable-in-buffer')."
 ;; - With the mode on, every =#+INCLUDE= that targets a CUSTOM_ID gets an error overlay on each refresh (198 overlays from two INCLUDE lines in rmeth.org, [2026-10-21 Wed]); the file on disk and Org's own export are unaffected; turning the mode off in that buffer clears them.
 ;; - Enable per buffer: ~M-x org-include-inline-mode~
 
-;; Load only — enable per buffer with M-x org-include-inline-mode
+;; Load only — enable per buffer with M-x org-include-inline-mode. The
+;; package default (`smart') turns the mode on in every org buffer that
+;; contains an #+INCLUDE line.
 (use-package org-include-inline
-  :vc (:url "https://github.com/yibie/org-include-inline" :vc-backend Git))
+  :vc (:url "https://github.com/yibie/org-include-inline" :vc-backend Git)
+  :custom (org-include-inline-auto-enable-in-org-mode nil))
 ;; Use-package
 
 (use-package org-contrib
