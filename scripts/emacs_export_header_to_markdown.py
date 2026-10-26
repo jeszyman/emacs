@@ -69,6 +69,7 @@ def main():
                 "(org-html-export-to-html nil t)",
             )
             subprocess.run([sys.executable, INLINE_HTML, html_path], check=True)
+            join_bibliography_numbers(html_path)
             check_self_contained(html_path)
         except BaseException:
             # After a failed export, no HTML file is left: a partial or older
@@ -81,7 +82,9 @@ def main():
 
 def join_bibliography_numbers(md_path):
     # A numeric csl style writes each entry's number and text as two <div>
-    # blocks, which GitHub shows on two lines. Join them into "N. text".
+    # blocks: GitHub shows them on two lines, and in HTML the number floats
+    # left with no padding, so a two-digit number abuts the author
+    # ("32.Altemose"). Join them into "N. text" in both outputs.
     with open(md_path) as f:
         text = f.read()
     text = re.sub(
@@ -150,6 +153,8 @@ def link_caption_words(md_path):
 #    are numbered over figures only.
 # 4. An id: link to a heading outside the export resolves to the file that
 #    holds it; the title of that heading is read from the file.
+# 5. A display equation is a LaTeX equation environment; equations are
+#    numbered over equations only, and a link to one reads "Equation N".
 SHARED_OVERRIDES = r"""
 (require 'ox)
 (require 'ox-html)
@@ -248,6 +253,20 @@ SHARED_OVERRIDES = r"""
                           (paired-heading-slug datum info))
                     (org-element-property :name datum))
                   (funcall orig datum info))))
+(defun paired-equation-p (el &optional _info)
+  "Non-nil when EL is a LaTeX equation environment."
+  (and (org-element-type-p el 'latex-environment)
+       (string-match-p "\\`[ \t\n]*\\\\begin{equation}"
+                       (org-element-property :value el))))
+(defun paired-equation-number (el info)
+  (org-export-get-ordinal el info '(latex-environment) #'paired-equation-p))
+(defun paired-equation-body (el)
+  "The math of the equation environment EL, without its begin and end lines."
+  (string-trim
+   (replace-regexp-in-string
+    "\\\\end{equation}[ \t\n]*\\'" ""
+    (replace-regexp-in-string "\\`[ \t\n]*\\\\begin{equation}" ""
+                              (org-element-property :value el)))))
 """
 
 # Markdown writer.
@@ -261,6 +280,8 @@ SHARED_OVERRIDES = r"""
 #    hover title. A link to a figure or table reads "Figure N" / "Table N".
 # 3. Links to .org files keep the .org path; a heading target becomes
 #    GitHub's heading anchor.
+# 4. A display equation is written as its anchor and a $$ block ending in
+#    \tag{N}, which MathJax, GitHub's math renderer, prints as the number.
 MD_WRITER = r"""
 (require 'ox-md)
 ;; Links in tables go through ox-html, which rewrites a link to a .org file
@@ -294,6 +315,11 @@ MD_WRITER = r"""
                               id-file (file-name-directory (plist-get info :input-file)))))
                     (format "[%s](%s%s)" (or (org-string-nw-p desc) rel) rel
                             (if title (concat "#" (paired-github-slug title)) ""))))
+                 ((and dest (paired-equation-p dest info))
+                  (format "[%s](#%s)"
+                          (or (org-string-nw-p desc)
+                              (format "Equation %d" (paired-equation-number dest info)))
+                          (org-export-get-reference dest info)))
                  ;; A table reference reads "Table N", numbered as ox-html
                  ;; numbers table captions.
                  ((and dest (org-element-type-p dest 'table)
@@ -354,6 +380,17 @@ MD_WRITER = r"""
                               "\n\\(.\\)" "\n    \\1"
                               (org-trim (org-export-data (nth 2 d) info)))))
                    defs "\n\n")))))
+(advice-add 'org-md-latex-environment :around
+            (lambda (orig el contents info)
+              (if (paired-equation-p el info)
+                  (format "%s$$\n%s \\tag{%d}\n$$"
+                          (if (org-element-property :name el)
+                              (format "<a id=\"%s\"></a>\n\n"
+                                      (org-export-get-reference el info))
+                            "")
+                          (paired-equation-body el)
+                          (paired-equation-number el info))
+                (funcall orig el contents info))))
 """
 
 # The complete Emacs Lisp for a Markdown export. The crosslink skill's
@@ -373,6 +410,11 @@ MD_OVERRIDES = SHARED_OVERRIDES + MD_WRITER
 # 4. A wide table scrolls sideways inside the page; its caption stays under it.
 # 5. Hovering a citation number shows its bibliography entry, and hovering a
 #    "Table N" / "Figure N" link shows its caption (the link's title attribute).
+# 6. Math is written as MathML by pandoc, which a browser renders without a
+#    script, so the page loads no MathJax. A display equation is a block with
+#    its number in parentheses beside it (laid out by org.css), and a link to
+#    it reads "Equation N". The export fails when pandoc cannot convert a
+#    formula.
 HTML_WRITER = r"""
 (setq org-html-table-caption-above nil
       org-html-head-include-default-style nil
@@ -425,6 +467,11 @@ document.addEventListener('DOMContentLoaded', function () {
                           (org-export-get-reference dest info)
                           (or (org-string-nw-p desc)
                               (format "Figure %d" (paired-figure-number dest info)))))
+                 ((and dest (paired-equation-p dest info))
+                  (format "<a href=\"#%s\">%s</a>"
+                          (org-export-get-reference dest info)
+                          (or (org-string-nw-p desc)
+                              (format "Equation %d" (paired-equation-number dest info)))))
                  ((and (equal type "file")
                        (not (org-export-inline-image-p
                              link (plist-get info :html-inline-image-rules))))
@@ -438,6 +485,38 @@ document.addEventListener('DOMContentLoaded', function () {
                  (t (funcall orig link desc info))))))
 (advice-add 'org-html-table :filter-return
             (lambda (html) (concat "<div class=\"table-scroll\">\n" html "\n</div>")))
+;; html, unlike verbatim, keeps math parsed (verbatim turns it back into text
+;; before export, so a named equation loses its name), and unlike mathjax
+;; adds no script.
+(setq org-html-with-latex 'html)
+(defun paired-mathml (tex display)
+  "MathML for the TeX math TEX, as display math when DISPLAY is non-nil."
+  (let ((out (with-temp-buffer
+               (insert (format (if display "\\[%s\\]" "\\(%s\\)") tex))
+               (call-process-region (point-min) (point-max) "pandoc" t '(t nil) nil
+                                    "-f" "latex" "-t" "html" "--mathml")
+               (buffer-string))))
+    (unless (string-match-p "<math" out)
+      (error "pandoc did not convert to MathML: %s" tex))
+    (string-trim
+     (replace-regexp-in-string "\\`[ \t\n]*<p>\\|</p>[ \t\n]*\\'" "" out))))
+(advice-add 'org-html-latex-fragment :around
+            (lambda (orig frag contents info)
+              (let ((v (org-element-property :value frag)))
+                (cond
+                 ((string-prefix-p "\\(" v) (paired-mathml (substring v 2 -2) nil))
+                 ((string-prefix-p "\\[" v) (paired-mathml (substring v 2 -2) t))
+                 ((string-prefix-p "$$" v) (paired-mathml (substring v 2 -2) t))
+                 ((string-prefix-p "$" v) (paired-mathml (substring v 1 -1) nil))
+                 (t (funcall orig frag contents info))))))
+(advice-add 'org-html-latex-environment :around
+            (lambda (orig el contents info)
+              (if (paired-equation-p el info)
+                  (format "<div id=\"%s\" class=\"equation\">%s<span class=\"equation-number\">(%d)</span></div>"
+                          (org-export-get-reference el info)
+                          (paired-mathml (paired-equation-body el) t)
+                          (paired-equation-number el info))
+                (funcall orig el contents info))))
 """
 
 
