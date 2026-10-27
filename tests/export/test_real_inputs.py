@@ -1,9 +1,13 @@
 """Markdown regression on the sections whose org_update.sh runs this script.
 
 Each org file is copied to a temporary directory; the baseline and the new script
-export the same section from separate copies, and the outputs must be byte-identical.
+export the same section from separate copies, and the outputs must be byte-identical
+outside display equations. The baseline writes an equation environment as raw LaTeX
+and the new script as a numbered $$ block (test_paired_export checks that block), so
+both are replaced by one placeholder before the comparison.
 """
 
+import re
 import shutil
 from pathlib import Path
 
@@ -29,6 +33,19 @@ INPUTS = [
     ),
 ]
 
+# ox-md puts \label{name} after the environment's first line, which for a
+# one-line environment is after \end{equation}.
+BASE_EQUATION = re.compile(
+    r"\\begin\{equation\}.*?\\end\{equation\}(?:\n\\label\{[^}]*\})?", re.S
+)
+NEW_EQUATION = re.compile(
+    r'(?:<a id="[^"]*"></a>\n\n)?^\$\$\n(?:(?!\$\$).)*?\\tag\{\d+\}\n\$\$$', re.S | re.M
+)
+
+
+def mask_equations(md):
+    return NEW_EQUATION.sub("<equation>", BASE_EQUATION.sub("<equation>", md))
+
 
 @pytest.mark.parametrize("name,org,node,out", INPUTS, ids=[i[0] for i in INPUTS])
 def test_md_byte_identical(tmp_path, name, org, node, out):
@@ -38,5 +55,5 @@ def test_md_byte_identical(tmp_path, name, org, node, out):
         d.mkdir()
         shutil.copy(org, d / org.name)
         run_export(script, d, org.name, node, "md" if side == "new" else None)
-        results[side] = (d / out).read_bytes()
+        results[side] = mask_equations((d / out).read_text())
     assert results["new"] == results["base"]

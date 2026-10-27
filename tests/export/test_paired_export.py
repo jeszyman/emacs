@@ -67,7 +67,7 @@ def test_both_formats_pass_check(tmp_path):
     assert r.returncode == 0, r.stdout
     assert (
         r.stdout.strip()
-        == "OK figures=2 tables=2 bibliography=2 footnotes=1 crossrefs=4"
+        == "OK figures=2 tables=2 bibliography=2 footnotes=1 equations=0 crossrefs=4"
     )
 
 
@@ -99,3 +99,49 @@ def test_missing_image_fails_and_names_it(tmp_path):
     assert r.returncode != 0
     assert "demo.png" in r.stdout + r.stderr
     assert not (d / "METHOD.html").exists()
+
+
+EQUATIONS = """\
+*** Equations
+The count in library \\(s\\) is [[eq-count]], and its rate is [[eq-rate]].
+
+#+name: eq-count
+\\begin{equation}
+N_{s} = \\sum_{r \\in R_{s}} \\mathbf{1}\\left[ r \\in K \\right]
+\\end{equation}
+
+#+name: eq-rate
+\\begin{equation}
+A_{s} = \\frac{10^{6} \\, N_{s}}{W_{s}}
+\\end{equation}
+
+"""
+
+
+def test_equations_numbered_in_both_formats(tmp_path):
+    # A named equation environment is numbered in both files and a link to it
+    # reads "Equation N"; the HTML writes MathML and loads no MathJax.
+    d = copy_fixture(tmp_path / "proj")
+    org = d / "proj.org"
+    org.write_text(
+        org.read_text().replace("*** References", EQUATIONS + "*** References", 1)
+    )
+    run_export(SCRIPT, d, "proj.org", FIXTURE_ID, "both")
+    md, html = (d / "METHOD.md").read_text(), (d / "METHOD.html").read_text()
+    assert "[Equation 1](#eq-count)" in md and "[Equation 2](#eq-rate)" in md
+    assert (
+        '<a id="eq-rate"></a>\n\n$$\nA_{s} = \\frac{10^{6} \\, N_{s}}{W_{s}} \\tag{2}\n$$'
+        in md
+    )
+    assert '<a href="#eq-rate">Equation 2</a>' in html
+    assert '<div id="eq-count" class="equation"><math display="block"' in html
+    assert '<span class="equation-number">(2)</span></div>' in html
+    assert '<math display="inline"' in html
+    assert "MathJax-script" not in html and "\\begin{equation}" not in html
+    r = subprocess.run(
+        [sys.executable, str(CHECK), str(d / "METHOD.md"), str(d / "METHOD.html")],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stdout
+    assert "equations=2" in r.stdout and "crossrefs=6" in r.stdout

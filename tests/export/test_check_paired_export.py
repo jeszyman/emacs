@@ -74,8 +74,35 @@ def test_good_pair_passes_with_counts():
         "tables": 1,
         "bibliography": 1,
         "footnotes": 1,
+        "equations": 0,
         "crossrefs": 2,
     }
+
+
+EQ_MD = GOOD_MD.replace(
+    "# References",
+    'By [Equation 1](#eq-a).\n\n<a id="eq-a"></a>\n\n$$\nx = 1 \\tag{1}\n$$\n\n# References',
+)
+EQ_HTML = GOOD_HTML.replace(
+    '<div class="csl-bib-body">',
+    '<p>By <a href="#eq-a">Equation 1</a>.</p>\n'
+    '<div id="eq-a" class="equation"><math display="block"><mi>x</mi></math>'
+    '<span class="equation-number">(1)</span></div>\n<div class="csl-bib-body">',
+)
+
+
+def test_equation_pair_passes_with_counts():
+    failures, counts = check(EQ_MD, EQ_HTML, "3.1")
+    assert failures == []
+    assert (counts["equations"], counts["crossrefs"]) == (1, 3)
+
+
+def test_2_equation_count_differs():
+    assert failed(EQ_MD.replace(" \\tag{1}", ""), EQ_HTML) == {2}
+
+
+def test_4_equation_number_differs_from_link():
+    assert failed(EQ_MD, EQ_HTML.replace("(1)</span>", "(2)</span>")) == {4}
 
 
 def test_1_md_link_without_anchor():

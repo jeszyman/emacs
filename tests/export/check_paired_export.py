@@ -6,9 +6,10 @@ Usage: check_paired_export.py MD_FILE HTML_FILE [--expect-val VALUE]
 Checks:
   1  an in-page link (#x) with no anchor x, in either file
   2  different numbers of captioned figures, captioned tables, bibliography
-     entries or footnotes in the two files
-  3  different ordered lists of "Figure N" / "Table N" link texts
-  4  an HTML "Figure N" / "Table N" link whose target caption has another number
+     entries, footnotes or numbered equations in the two files
+  3  different ordered lists of "Figure N" / "Table N" / "Equation N" link texts
+  4  an HTML "Figure N" / "Table N" / "Equation N" link whose target caption or
+     equation number has another number
   5  the HTML's last caption::before or figcaption::before rule does not set
      content: none (the stylesheet would print a second number)
   6  an image that is not embedded, or an external stylesheet or script
@@ -24,9 +25,9 @@ import sys
 from html.parser import HTMLParser
 
 OPENABLE = ("#", "data:", "http://", "https://", "mailto:")
-XREF = re.compile(r"^(Figure|Table) (\d+)$")
+XREF = re.compile(r"^(Figure|Table|Equation) (\d+)$")
 MD_XREF = re.compile(
-    r"\[(Figure|Table) (\d+)\]\(#[^)]*\)|<a href=\"#[^\"]*\">(Figure|Table) (\d+)</a>"
+    r"\[(Figure|Table|Equation) (\d+)\]\(#[^)]*\)|<a href=\"#[^\"]*\">(Figure|Table|Equation) (\d+)</a>"
 )
 
 
@@ -106,6 +107,7 @@ def md_counts(md):
         "tables": len(re.findall(r"^\*Table \d+: ", md, re.M)),
         "bibliography": md.count('class="csl-entry"'),
         "footnotes": len(re.findall(r"^\[\^[^\]]+\]: ", md, re.M)),
+        "equations": len(re.findall(r"\\tag\{\d+\}\n\$\$$", md, re.M)),
     }
 
 
@@ -115,15 +117,19 @@ def html_counts(html):
         "tables": html.count('class="table-number"'),
         "bibliography": html.count('class="csl-entry"'),
         "footnotes": html.count('class="footdef"'),
+        "equations": html.count('class="equation-number"'),
     }
 
 
 def caption_number(html, target, kind):
-    """The number in the caption of the figure or table whose id is TARGET, or None."""
+    """The number in the caption of the figure or table, or of the equation, whose id is TARGET, or None."""
     t = re.escape(target)
     if kind == "Figure":
         m = re.search(rf'<div id="{t}" class="figure">(.*?)</div>', html, re.S)
         n = m and re.search(r'class="figure-number">Figure (\d+):', m.group(1))
+    elif kind == "Equation":
+        m = re.search(rf'<div id="{t}" class="equation">(.*?)</div>', html, re.S)
+        n = m and re.search(r'class="equation-number">\((\d+)\)<', m.group(1))
     else:
         m = re.search(rf'<table id="{t}"[^>]*>(.*?)</table>', html, re.S)
         n = m and re.search(r'class="table-number">Table (\d+):', m.group(1))

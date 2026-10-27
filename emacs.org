@@ -30,6 +30,7 @@
 ** README                                                          :noexport:
 *** Change log
 - [2026-10-25 Sun] =org-include-inline= no longer turns itself on: ~org-include-inline-auto-enable-in-org-mode~ is nil (package default =smart= enabled it in every org buffer with an =#+INCLUDE= line, so CUSTOM_ID includes in rmeth.org drew stacked error overlays). Enable per buffer with ~M-x org-include-inline-mode~. Test: =tests/org-include-inline-test.el=.
+- [2026-10-25 Sun] =emacs_export_header_to_markdown.py= numbers display equations: a =#+name=d LaTeX =equation= environment is a =$$= block ending in =\tag{N}= in Markdown and a MathML block with its number beside it in HTML, and a link to it reads "Equation N". The HTML writes all math as MathML through pandoc (=org-html-with-latex= is =html=), so it no longer loads MathJax from a CDN, which had failed check 6 of =check_paired_export.py=; the checker counts equations and checks "Equation N" links, and =test_real_inputs= compares the Markdown with equation blocks masked. Tests: =test_equations_numbered_in_both_formats= and three checker tests.
 - [2026-10-22 Thu] "Error running timer: (void-variable buf)" fixed: =js/org-glossary-mode-maybe= and =js/org-table-widget-mode-maybe= scheduled idle-timer lambdas that closed over a =let= variable, and =public_config.el= loads without lexical-binding, so =buf= was void when the timer fired and neither mode was enabled after a revert. Each now passes the buffer as a timer argument to a named enable function (=js/org-glossary-mode-enable=, =js/org-table-widget-mode-enable=). Live check =scripts/test-org-idle-timer-buffer-arg.sh=: 4 errors and both modes off with the old definitions, no error and both modes on with the new ones. The other timer lambdas in the tangled config capture no variable or already pass the buffer as an argument.
 - [2026-10-21 Wed] Unchecked checkboxes no longer block a heading from moving to a done state: =org-enforce-todo-checkbox-dependencies= is =nil= in Base Emacs > Org-mode > General (it was still =t= here, although the work.org change log of [2026-03-28 Sat] recorded it as disabled). Checked live on the rmeth package heading in career.org: the state change that was refused before the change went through after it. Live check =scripts/test-checkbox-noblocking.sh= (3 checks pass; with the checkbox blocker put back on =org-blocker-hook= the probe heading stays TODO).
 - [2026-10-21 Wed] The echo-area error "process server <N> no longer connected to pipe; closed it" is dropped: =js/server-send-string-ignore-dead-client= (block =server-eval-noprompt=) catches it when the daemon writes a reply to an emacsclient that a timeout already killed (the Claude Code edit hooks run emacsclient under =timeout 3=). Live check =scripts/test-server-send-dead-client.sh= (fails without the advice, passes with it).
@@ -2145,7 +2146,8 @@ https://www.reddit.com/r/emacs/comments/179t67l/window_management_share_your_dis
 :PROPERTIES:
 :ID:       68fc529a-94bc-42ed-b457-15e28d721af3
 :END:
-Exports one org heading (by =:ID:=) to Markdown for GitHub (=--format md=, the default), to one self-contained HTML file for readers without GitHub (=--format html=), or to both, with Org 9.7's ox-md and ox-html plus overrides loaded into a batch Emacs. Shared by both formats: a table's or figure's =#+name= is its anchor and links to it read "Table N" / "Figure N"; headings anchor on their CUSTOM_ID or GitHub's slug of the title; the heading is found by ID in the named file only. The Markdown: tables and figures carry an italic caption line under them; footnotes are native =[^label]=; links to =.org= files keep =.org= and heading targets become =file.org#slug=; a numeric csl bibliography is one line per entry and loses its =<style>= tag. The HTML: the shared report stylesheet =~/repos/science/resources/org.css= and every image are embedded by =inline_html.py=, captions sit under tables and figures, links to repository files and to headings in other files are kept as text, and the export fails if anything is left unembedded. =EXPORT_ORG_CSS= and =EXPORT_INLINE_HTML= point to another stylesheet or embedding script. Used by the rmeth README/METHOD exports ([[id:058d0bdd-037d-4186-aa08-7e6d5e8cfab3][rmeth, Working in this repo]]) and by frag and emseq; tests in [[id:1cd73e6f-d412-4fb3-9c43-8591bcb6aa48][Paired export tests]].
+
+Exports one org heading (by =:ID:=) to Markdown for GitHub (=--format md=, the default), to one self-contained HTML file for readers without GitHub (=--format html=), or to both, with Org 9.7's ox-md and ox-html plus overrides loaded into a batch Emacs. Shared by both formats: a table's, figure's or equation's =#+name= is its anchor and links to it read "Table N" / "Figure N" / "Equation N"; a display equation is a LaTeX =equation= environment, numbered over equations only; headings anchor on their CUSTOM_ID or GitHub's slug of the title; the heading is found by ID in the named file only. The Markdown: tables and figures carry an italic caption line under them; footnotes are native =[^label]=; links to =.org= files keep =.org= and heading targets become =file.org#slug=; a numeric csl bibliography is one line per entry and loses its =<style>= tag; an equation is a =$$= block ending in =\tag{N}=. The HTML: math is MathML written by pandoc (on PATH; the same release on every machine through the basecamp playbook), so the page loads no MathJax, and an equation's number sits beside it; the shared report stylesheet =~/repos/science/resources/org.css= and every image are embedded by =inline_html.py=, captions sit under tables and figures, links to repository files and to headings in other files are kept as text, and the export fails if anything is left unembedded. =EXPORT_ORG_CSS= and =EXPORT_INLINE_HTML= point to another stylesheet or embedding script. Used by the rmeth README/METHOD exports ([[id:058d0bdd-037d-4186-aa08-7e6d5e8cfab3][rmeth, Working in this repo]]) and by frag and emseq; tests in [[id:1cd73e6f-d412-4fb3-9c43-8591bcb6aa48][Paired export tests]].
 
 A repo exports a section in both formats when the section has an =:ID:= and an =:export_file_name:= (=:export_title:= gives the HTML a fuller title), the org file has =#+cite_export: csl ~/library/styles/nature.csl= and a heading holding =#+print_bibliography:= if the section cites references, its =org_update.sh= runs the script with =--format html= after the Markdown export followed by =|| echo "METHOD.html export failed; README.md and METHOD.md are unaffected"=, and =METHOD.html= is in its =.gitignore=; the biopipe template in science.org (Bioinformatics pipeline > Templates) carries all four. The script runs from the repo root, because it writes and post-processes paths relative to the current folder. The HTML export stops with an error when an image cannot be embedded; figures and tables are numbered only when they have =#+name= and =#+caption=. Batch export sets =org-export-with-broken-links= to t (=latex_init.el:92=), so a broken link exports as blank text without an error; the crosslink check finds it. As of 2026-10-10 the callers are rmeth, frag and emseq.
 
@@ -2273,6 +2275,8 @@ def link_caption_words(md_path):
 #    are numbered over figures only.
 # 4. An id: link to a heading outside the export resolves to the file that
 #    holds it; the title of that heading is read from the file.
+# 5. A display equation is a LaTeX equation environment; equations are
+#    numbered over equations only, and a link to one reads "Equation N".
 SHARED_OVERRIDES = r'''
 (require 'ox)
 (require 'ox-html)
@@ -2371,6 +2375,20 @@ SHARED_OVERRIDES = r'''
                           (paired-heading-slug datum info))
                     (org-element-property :name datum))
                   (funcall orig datum info))))
+(defun paired-equation-p (el &optional _info)
+  "Non-nil when EL is a LaTeX equation environment."
+  (and (org-element-type-p el 'latex-environment)
+       (string-match-p "\\`[ \t\n]*\\\\begin{equation}"
+                       (org-element-property :value el))))
+(defun paired-equation-number (el info)
+  (org-export-get-ordinal el info '(latex-environment) #'paired-equation-p))
+(defun paired-equation-body (el)
+  "The math of the equation environment EL, without its begin and end lines."
+  (string-trim
+   (replace-regexp-in-string
+    "\\\\end{equation}[ \t\n]*\\'" ""
+    (replace-regexp-in-string "\\`[ \t\n]*\\\\begin{equation}" ""
+                              (org-element-property :value el)))))
 '''
 
 # Markdown writer.
@@ -2384,6 +2402,8 @@ SHARED_OVERRIDES = r'''
 #    hover title. A link to a figure or table reads "Figure N" / "Table N".
 # 3. Links to .org files keep the .org path; a heading target becomes
 #    GitHub's heading anchor.
+# 4. A display equation is written as its anchor and a $$ block ending in
+#    \tag{N}, which MathJax, GitHub's math renderer, prints as the number.
 MD_WRITER = r'''
 (require 'ox-md)
 ;; Links in tables go through ox-html, which rewrites a link to a .org file
@@ -2417,6 +2437,11 @@ MD_WRITER = r'''
                               id-file (file-name-directory (plist-get info :input-file)))))
                     (format "[%s](%s%s)" (or (org-string-nw-p desc) rel) rel
                             (if title (concat "#" (paired-github-slug title)) ""))))
+                 ((and dest (paired-equation-p dest info))
+                  (format "[%s](#%s)"
+                          (or (org-string-nw-p desc)
+                              (format "Equation %d" (paired-equation-number dest info)))
+                          (org-export-get-reference dest info)))
                  ;; A table reference reads "Table N", numbered as ox-html
                  ;; numbers table captions.
                  ((and dest (org-element-type-p dest 'table)
@@ -2477,6 +2502,17 @@ MD_WRITER = r'''
                               "\n\\(.\\)" "\n    \\1"
                               (org-trim (org-export-data (nth 2 d) info)))))
                    defs "\n\n")))))
+(advice-add 'org-md-latex-environment :around
+            (lambda (orig el contents info)
+              (if (paired-equation-p el info)
+                  (format "%s$$\n%s \\tag{%d}\n$$"
+                          (if (org-element-property :name el)
+                              (format "<a id=\"%s\"></a>\n\n"
+                                      (org-export-get-reference el info))
+                            "")
+                          (paired-equation-body el)
+                          (paired-equation-number el info))
+                (funcall orig el contents info))))
 '''
 
 # The complete Emacs Lisp for a Markdown export. The crosslink skill's
@@ -2496,6 +2532,11 @@ MD_OVERRIDES = SHARED_OVERRIDES + MD_WRITER
 # 4. A wide table scrolls sideways inside the page; its caption stays under it.
 # 5. Hovering a citation number shows its bibliography entry, and hovering a
 #    "Table N" / "Figure N" link shows its caption (the link's title attribute).
+# 6. Math is written as MathML by pandoc, which a browser renders without a
+#    script, so the page loads no MathJax. A display equation is a block with
+#    its number in parentheses beside it (laid out by org.css), and a link to
+#    it reads "Equation N". The export fails when pandoc cannot convert a
+#    formula.
 HTML_WRITER = r'''
 (setq org-html-table-caption-above nil
       org-html-head-include-default-style nil
@@ -2548,6 +2589,11 @@ document.addEventListener('DOMContentLoaded', function () {
                           (org-export-get-reference dest info)
                           (or (org-string-nw-p desc)
                               (format "Figure %d" (paired-figure-number dest info)))))
+                 ((and dest (paired-equation-p dest info))
+                  (format "<a href=\"#%s\">%s</a>"
+                          (org-export-get-reference dest info)
+                          (or (org-string-nw-p desc)
+                              (format "Equation %d" (paired-equation-number dest info)))))
                  ((and (equal type "file")
                        (not (org-export-inline-image-p
                              link (plist-get info :html-inline-image-rules))))
@@ -2561,6 +2607,38 @@ document.addEventListener('DOMContentLoaded', function () {
                  (t (funcall orig link desc info))))))
 (advice-add 'org-html-table :filter-return
             (lambda (html) (concat "<div class=\"table-scroll\">\n" html "\n</div>")))
+;; html, unlike verbatim, keeps math parsed (verbatim turns it back into text
+;; before export, so a named equation loses its name), and unlike mathjax
+;; adds no script.
+(setq org-html-with-latex 'html)
+(defun paired-mathml (tex display)
+  "MathML for the TeX math TEX, as display math when DISPLAY is non-nil."
+  (let ((out (with-temp-buffer
+               (insert (format (if display "\\[%s\\]" "\\(%s\\)") tex))
+               (call-process-region (point-min) (point-max) "pandoc" t '(t nil) nil
+                                    "-f" "latex" "-t" "html" "--mathml")
+               (buffer-string))))
+    (unless (string-match-p "<math" out)
+      (error "pandoc did not convert to MathML: %s" tex))
+    (string-trim
+     (replace-regexp-in-string "\\`[ \t\n]*<p>\\|</p>[ \t\n]*\\'" "" out))))
+(advice-add 'org-html-latex-fragment :around
+            (lambda (orig frag contents info)
+              (let ((v (org-element-property :value frag)))
+                (cond
+                 ((string-prefix-p "\\(" v) (paired-mathml (substring v 2 -2) nil))
+                 ((string-prefix-p "\\[" v) (paired-mathml (substring v 2 -2) t))
+                 ((string-prefix-p "$$" v) (paired-mathml (substring v 2 -2) t))
+                 ((string-prefix-p "$" v) (paired-mathml (substring v 1 -1) nil))
+                 (t (funcall orig frag contents info))))))
+(advice-add 'org-html-latex-environment :around
+            (lambda (orig el contents info)
+              (if (paired-equation-p el info)
+                  (format "<div id=\"%s\" class=\"equation\">%s<span class=\"equation-number\">(%d)</span></div>"
+                          (org-export-get-reference el info)
+                          (paired-mathml (paired-equation-body el) t)
+                          (paired-equation-number el info))
+                (funcall orig el contents info))))
 '''
 
 
@@ -2661,9 +2739,10 @@ Usage: check_paired_export.py MD_FILE HTML_FILE [--expect-val VALUE]
 Checks:
   1  an in-page link (#x) with no anchor x, in either file
   2  different numbers of captioned figures, captioned tables, bibliography
-     entries or footnotes in the two files
-  3  different ordered lists of "Figure N" / "Table N" link texts
-  4  an HTML "Figure N" / "Table N" link whose target caption has another number
+     entries, footnotes or numbered equations in the two files
+  3  different ordered lists of "Figure N" / "Table N" / "Equation N" link texts
+  4  an HTML "Figure N" / "Table N" / "Equation N" link whose target caption or
+     equation number has another number
   5  the HTML's last caption::before or figcaption::before rule does not set
      content: none (the stylesheet would print a second number)
   6  an image that is not embedded, or an external stylesheet or script
@@ -2679,8 +2758,8 @@ import sys
 from html.parser import HTMLParser
 
 OPENABLE = ("#", "data:", "http://", "https://", "mailto:")
-XREF = re.compile(r"^(Figure|Table) (\d+)$")
-MD_XREF = re.compile(r"\[(Figure|Table) (\d+)\]\(#[^)]*\)|<a href=\"#[^\"]*\">(Figure|Table) (\d+)</a>")
+XREF = re.compile(r"^(Figure|Table|Equation) (\d+)$")
+MD_XREF = re.compile(r"\[(Figure|Table|Equation) (\d+)\]\(#[^)]*\)|<a href=\"#[^\"]*\">(Figure|Table|Equation) (\d+)</a>")
 
 
 class Page(HTMLParser):
@@ -2757,22 +2836,27 @@ def md_counts(md):
     return {"figures": len(re.findall(r"^\*Figure \d+: ", md, re.M)),
             "tables": len(re.findall(r"^\*Table \d+: ", md, re.M)),
             "bibliography": md.count('class="csl-entry"'),
-            "footnotes": len(re.findall(r"^\[\^[^\]]+\]: ", md, re.M))}
+            "footnotes": len(re.findall(r"^\[\^[^\]]+\]: ", md, re.M)),
+            "equations": len(re.findall(r"\\tag\{\d+\}\n\$\$$", md, re.M))}
 
 
 def html_counts(html):
     return {"figures": html.count('class="figure-number"'),
             "tables": html.count('class="table-number"'),
             "bibliography": html.count('class="csl-entry"'),
-            "footnotes": html.count('class="footdef"')}
+            "footnotes": html.count('class="footdef"'),
+            "equations": html.count('class="equation-number"')}
 
 
 def caption_number(html, target, kind):
-    """The number in the caption of the figure or table whose id is TARGET, or None."""
+    """The number in the caption of the figure or table, or of the equation, whose id is TARGET, or None."""
     t = re.escape(target)
     if kind == "Figure":
         m = re.search(rf'<div id="{t}" class="figure">(.*?)</div>', html, re.S)
         n = m and re.search(r'class="figure-number">Figure (\d+):', m.group(1))
+    elif kind == "Equation":
+        m = re.search(rf'<div id="{t}" class="equation">(.*?)</div>', html, re.S)
+        n = m and re.search(r'class="equation-number">\((\d+)\)<', m.group(1))
     else:
         m = re.search(rf'<table id="{t}"[^>]*>(.*?)</table>', html, re.S)
         n = m and re.search(r'class="table-number">Table (\d+):', m.group(1))
@@ -3019,7 +3103,31 @@ def test_good_pair_passes_with_counts():
     failures, counts = check(GOOD_MD, GOOD_HTML, "3.1")
     assert failures == []
     assert counts == {"figures": 1, "tables": 1, "bibliography": 1, "footnotes": 1,
-                      "crossrefs": 2}
+                      "equations": 0, "crossrefs": 2}
+
+
+EQ_MD = GOOD_MD.replace(
+    "# References",
+    'By [Equation 1](#eq-a).\n\n<a id="eq-a"></a>\n\n$$\nx = 1 \\tag{1}\n$$\n\n# References')
+EQ_HTML = GOOD_HTML.replace(
+    '<div class="csl-bib-body">',
+    '<p>By <a href="#eq-a">Equation 1</a>.</p>\n'
+    '<div id="eq-a" class="equation"><math display="block"><mi>x</mi></math>'
+    '<span class="equation-number">(1)</span></div>\n<div class="csl-bib-body">')
+
+
+def test_equation_pair_passes_with_counts():
+    failures, counts = check(EQ_MD, EQ_HTML, "3.1")
+    assert failures == []
+    assert (counts["equations"], counts["crossrefs"]) == (1, 3)
+
+
+def test_2_equation_count_differs():
+    assert failed(EQ_MD.replace(" \\tag{1}", ""), EQ_HTML) == {2}
+
+
+def test_4_equation_number_differs_from_link():
+    assert failed(EQ_MD, EQ_HTML.replace("(1)</span>", "(2)</span>")) == {4}
 
 
 def test_1_md_link_without_anchor():
@@ -3153,7 +3261,7 @@ def test_both_formats_pass_check(tmp_path):
     r = subprocess.run([sys.executable, str(CHECK), str(d / "METHOD.md"), str(d / "METHOD.html"),
                         "--expect-val", "3.1"], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout
-    assert r.stdout.strip() == "OK figures=2 tables=2 bibliography=2 footnotes=1 crossrefs=4"
+    assert r.stdout.strip() == "OK figures=2 tables=2 bibliography=2 footnotes=1 equations=0 crossrefs=4"
 
 
 def test_both_md_still_matches_baseline(tmp_path):
@@ -3184,14 +3292,57 @@ def test_missing_image_fails_and_names_it(tmp_path):
     assert r.returncode != 0
     assert "demo.png" in r.stdout + r.stderr
     assert not (d / "METHOD.html").exists()
+
+
+EQUATIONS = """\
+,*** Equations
+The count in library \\(s\\) is [[eq-count]], and its rate is [[eq-rate]].
+
+,#+name: eq-count
+\\begin{equation}
+N_{s} = \\sum_{r \\in R_{s}} \\mathbf{1}\\left[ r \\in K \\right]
+\\end{equation}
+
+,#+name: eq-rate
+\\begin{equation}
+A_{s} = \\frac{10^{6} \\, N_{s}}{W_{s}}
+\\end{equation}
+
+"""
+
+
+def test_equations_numbered_in_both_formats(tmp_path):
+    # A named equation environment is numbered in both files and a link to it
+    # reads "Equation N"; the HTML writes MathML and loads no MathJax.
+    d = copy_fixture(tmp_path / "proj")
+    org = d / "proj.org"
+    org.write_text(org.read_text().replace("*** References", EQUATIONS + "*** References", 1))
+    run_export(SCRIPT, d, "proj.org", FIXTURE_ID, "both")
+    md, html = (d / "METHOD.md").read_text(), (d / "METHOD.html").read_text()
+    assert "[Equation 1](#eq-count)" in md and "[Equation 2](#eq-rate)" in md
+    assert ('<a id="eq-rate"></a>\n\n$$\nA_{s} = \\frac{10^{6} \\, N_{s}}{W_{s}} \\tag{2}\n$$'
+            in md)
+    assert '<a href="#eq-rate">Equation 2</a>' in html
+    assert '<div id="eq-count" class="equation"><math display="block"' in html
+    assert '<span class="equation-number">(2)</span></div>' in html
+    assert '<math display="inline"' in html
+    assert "MathJax-script" not in html and "\\begin{equation}" not in html
+    r = subprocess.run([sys.executable, str(CHECK), str(d / "METHOD.md"), str(d / "METHOD.html")],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout
+    assert "equations=2" in r.stdout and "crossrefs=6" in r.stdout
 #+end_src
 
 #+begin_src python :tangle ./tests/export/test_real_inputs.py :mkdirp yes
 """Markdown regression on the sections whose org_update.sh runs this script.
 
 Each org file is copied to a temporary directory; the baseline and the new script
-export the same section from separate copies, and the outputs must be byte-identical.
+export the same section from separate copies, and the outputs must be byte-identical
+outside display equations. The baseline writes an equation environment as raw LaTeX
+and the new script as a numbered $$ block (test_paired_export checks that block), so
+both are replaced by one placeholder before the comparison.
 """
+import re
 import shutil
 from pathlib import Path
 
@@ -3208,6 +3359,17 @@ INPUTS = [
 ]
 
 
+# ox-md puts \label{name} after the environment's first line, which for a
+# one-line environment is after \end{equation}.
+BASE_EQUATION = re.compile(r"\\begin\{equation\}.*?\\end\{equation\}(?:\n\\label\{[^}]*\})?", re.S)
+NEW_EQUATION = re.compile(
+    r'(?:<a id="[^"]*"></a>\n\n)?^\$\$\n(?:(?!\$\$).)*?\\tag\{\d+\}\n\$\$$', re.S | re.M)
+
+
+def mask_equations(md):
+    return NEW_EQUATION.sub("<equation>", BASE_EQUATION.sub("<equation>", md))
+
+
 @pytest.mark.parametrize("name,org,node,out", INPUTS, ids=[i[0] for i in INPUTS])
 def test_md_byte_identical(tmp_path, name, org, node, out):
     results = {}
@@ -3216,7 +3378,7 @@ def test_md_byte_identical(tmp_path, name, org, node, out):
         d.mkdir()
         shutil.copy(org, d / org.name)
         run_export(script, d, org.name, node, "md" if side == "new" else None)
-        results[side] = (d / out).read_bytes()
+        results[side] = mask_equations((d / out).read_text())
     assert results["new"] == results["base"]
 #+end_src
 
