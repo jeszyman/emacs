@@ -1598,6 +1598,45 @@ only a heading that has a TODO keyword and is not already done."
         (org-todo "DONE")))))
 
 (add-hook 'org-checkbox-statistics-hook #'js/org-checkbox-auto-done)
+
+;; =C-c r= resets a heading without completing it, in an Org buffer or on an agenda line. The heading goes back to the first keyword of its own TODO sequence (DONE to TODO, COMPLETE to FUTURE, LAPSED to CLEAN), and every checkbox in its subtree becomes =[ ]=. Repeater timestamps do not move, because Org shifts a repeater only on a change to a done state. A CLOSED line is removed. No state-change line goes into the LOGBOOK. Live check: =scripts/test-org-reset-entry.sh=.
+
+;; #+name: org-reset-entry
+
+(defun my/org-reset-entry ()
+  "Set the heading at point to the first keyword of its TODO sequence.
+Uncheck every checkbox in the subtree.  Repeater timestamps do not move,
+a CLOSED line is removed, and no state-change line is logged."
+  (interactive "*")
+  (save-excursion
+    (org-back-to-heading t)
+    (let* ((state (org-get-todo-state))
+           (head (and state (org-get-todo-sequence-head state))))
+      (when (and head (not (equal state head)))
+        ;; Binding `org-inhibit-logging' to t would also keep the CLOSED line.
+        (let ((org-todo-log-states nil))
+          (org-todo head))))
+    (org-reset-checkbox-state-subtree)))
+
+(defun my/org-agenda-reset-entry ()
+  "Run `my/org-reset-entry' on the agenda item at point.
+Update every agenda line for that heading."
+  (interactive)
+  (org-agenda-check-no-diary)
+  (let* ((hdmarker (or (org-get-at-bol 'org-hd-marker) (org-agenda-error)))
+         (inhibit-read-only t)
+         newhead)
+    (org-with-remote-undo (marker-buffer hdmarker)
+      (org-with-point-at hdmarker
+        (my/org-reset-entry)
+        (setq newhead (org-get-heading)))
+      (forward-line 0)
+      (save-window-excursion
+        (org-agenda-change-all-lines newhead hdmarker 'fixface)))))
+
+(define-key org-mode-map (kbd "C-c r") #'my/org-reset-entry)
+(with-eval-after-load 'org-agenda
+  (define-key org-agenda-mode-map (kbd "C-c r") #'my/org-agenda-reset-entry))
 ;; Capture
 
 ;; Make C-o a prefix key

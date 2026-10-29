@@ -29,6 +29,7 @@
 [[file:docs/superpowers/plans/2026-03-14-mindjack-plan.md]]
 ** README                                                          :noexport:
 *** Change log
+- [2026-10-29 Thu] =C-c r= resets a heading without completing it, in an Org buffer (=my/org-reset-entry=) or on an agenda line (=my/org-agenda-reset-entry=), Base Emacs > Org-mode > Checkboxes. The heading goes back to the first keyword of its TODO sequence and every checkbox in its subtree is unchecked. A CLOSED line is removed, no LOGBOOK line is written, and repeater timestamps do not move. Live check =scripts/test-org-reset-entry.sh= (18 checks pass).
 - [2026-10-25 Sun] =org-include-inline= no longer turns itself on: ~org-include-inline-auto-enable-in-org-mode~ is nil (package default =smart= enabled it in every org buffer with an =#+INCLUDE= line, so CUSTOM_ID includes in rmeth.org drew stacked error overlays). Enable per buffer with ~M-x org-include-inline-mode~. Test: =tests/org-include-inline-test.el=.
 - [2026-10-25 Sun] =emacs_export_header_to_markdown.py= numbers display equations: a =#+name=d LaTeX =equation= environment is a =$$= block ending in =\tag{N}= in Markdown and a MathML block with its number beside it in HTML, and a link to it reads "Equation N". The HTML writes all math as MathML through pandoc (=org-html-with-latex= is =html=), so it no longer loads MathJax from a CDN, which had failed check 6 of =check_paired_export.py=; the checker counts equations and checks "Equation N" links, and =test_real_inputs= compares the Markdown with equation blocks masked. Tests: =test_equations_numbered_in_both_formats= and three checker tests.
 - [2026-10-22 Thu] "Error running timer: (void-variable buf)" fixed: =js/org-glossary-mode-maybe= and =js/org-table-widget-mode-maybe= scheduled idle-timer lambdas that closed over a =let= variable, and =public_config.el= loads without lexical-binding, so =buf= was void when the timer fired and neither mode was enabled after a revert. Each now passes the buffer as a timer argument to a named enable function (=js/org-glossary-mode-enable=, =js/org-table-widget-mode-enable=). Live check =scripts/test-org-idle-timer-buffer-arg.sh=: 4 errors and both modes off with the old definitions, no error and both modes on with the new ones. The other timer lambdas in the tangled config capture no variable or already pass the buffer as an argument.
@@ -6849,6 +6850,46 @@ only a heading that has a TODO keyword and is not already done."
         (org-todo "DONE")))))
 
 (add-hook 'org-checkbox-statistics-hook #'js/org-checkbox-auto-done)
+#+end_src
+
+=C-c r= resets a heading without completing it, in an Org buffer or on an agenda line. The heading goes back to the first keyword of its own TODO sequence (DONE to TODO, COMPLETE to FUTURE, LAPSED to CLEAN), and every checkbox in its subtree becomes =[ ]=. Repeater timestamps do not move, because Org shifts a repeater only on a change to a done state. A CLOSED line is removed. No state-change line goes into the LOGBOOK. Live check: =scripts/test-org-reset-entry.sh=.
+
+#+name: org-reset-entry
+#+begin_src emacs-lisp
+(defun my/org-reset-entry ()
+  "Set the heading at point to the first keyword of its TODO sequence.
+Uncheck every checkbox in the subtree.  Repeater timestamps do not move,
+a CLOSED line is removed, and no state-change line is logged."
+  (interactive "*")
+  (save-excursion
+    (org-back-to-heading t)
+    (let* ((state (org-get-todo-state))
+           (head (and state (org-get-todo-sequence-head state))))
+      (when (and head (not (equal state head)))
+        ;; Binding `org-inhibit-logging' to t would also keep the CLOSED line.
+        (let ((org-todo-log-states nil))
+          (org-todo head))))
+    (org-reset-checkbox-state-subtree)))
+
+(defun my/org-agenda-reset-entry ()
+  "Run `my/org-reset-entry' on the agenda item at point.
+Update every agenda line for that heading."
+  (interactive)
+  (org-agenda-check-no-diary)
+  (let* ((hdmarker (or (org-get-at-bol 'org-hd-marker) (org-agenda-error)))
+         (inhibit-read-only t)
+         newhead)
+    (org-with-remote-undo (marker-buffer hdmarker)
+      (org-with-point-at hdmarker
+        (my/org-reset-entry)
+        (setq newhead (org-get-heading)))
+      (forward-line 0)
+      (save-window-excursion
+        (org-agenda-change-all-lines newhead hdmarker 'fixface)))))
+
+(define-key org-mode-map (kbd "C-c r") #'my/org-reset-entry)
+(with-eval-after-load 'org-agenda
+  (define-key org-agenda-mode-map (kbd "C-c r") #'my/org-agenda-reset-entry))
 #+end_src
 - [2026-10-17 Sat] Claude session "org-checkbox-auto-done": [[elisp:(start-process "claude-resume" nil (expand-file-name "~/.claude/bin/claude-resume") "04213352-5437-40e4-8162-1629832a876b" "/home/jeszyman/repos/org")][resume]]
 ***** Capture
