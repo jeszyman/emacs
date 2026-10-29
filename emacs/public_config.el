@@ -1895,6 +1895,21 @@ TABLE-NAME is the name of the table identified as #+name."
            (> (my/get-list-item-indentation) parent-indent)
            (re-search-forward "\\[\\([X -]\\)\\]" (line-end-position) t)))))
 
+(defun my/set-descendant-checkboxes (parent-line state)
+  "Set every checkbox nested under the item at PARENT-LINE to STATE (\"X\" or \" \")."
+  (let ((parent-indent (save-excursion
+                         (goto-char parent-line)
+                         (my/get-list-item-indentation))))
+    (save-excursion
+      (goto-char parent-line)
+      (forward-line 1)
+      (while (and (not (eobp))
+                  (or (looking-at "^\\s-*$")
+                      (> (current-indentation) parent-indent)))
+        (when (looking-at "^\\s-*\\(?:[-+*]\\|[0-9]+[.)]\\)\\s-+\\[\\([X -]\\)\\]")
+          (replace-match state t t nil 1))
+        (forward-line 1)))))
+
 (defun my/org-toggle-checkbox-three-state (&optional use-three-states)
   "Toggle checkbox with three states: [ ], [-], [X].
 If USE-THREE-STATES is non-nil, cycle through all three states.
@@ -1938,6 +1953,12 @@ Parent checkboxes with children cannot be directly toggled."
              ((string= current-state "-")
               (delete-char 3)
               (insert "[X]")))))
+          ;; Checking or unchecking a box does the same to every box nested under it
+          (let ((new-state (save-excursion
+                             (goto-char checkbox-start)
+                             (and (looking-at "\\[\\([X ]\\)\\]") (match-string 1)))))
+            (when new-state
+              (my/set-descendant-checkboxes current-line new-state)))
           ;; Update parent checkbox if it exists
           (let ((parent-line (my/find-parent-checkbox)))
             (when parent-line
