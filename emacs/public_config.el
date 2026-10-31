@@ -3700,6 +3700,15 @@ includes ~/.local/bin."
                 (setq my/whisper--vterm-target nil
                       my/whisper--no-return nil
                       whisper-insert-text-at-point t))))
+  ;; Drop sound tags and fix known mishearings with the same filter as the
+  ;; system-wide dictation key (~/repos/org/bin/dictation-fix). Depth -90 runs
+  ;; it before the vterm hook above, which sends the text and erases it.
+  (defun js/whisper-fix-transcription ()
+    "Replace the transcription buffer with its dictation-fix output."
+    (let ((fix (expand-file-name "~/repos/org/bin/dictation-fix")))
+      (when (file-executable-p fix)
+        (call-process-region (point-min) (point-max) fix t '(t nil) nil))))
+  (add-hook 'whisper-after-transcription-hook #'js/whisper-fix-transcription -90)
   ;; Restore state after each run
   (add-hook 'whisper-after-insert-hook
             (lambda ()

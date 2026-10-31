@@ -29,6 +29,7 @@
 [[file:docs/superpowers/plans/2026-03-14-mindjack-plan.md]]
 ** README                                                          :noexport:
 *** Change log
+- [2026-10-31 Sat] whisper: =js/whisper-fix-transcription= on =whisper-after-transcription-hook= passes =ww=/=WW= dictation through =~/repos/org/bin/dictation-fix= (sound tags, misheard-word list), the same filter as the =$mod+w= key (private.org "System-wide Whisper dictation")
 - [2026-10-29 Thu] =C-c r= resets a heading without completing it, in an Org buffer (=my/org-reset-entry=) or on an agenda line (=my/org-agenda-reset-entry=), Base Emacs > Org-mode > Checkboxes. The heading goes back to the first keyword of its TODO sequence and every checkbox in its subtree is unchecked. A CLOSED line is removed, no LOGBOOK line is written, and repeater timestamps do not move. Live check =scripts/test-org-reset-entry.sh= (18 checks pass).
 - [2026-10-27 Tue] Checking or unchecking a checkbox with =C-c C-c= does the same to every checkbox nested under it: =my/set-descendant-checkboxes= (Base Emacs > Org-mode > Checkbox intermediate states!) runs from =my/org-toggle-checkbox-three-state= when the box becomes =[X]= or =[ ]=. A box moved to =[-]= with =C-u C-c C-c= leaves nested boxes as they are; =C-c C-x c= (=my/org-cycle-checkbox-three-state=) is not changed. Live check =scripts/test-checkbox-check-descendants.sh= (6 checks pass). The parent update (=my/get-child-checkboxes=) still stops at an indented body line under a child, so a parent box after such a line can show the wrong state.
 - [2026-10-25 Sun] =org-include-inline= no longer turns itself on: ~org-include-inline-auto-enable-in-org-mode~ is nil (package default =smart= enabled it in every org buffer with an =#+INCLUDE= line, so CUSTOM_ID includes in rmeth.org drew stacked error overlays). Enable per buffer with ~M-x org-include-inline-mode~. Test: =tests/org-include-inline-test.el=.
@@ -9592,6 +9593,15 @@ Config: [[file:~/repos/emacs/emacs.org::*whisper][Package configuration > whispe
                 (setq my/whisper--vterm-target nil
                       my/whisper--no-return nil
                       whisper-insert-text-at-point t))))
+  ;; Drop sound tags and fix known mishearings with the same filter as the
+  ;; system-wide dictation key (~/repos/org/bin/dictation-fix). Depth -90 runs
+  ;; it before the vterm hook above, which sends the text and erases it.
+  (defun js/whisper-fix-transcription ()
+    "Replace the transcription buffer with its dictation-fix output."
+    (let ((fix (expand-file-name "~/repos/org/bin/dictation-fix")))
+      (when (file-executable-p fix)
+        (call-process-region (point-min) (point-max) fix t '(t nil) nil))))
+  (add-hook 'whisper-after-transcription-hook #'js/whisper-fix-transcription -90)
   ;; Restore state after each run
   (add-hook 'whisper-after-insert-hook
             (lambda ()
