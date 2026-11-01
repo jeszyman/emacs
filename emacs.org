@@ -9642,9 +9642,8 @@ Config: [[file:~/repos/emacs/emacs.org::*whisper][Package configuration > whispe
 #+begin_src emacs-lisp
 (use-package yaml-mode)
 #+end_src
-(knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door) (knocking on door)
 **** YASnippets
-(knocking on door)- Create sub-choices in the snippet
+- Create sub-choices in the snippet
   - https://github.com/joaotavora/yasnippet/issues/830
 
 
