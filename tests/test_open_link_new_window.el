@@ -2,10 +2,10 @@
 ;; the agenda (`my-org-agenda-open-link').
 ;; Run against the live daemon, which has the config loaded:
 ;;   emacsclient --socket-name ~/.emacs.d/server/server --eval \
-;;     '(with-temp-buffer (insert-file-contents "~/repos/emacs/tests/test_open_link_new_window.el") (eval (read (current-buffer)) t))'
-;; Returns (PASS ...) or (FAIL ...) per case. Each case must open exactly one
-;; new frame visiting the test's target.org; the frames and buffers it creates
-;; are removed.
+;;     '(let (r) (with-temp-buffer (insert-file-contents "~/repos/emacs/tests/test_open_link_new_window.el") (condition-case nil (while t (push (eval (read (current-buffer)) t) r)) (end-of-file))) (nreverse r))'
+;; Returns one result per top-level form, each (PASS ...) or (FAIL ...). In the
+;; first form each case must open exactly one new frame visiting the test's
+;; target.org; the frames and buffers it creates are removed.
 (let* ((dir (make-temp-file "open-link-test" t))
        (target (expand-file-name "target.org" dir))
        (other (expand-file-name "other.org" dir))
@@ -56,3 +56,20 @@
     (dolist (f (list src target other))
       (let ((b (get-file-buffer f))) (when b (kill-buffer b))))
     (delete-directory dir t)))
+;; A URL in a property drawer is a node property to Org, not a link; C-u C-c
+;; C-o must still start "brave-browser --new-window URL". The browser launch
+;; is stubbed and its arguments checked.
+(let (log
+      (url "https://example.com/property-url"))
+  (with-temp-buffer
+    (insert "* Recipe\n:PROPERTIES:\n:SOURCE_URL: " url "\n:END:\n")
+    (org-mode)
+    (goto-char (point-min))
+    (search-forward "https://example")
+    (cl-letf (((symbol-function 'start-process) (lambda (&rest a) (push a log) nil))
+              ((symbol-function 'browse-url) (lambda (&rest a) (push (cons 'browse-url a) log) nil)))
+      (let ((current-prefix-arg '(4)))
+        (call-interactively (key-binding (kbd "C-c C-o"))))))
+  (list (if (equal log (list (list "brave-new-window" nil "brave-browser" "--new-window" url)))
+            'PASS 'FAIL)
+        "property-url" :calls log))

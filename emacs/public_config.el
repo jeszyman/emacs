@@ -1428,6 +1428,7 @@ When called with two prefix arguments, ARG, run the original function without pr
       org-export-with-todo-keywords nil)
 (setq org-odt-preferred-output-format "docx")
 ;; Open URLs in new window with C-u C-c C-o
+;; - [2026-11-01 Sun] C-u C-c C-o on a URL in a property drawer (e.g. =:SOURCE_URL:=), comment or keyword line now opens a new Brave window; Org parses those lines as non-links, so they had gone through ~browse-url~ to a tab in the last-used Brave window. Test case "property-url" in [[file:tests/test_open_link_new_window.el]].
 ;; - [2026-10-18 Sun] C-u C-c C-o on a heading or an agenda line now opens the link picked from the entry in a new window; test: [[file:tests/test_open_link_new_window.el]].
 ;; - In the agenda, C-c C-o runs Org's own ~org-agenda-open-link~, which never calls ~my-org-open-at-point~; with C-u it shows the same link picker but opens the pick in the current frame, so ~org-agenda-mode-map~ binds C-c C-o to ~my-org-agenda-open-link~. Picked relative ~file:~ links are expanded in the entry's own buffer; otherwise they resolve against the home folder. Jeff confirmed the agenda path works on [2026-10-18 Sun].
 
@@ -1486,7 +1487,8 @@ LINE is extra text to search for a link, as the agenda passes its entry line."
 
 (defun my-org-open-at-point (&optional arg)
   "Open the link at point.
-Use a new window in Brave if ARG is non-nil and the link is a URL.
+Use a new window in Brave if ARG is non-nil and the link is a URL,
+including a URL in a property drawer, comment or keyword line.
 Open in a new Emacs frame if ARG is non-nil for ID or file links.
 On a heading with ARG, pick one of the entry's links and open it the same way.
 On citations, use js/citar-open-smart (PDF > DOI > URL).
@@ -1518,6 +1520,11 @@ With prefix arg on citations, skip PDF and open DOI > URL."
      ;; Prefix arg on a heading: pick one of the entry's links
      ((and arg (memq etype '(headline inlinetask)))
       (my-org-open-picked-link-in-new-window (current-buffer) (point)))
+     ;; Prefix arg on a URL Org does not parse as a link (a property value,
+     ;; a comment, a keyword line): Org's own opener would hand it to
+     ;; `browse-url', which adds a tab to the last-used Brave window.
+     ((and arg (thing-at-point 'url t))
+      (my-org-open-in-brave-new-window (thing-at-point 'url t)))
      ;; Default
      (t (org-open-at-point)))))
 
