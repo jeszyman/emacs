@@ -1107,6 +1107,7 @@ Prefers the region captured by `js/org-mark-dispatch', else the live region."
         ("\\.sh\\'" . emacs)
         ("\\.smk\\'" . emacs)
         ("\\.tex\\'" . emacs)
+        ("\\.json\\'" . emacs)
         ("\\.\\(yaml\\|yml\\|txt\\|md\\|conf\\|list\\|tex\\)\\'" .
          (lambda (file path)
            (start-process "emacsclient" nil

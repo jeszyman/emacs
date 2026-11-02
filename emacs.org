@@ -6210,6 +6210,7 @@ A file link to a PDF that ends in =::N= opens the PDF at page N in okular. Usage
         ("\\.sh\\'" . emacs)
         ("\\.smk\\'" . emacs)
         ("\\.tex\\'" . emacs)
+        ("\\.json\\'" . emacs)
         ("\\.\\(yaml\\|yml\\|txt\\|md\\|conf\\|list\\|tex\\)\\'" .
          (lambda (file path)
            (start-process "emacsclient" nil
