@@ -1083,6 +1083,10 @@ Prefers the region captured by `js/org-mark-dispatch', else the live region."
 (setq org-highest-priority 65)
 (setq org-lowest-priority 89)
 (setq org-default-priority 89)
+
+;; org-schedule, org-deadline and org-todo act on the heading at point only,
+;; even when a region is active (Org's default applies them to every heading in it)
+(setq org-loop-over-headlines-in-active-region nil)
 ;; open in same frame
 
 (setq org-link-frame-setup
@@ -2515,7 +2519,7 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
               (let ((inhibit-message t))
                 (apply orig args))))
 ;; claude-code-ide
-;; [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]] — installed via =package-vc=, autoloaded. There is no =use-package= block; the only config is the =jc= key-chord under =**** key-chord= and this customization.
+;; [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]] — installed via =package-vc=, autoloaded. There is no =use-package= block. The public config is the =jc= key-chord under =**** key-chord= and the blocks in this heading; private.org holds the MCP server port and the org tools.
 
 ;; By default claude-code-ide opens an ediff session for every edit Claude makes. Under i3 that rearranges windows and steals focus from the active window. Render diffs in the Claude terminal buffer instead.
 
@@ -2527,6 +2531,33 @@ With SKIP-PDF, skip local PDF and go straight to DOI > URL."
 (advice-add 'ediff-buffers :before
             (lambda (&rest _)
               (setq ediff-window-setup-function 'ediff-setup-windows-multiframe)))
+
+;; The package's MCP HTTP server signals =json-rpc-error= for an unknown method, an unknown tool, or a missing tool argument, but the package never declares that error symbol. An undeclared symbol has no error conditions, so the package's =error= handler does not catch the signal. The signal then leaves the process filter: Emacs prints "error in process filter: peculiar error: -32601" in the echo area, and the client gets no reply. Claude Code sends =server/discover= when it connects, so each connection from a Claude session triggers the fault.
+
+;; The block below declares the symbol without the =error= parent, so that the package's own handler does not reduce the error to code -32603 with a null id. The advice replies with the code that the package signaled and with the id of the request. To revert the advice, evaluate =(advice-remove 'claude-code-ide-mcp-http-server--handle-post #'js/claude-code-ide-mcp-reply-rpc-error)=. Test: [[shell:/home/jeszyman/repos/emacs/scripts/test-mcp-rpc-error-reply.sh][test-mcp-rpc-error-reply.sh]].
+
+;; - [2026-11-04 Wed] The MCP server now answers unknown methods and invalid tool calls with a JSON-RPC error, so =server/discover= no longer prints "peculiar error" in the echo area.
+
+;; #+name: claude-code-ide-mcp-rpc-error
+
+(put 'json-rpc-error 'error-conditions '(json-rpc-error))
+(put 'json-rpc-error 'error-message "JSON-RPC error")
+
+;; Answer a json-rpc-error signal as a JSON-RPC error reply to the same request
+(defun js/claude-code-ide-mcp-reply-rpc-error (orig request)
+  "Call ORIG on REQUEST and send any `json-rpc-error' to the client as a reply."
+  (condition-case err
+      (funcall orig request)
+    (json-rpc-error
+     (claude-code-ide-mcp-http-server--send-json-error
+      request
+      (alist-get 'id (json-parse-string (ws-body request) :object-type 'alist))
+      (nth 1 err)
+      (nth 2 err)))))
+
+(with-eval-after-load 'claude-code-ide-mcp-http-server
+  (advice-add 'claude-code-ide-mcp-http-server--handle-post
+              :around #'js/claude-code-ide-mcp-reply-rpc-error))
 ;; Conda
 ;; - https://github.com/necaris/conda.el
 
@@ -3811,6 +3842,7 @@ includes ~/.local/bin."
 ;; - https://github.com/TomoeMami/org-repeat-by-cron.el
 ;; - A =:REPEAT_CRON:= value stored in double quotes loses its minute: the package reads the leading ="30= of ="30 13 * * 3#1,3#2,3#3,3#5"= as minute 0, so marking the [[id:8fe3f336-c9fa-484e-bf79-fb24b379a949][CANPREDICT planning task]] DONE moved it to 13:00 instead of 13:30 (batch test 2026-10-01: quoted 13:00, unquoted 13:30). Rules whose minute is 0, or that have no time fields, give the same time either way.
 ;; - The package moves only SCHEDULED and DEADLINE. The block below extends it to an appointment: a TODO entry with a =:REPEAT_TS_CRON:= rule and a plain active timestamp in its body (e.g. =<2026-09-23 Wed 14:00-15:00>= with ="0 14 * * 3#4"=) moves that timestamp to the next cron match when marked DONE, and returns to TODO. Only the first body timestamp follows the rule; a SCHEDULED without a repeater on the same entry is deleted by org's repeat step, and a DEADLINE without one does not move. Diary sexps are not used for this because they cannot be cycled with a TODO state.
+;; - [2026-11-04 Wed] =js/repeat-ts-cron--next= now drops double quotes around a =:REPEAT_TS_CRON:= rule, which had moved the bioinformatics huddle from 08:30 to 08:00 on DONE (the =mod.meeting.series= snippet writes the quotes). Test: =tests/repeat-ts-cron-test.el=.
 ;; - On DONE, =org-auto-repeat-maybe= shifts every repeating timestamp in the entry, not only the first: it loops =re-search-forward org-repeat-re= up to =org-entry-end-position= (org.el, Emacs 29.1, near line 10824). An entry holding two =++1w= body timestamps (a Tuesday and a Friday meeting) moves both a week on each DONE. A two-day series is one =:REPEAT_TS_CRON:= rule such as ="0 9 * * 2,5"= on one plain body timestamp.
 
 ;; Mechanism: before org's repeat step, a temporary "+1d" repeater is
@@ -3858,8 +3890,11 @@ Runs from `org-after-todo-state-change-hook', before org's repeat step."
 The search starts at the later of ORIG and now, so a meeting marked
 DONE before it starts still moves to the following occurrence; with
 FROM-ORIG it starts at ORIG, so feeding each result back in lists the
-series in order.  Time of day and range length are kept from ORIG."
-  (let* ((arity (org-repeat-by-cron--cron-rule-arity rule))
+series in order.  Time of day and range length are kept from ORIG.
+Double quotes around RULE are dropped: the cron parser reads a leading
+\"30 as minute 0."
+  (let* ((rule (string-trim rule "[\" \t]+" "[\" \t]+"))
+         (arity (org-repeat-by-cron--cron-rule-arity rule))
          (has-time (string-match "\\([0-9]\\{1,2\\}\\):\\([0-9]\\{2\\}\\)" orig))
          ;; A 3-field rule takes its minute and hour from ORIG, so the
          ;; search sees the real start time rather than midnight.
