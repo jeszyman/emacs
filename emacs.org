@@ -6181,6 +6181,10 @@ Prefers the region captured by `js/org-mark-dispatch', else the live region."
 (setq org-lowest-priority 89)
 (setq org-default-priority 89)
 
+;; org-schedule, org-deadline and org-todo act on the heading at point only,
+;; even when a region is active (Org's default applies them to every heading in it)
+(setq org-loop-over-headlines-in-active-region nil)
+
 #+end_src
 ***** Opening things
 ****** open in same frame
