@@ -1028,6 +1028,100 @@ Prefers the region captured by `js/org-mark-dispatch', else the live region."
 
 (with-eval-after-load 'org
   (key-chord-define org-mode-map "NN" #'js/org-mark-note))
+;; Critique word counts
+
+;; =js/critique-wc-mode= shows a live word count at the right edge of the headings in a grant critique draft, the org files named =*_critique.org= or =*critique-draft.org= that the [[file:~/.claude/skills/grantreview-mod/SKILL.md][grantreview-mod]] skill makes. A criterion heading such as =* Impact (scored, 250 words)= shows the sum of the text under its Strengths, Weaknesses, and Evaluation subheadings against the limit in its title, in the error face when over. Lines that start with =#= are notes and are not counted. The counts are overlays, so they are never saved or copied, and they redraw two seconds after typing stops.
+
+;; #+name: critique-word-counts
+
+(defface js/critique-wc-face '((t :inherit shadow))
+  "Face for a word count beside a critique heading.")
+(defface js/critique-wc-over-face '((t :inherit error))
+  "Face for a word count that exceeds its criterion's limit.")
+
+(defun js/critique-wc--words (beg end)
+  "Count words between BEG and END, skipping note lines that start with #."
+  (let ((n 0))
+    (save-excursion
+      (goto-char beg)
+      (while (< (point) end)
+        (unless (looking-at-p "[ \t]*#\\(?: \\|$\\)")
+          (setq n (+ n (count-words (line-beginning-position)
+                                    (min end (line-end-position))))))
+        (forward-line 1)))
+    n))
+
+(defun js/critique-wc--show (pos text face)
+  "Draw TEXT in FACE at the right edge of the line at POS."
+  (let ((ov (make-overlay pos pos)))
+    (overlay-put ov 'js/critique-wc t)
+    (overlay-put ov 'after-string
+                 (concat (propertize " " 'display
+                                     `(space :align-to (- right ,(1+ (length text)))))
+                         (propertize text 'face face)))))
+
+(defun js/critique-wc-update ()
+  "Redraw the word counts in the current critique buffer.
+A criterion heading has a title ending in \"(scored, 500 words)\".  Its count
+is the sum of the text under its Strengths, Weaknesses, and Evaluation
+subheadings."
+  (interactive)
+  (remove-overlays (point-min) (point-max) 'js/critique-wc t)
+  (save-excursion
+    (save-restriction
+      (widen)
+      (goto-char (point-min))
+      (let ((case-fold-search nil) crit-eol limit total)
+        (cl-flet ((flush ()
+                    (when crit-eol
+                      (js/critique-wc--show
+                       crit-eol (format "%d / %d" total limit)
+                       (if (> total limit) 'js/critique-wc-over-face 'js/critique-wc-face)))))
+          (while (re-search-forward "^\\(\\*+\\) \\(.*\\)$" nil t)
+            (let ((level (length (match-string 1)))
+                  (title (match-string 2))
+                  (eol (line-end-position)))
+              (cond
+               ((= level 1)
+                (flush)
+                (if (string-match "(\\(?:un\\)?scored, \\([0-9]+\\) words)" title)
+                    (setq crit-eol eol total 0
+                          limit (string-to-number (match-string 1 title)))
+                  (setq crit-eol nil)))
+               ((and crit-eol (= level 2)
+                     (member title '("Strengths" "Weaknesses" "Evaluation")))
+                (let* ((end (save-excursion
+                              (if (re-search-forward "^\\*+ " nil t)
+                                  (line-beginning-position) (point-max))))
+                       (n (js/critique-wc--words (1+ eol) end)))
+                  (setq total (+ total n))
+                  (js/critique-wc--show eol (number-to-string n) 'js/critique-wc-face))))))
+          (flush))))))
+
+(defvar-local js/critique-wc--timer nil)
+
+(define-minor-mode js/critique-wc-mode
+  "Show live word counts beside the headings of a grant critique draft."
+  :lighter " cWC"
+  (when js/critique-wc--timer (cancel-timer js/critique-wc--timer))
+  (setq js/critique-wc--timer nil)
+  (if js/critique-wc-mode
+      (let ((buf (current-buffer)))
+        (js/critique-wc-update)
+        (setq js/critique-wc--timer
+              (run-with-idle-timer
+               2 t (lambda ()
+                     (when (and (buffer-live-p buf) (eq buf (current-buffer)))
+                       (js/critique-wc-update))))))
+    (remove-overlays (point-min) (point-max) 'js/critique-wc t)))
+
+(defun js/critique-wc-maybe ()
+  "Turn the word counts on in files named *_critique.org or *critique-draft.org."
+  (when (and buffer-file-name
+             (string-match-p "\\(?:_critique\\|critique-draft\\)\\.org\\'" buffer-file-name))
+    (js/critique-wc-mode 1)))
+
+(add-hook 'org-mode-hook #'js/critique-wc-maybe)
 ;; Tags
 
         (setq
