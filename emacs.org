@@ -3499,6 +3499,15 @@ and a changed-on-disk file is reread without asking."
              (query-about-changed-file nil)
              (m (org-id-find id 'marker)))
         (unless m (error "js/org-at-id-nosteal: no entry with ID %s" id))
+        ;; org-roam's advice on `org-id-find' returns the position stored in its
+        ;; database, which lags an edit that shifts the text; when the marker sits
+        ;; in another entry, move it to the entry that holds ID.
+        (unless (equal (org-entry-get m "ID") id)
+          (let ((pos (with-current-buffer (marker-buffer m)
+                       (org-with-wide-buffer (org-find-entry-with-id id)))))
+            (unless pos
+              (error "js/org-at-id-nosteal: no entry with ID %s in %s" id (buffer-name (marker-buffer m))))
+            (set-marker m pos (marker-buffer m))))
         (unwind-protect
             (with-current-buffer (marker-buffer m)
               ;; A region left active in the buffer would make org-schedule,
