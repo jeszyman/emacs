@@ -12,6 +12,15 @@ and a changed-on-disk file is reread without asking."
              (query-about-changed-file nil)
              (m (org-id-find id 'marker)))
         (unless m (error "js/org-at-id-nosteal: no entry with ID %s" id))
+        ;; org-roam's advice on `org-id-find' returns the position stored in its
+        ;; database, which lags an edit that shifts the text; when the marker sits
+        ;; in another entry, move it to the entry that holds ID.
+        (unless (equal (org-entry-get m "ID") id)
+          (let ((pos (with-current-buffer (marker-buffer m)
+                       (org-with-wide-buffer (org-find-entry-with-id id)))))
+            (unless pos
+              (error "js/org-at-id-nosteal: no entry with ID %s in %s" id (buffer-name (marker-buffer m))))
+            (set-marker m pos (marker-buffer m))))
         (unwind-protect
             (with-current-buffer (marker-buffer m)
               ;; A region left active in the buffer would make org-schedule,
@@ -3000,6 +3009,10 @@ With no marks, copies the current selection's display text."
   ;; The default (helm) completion style is case-sensitive even with
   ;; helm-case-fold-search 'smart.  Include orderless for multi-word matching.
   (setq helm-org-completion-styles '(orderless basic substring))
+  ;; helm-org lists headings only to level 8 by default; deeper task
+  ;; headings (e.g. under personal.org Family > child > school year) are
+  ;; level 9+.  Match the refile depth above.
+  (setq helm-org-headings-max-depth 20)
 (global-set-key (kbd "C-c C-j") 'helm-org-agenda-files-headings)
 
 (with-eval-after-load 'org
@@ -3347,7 +3360,25 @@ With no marks, copies the current selection's display text."
 (use-package org-edna
   :ensure t
   :config
+  ;; Goal headings carry no TODO keyword until they are marked DONE.
+  ;; The default (todo) runs a :TRIGGER: only when the heading leaves a
+  ;; TODO keyword, so a trigger on a goal would never run.
+  (setq org-edna-from-todo-states 'not-done)
   (org-edna-mode 1))
+
+(defun org-edna-action/deadline-repeat! (_last-entry repeater)
+  "Set the target heading's DEADLINE to today with REPEATER.
+
+Edna Syntax: deadline-repeat!(\"REPEATER\")
+
+REPEATER is an Org repeater cookie such as \".+3m\".  The stock
+`deadline!' action writes a plain date and cannot add a repeater.
+Used to start a recurring task when the heading it waits on is
+marked DONE, e.g.
+:TRIGGER: ids(\"UUID\") deadline-repeat!(\".+3m\")"
+  (org--deadline-or-schedule
+   nil 'deadline
+   (format-time-string (concat "<%Y-%m-%d %a " repeater ">"))))
 ;; org-glossary
 ;; [[https://github.com/tecosaur/org-glossary][github: tecosaur/org-glossary]]
 ;; - org-cite-style management of glossary/acronyms/index terms: defined under a =* Acronyms= description list per document, referenced in prose, expanded on export.
@@ -3480,6 +3511,35 @@ hook (including `global-font-lock-mode-enable-in-buffer')."
   ;; Suppress that warning type from the log entirely. (Cache warnings are a
   ;; separate type, org-element-cache, and remain visible.)
   (add-to-list 'warning-suppress-log-types '(org-element)))
+;; org-roam
+
+;; [[https://github.com/org-roam/org-roam][GitHub]]. Used only as the index of =:ID:= headings and =[[id:]]= links that org-roam-ui draws; its note-taking commands are not used, so it writes nothing to org files, only its database =~/.emacs.d/org-roam.db=.
+
+(use-package org-roam
+  :custom
+  (org-roam-directory "~/repos")
+  ;; org-roam-ui slows down steeply as headings are added, so the database
+  ;; holds only the org and science repos: every other top-level folder of
+  ;; ~/repos (as listed at startup) is excluded.
+  (org-roam-file-exclude-regexp
+   (mapcar (lambda (dir) (concat "\\`" (regexp-quote dir) "/"))
+           (seq-difference (directory-files "~/repos" nil "\\`[^.]")
+                           '("org" "science"))))
+  ;; Archived headings (own or inherited ARCHIVE tag) are left out.
+  (org-roam-db-node-include-function
+   (lambda () (not (member org-archive-tag (org-get-tags)))))
+  :config (org-roam-db-autosync-mode))   ; re-reads a file into the database each time it is saved
+;; org-roam-ui
+
+;; [[https://github.com/org-roam/org-roam-ui][GitHub]]. Browser graph of the org-roam database: =M-x org-roam-ui-mode= serves it at http://127.0.0.1:35901 and follows the heading at point.
+
+(use-package org-roam-ui
+  :after org-roam
+  ;; Resending the whole graph on every org save leaves the page's pointer
+  ;; detection out of step with the drawn nodes (most nodes stop responding to
+  ;; hover and click until the page reloads), so the graph picks up edits only
+  ;; when the page is reloaded.
+  :custom (org-roam-ui-update-on-save nil))
 ;; org-ros
 ;; https://github.com/LionyxML/ros
 ;; https://chatgpt.com/c/6841f0e8-c080-8005-a3ed-fc6d67a76e19

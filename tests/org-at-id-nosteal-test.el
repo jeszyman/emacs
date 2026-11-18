@@ -60,3 +60,26 @@ org-schedule through the helper looped over the region and failed with
           (should (buffer-local-value 'mark-active (find-buffer-visiting file))))
       (let ((b (find-buffer-visiting file))) (when b (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))
       (delete-file file))))
+
+(ert-deftest nosteal-lands-on-entry-with-id-when-lookup-is-stale ()
+  "FN runs at the entry that holds ID even when `org-id-find' returns a stale position.
+2026-11-18: org-roam's advice on `org-id-find' returned the position stored in
+its database, two lines above the Career weekly review heading after an edit
+above it shifted the text, and the helper ran at the heading before it."
+  (let* ((file (make-temp-file "nosteal" nil ".org"))
+         (id "cccc1111-2222-3333-4444-nosteal0stal")
+         seen)
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "* TODO Other heading\n:PROPERTIES:\n:ID:       other-id\n:END:\nbody\n"
+                    "* TODO Target heading\n:PROPERTIES:\n:ID:       " id "\n:END:\n"))
+          (with-current-buffer (find-file-noselect file) (org-mode))
+          (cl-letf (((symbol-function 'org-id-find)
+                     (lambda (_id &optional _markerp)
+                       (with-current-buffer (find-buffer-visiting file)
+                         (copy-marker (point-min))))))
+            (js/org-at-id-nosteal id (lambda () (setq seen (org-entry-get nil "ID")))))
+          (should (equal seen id)))
+      (let ((b (find-buffer-visiting file))) (when b (with-current-buffer b (set-buffer-modified-p nil)) (kill-buffer b)))
+      (delete-file file))))
