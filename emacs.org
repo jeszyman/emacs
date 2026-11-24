@@ -2,6 +2,9 @@
 :PROPERTIES:
 :ID:       a49abc44-8e71-4a1a-bd35-a77849427c94
 :END:
+
+- [2026-11-24 Tue] Claude session "school-day-repeats": [[elisp:(start-process "claude-resume" nil (expand-file-name "~/.claude/bin/claude-resume") "60af0f73-7cba-496c-9732-2ab8308f690c" "/home/jeszyman/repos/org")][resume]]
+
 ** Plans
 :PROPERTIES:
 :TODO_SET: plans
@@ -8753,6 +8756,111 @@ carries the :from and :to states."
 
 (add-hook 'org-after-todo-state-change-hook #'js/repeat-ts-cron--prepare)
 (add-hook 'org-trigger-hook #'js/repeat-ts-cron--on-done)
+#+end_src
+
+- A heading with =:REPEAT_CRON:= and =:REPEAT_SKIP: NAME= never lands on a day listed in =~/.cache/repeat-skip/NAME= (one date per line). Marking it DONE moves it to the next rule match not on the list. =NAME= is =school= for the school drop-off and pickups; =day-capacity no-school= writes that list from the school calendar every 6 hours, and after each write jeff-beast moves any marked open heading that stands on a listed day. With no list file, the rule applies alone. Test: =tests/repeat-skip-test.el=.
+
+#+begin_src emacs-lisp
+(defvar js/repeat-skip-prop "REPEAT_SKIP"
+  "Property naming the list of days a :REPEAT_CRON: entry must not land on.")
+
+(defvar js/repeat-skip-dir (expand-file-name "~/.cache/repeat-skip/")
+  "Directory of day lists, one ISO date per line, named by the property value.")
+
+(defvar js/repeat-skip-sources
+  '(("school" "~/.claude/bin/day-capacity" "no-school"))
+  "List of (NAME PROGRAM ARG...): the command that prints each day list.")
+
+(defun js/repeat-skip--days (name)
+  "Return the ISO dates in the list NAME, or nil when there is no list."
+  (let ((file (expand-file-name name js/repeat-skip-dir)))
+    (when (file-readable-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (split-string (buffer-string) "\n" t "[ \t]+")))))
+
+(defun js/repeat-skip--next-time (orig cron start &rest args)
+  "Around advice: pass over the days the entry at point must skip.
+ORIG is `org-repeat-by-cron-next-time', called with CRON, START and ARGS."
+  (let* ((next (apply orig cron start args))
+         (name (and next (derived-mode-p 'org-mode)
+                    (not (org-before-first-heading-p))
+                    (org-entry-get nil js/repeat-skip-prop)))
+         (days (and name (js/repeat-skip--days name))))
+    (while (and next days (member (format-time-string "%F" next) days))
+      (setq next (apply orig cron next args)))
+    next))
+
+(defun js/repeat-skip--move ()
+  "Move the entry at point off a skipped day; return non-nil when it moved."
+  (let* ((sched (org-entry-get nil "SCHEDULED"))
+         (rule (org-entry-get nil org-repeat-by-cron-cron-prop))
+         (days (js/repeat-skip--days (org-entry-get nil js/repeat-skip-prop)))
+         (cron (and rule (org-repeat-by-cron--normalize-cron-rule
+                          (string-trim rule "[\" \t]+" "[\" \t]+")))))
+    (when (and sched cron (not (org-entry-is-done-p))
+               (member (substring sched 1 11) days))
+      (let ((next (org-repeat-by-cron-next-time
+                   cron (org-time-string-to-time sched)
+                   (equal (org-entry-get nil org-repeat-by-cron-day-and-prop) "t"))))
+        (when next
+          ;; Only the date changes; the time of day and range end stay.
+          (let ((new (concat (format-time-string "%Y-%m-%d %a" next)
+                             (substring sched 15 -1))))
+            (save-excursion
+              (org-back-to-heading t)
+              (when (search-forward sched (org-entry-end-position) t)
+                (replace-match (concat "<" new ">") t t)))
+            (org-entry-put nil org-repeat-by-cron-anchor-prop new)
+            t))))))
+
+(defun js/repeat-skip-fix (&optional files)
+  "Move every marked open entry in FILES off its skipped days; return the count.
+FILES defaults to the agenda files.  A buffer with unsaved edits, or
+one that differs from its file on disk, is left alone."
+  (let ((count 0))
+    (dolist (file (or files (org-agenda-files)))
+      (when (file-readable-p file)
+        (with-current-buffer (find-file-noselect file)
+          (unless (or (buffer-modified-p)
+                      (not (verify-visited-file-modtime (current-buffer))))
+            (org-with-wide-buffer
+             (goto-char (point-min))
+             (while (re-search-forward
+                     (format "^[ \t]*:%s:" js/repeat-skip-prop) nil t)
+               (when (js/repeat-skip--move)
+                 (setq count (1+ count)))
+               (outline-next-heading)))
+            (when (buffer-modified-p) (save-buffer))))))
+    count))
+
+(defun js/repeat-skip-refresh ()
+  "Rewrite each day list in the background, then move entries on jeff-beast.
+A failed or empty read keeps the existing list."
+  (make-directory js/repeat-skip-dir t)
+  (dolist (source js/repeat-skip-sources)
+    (let ((file (expand-file-name (car source) js/repeat-skip-dir))
+          (buffer (generate-new-buffer (format " *repeat-skip %s*" (car source)))))
+      (make-process
+       :name "repeat-skip" :buffer buffer :noquery t
+       :stderr (get-buffer-create " *repeat-skip errors*")
+       :command (cons (expand-file-name (cadr source)) (cddr source))
+       :sentinel
+       (lambda (process _event)
+         (when (memq (process-status process) '(exit signal))
+           (when (and (eq (process-exit-status process) 0)
+                      (> (buffer-size buffer) 1))
+             (with-current-buffer buffer
+               (write-region nil nil file nil 'silent))
+             (when (equal (system-name) "jeff-beast")
+               (js/repeat-skip-fix)))
+           (kill-buffer buffer)))))))
+
+(advice-add 'org-repeat-by-cron-next-time :around #'js/repeat-skip--next-time)
+(defvar js/repeat-skip-timer nil "Timer that refreshes the day lists.")
+(when (timerp js/repeat-skip-timer) (cancel-timer js/repeat-skip-timer))
+(when (daemonp)
+  (setq js/repeat-skip-timer (run-with-timer 120 (* 6 3600) #'js/repeat-skip-refresh)))
 #+end_src
 
 
